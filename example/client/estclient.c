@@ -43,6 +43,8 @@
 /*
  * Global variables to hold command line options
  */
+static char est_http_uid[MAX_UID_LEN];
+static char est_http_pwd[MAX_PWD_LEN];
 static char est_server[MAX_SERVER_LEN];
 static int est_port;
 static int verbose = 0;
@@ -113,6 +115,8 @@ static void show_usage_and_exit (void)
 #endif
 	"  -i <count>        Number of enrollments to perform per thread (default=1)\n"
         "  -f                Runs EST Client in FIPS MODE = ON\n"
+	"  -u                Specify user name for HTTP authentication.\n"
+	"  -h                Specify password for HTTP authentication.\n"
         "\n");
     exit(255);
 }
@@ -499,7 +503,7 @@ static void worker_thread (void *ptr)
 	    exit(1);
 	}
         
-        rv = est_client_set_auth(ectx, "estuser", "estpwd", client_cert, client_priv_key);
+        rv = est_client_set_auth(ectx, est_http_uid, est_http_pwd, client_cert, client_priv_key);
         if (rv != EST_ERR_NONE) {
 	    printf("\nUnable to configure client authentication.  Aborting!!!\n");
 	    printf("EST error code %d (%s)\n", rv, EST_ERR_NUM_TO_STR(rv));
@@ -696,11 +700,14 @@ int main (int argc, char **argv)
     int option_index = 0;
     int trustanchor = 1; /* default to require a trust anchor */
     char *trustanchor_file = NULL;
+
+    est_http_uid[0] = 0x0;
+    est_http_pwd[0] = 0x0;
     
     memset(client_cert_file, 0, 1);
     memset(out_dir, 0, 1);
 
-    while ((c = getopt_long(argc, argv, "zfvagerk:s:p:o:c:t:i:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "zfvagerk:s:p:o:c:t:i:u:h:", long_options, &option_index)) != -1) {
         switch (c) {
             case 0:
                 printf("option %s", long_options[option_index].name);
@@ -735,6 +742,12 @@ int main (int argc, char **argv)
                 break;
             case 'r':
 		reenroll = 1;
+                break;
+            case 'u':
+		strncpy(est_http_uid, optarg, MAX_UID_LEN);
+                break;
+            case 'h':
+		strncpy(est_http_pwd, optarg, MAX_PWD_LEN);
                 break;
             case 's':
 		strncpy(est_server, optarg, MAX_SERVER_LEN);
@@ -792,6 +805,11 @@ int main (int argc, char **argv)
     }    
     argc -= optind;
     argv += optind;
+
+    if (est_http_uid[0] && !est_http_pwd[0]) {
+	printf ("Error: The password for HTTP authentication must be specified when the HTTP user name is set.\n");
+	exit(1);
+    }
 
     if (verbose) {
         print_version();

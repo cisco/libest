@@ -1,6 +1,8 @@
 This directory contains a sample EST client application.  It utilizes
 OpenSSL for the SSL stack to be used for HTTP requests, libest for 
 the EST stack, and OpenSSL 1.0.1 for certificate and crypto operations. 
+This README assumes the example EST server is already running on the
+local host and listening to port 8085.
 
 To run the example:
 
@@ -11,14 +13,16 @@ To run the example:
 
 2.  Set the following environment variable to specify the location
     of the file containing the CA certificates used for verifying
-    the server. 
+    the server.  In this example we use the trusted certs for
+    the example EST server:
 
-    EST_OPENSSL_CACERT=../server/estCA/cacert.crt
+    export EST_OPENSSL_CACERT=../server/estCA/cacert.crt
 
 3.  Connect to the EST server listening on port 8085 and request a 
-    new certificate using the following command:
+    new certificate.  The example EST server uses the user ID and
+    password estuser/estpwd: 
 
-    ./estclient  -e -s 127.0.0.1 -p 8085 -o /tmp 
+    ./estclient  -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp 
 
     Note: To check the cert response, use this command:
 
@@ -40,19 +44,24 @@ To run the example:
 
     And perform the enroll  using this command:
 
-    ./estclient -p 8085 -s 127.0.0.1 -e -a -o /tmp
+    ./estclient -p 8085 -s 127.0.0.1 -u estuser -h estpwd -e -a -o /tmp
 
 5.  Optionally, you can use a certificate to identify the EST client to
-    the server.  Now that you've enrolled a certificate in step #3
-    above, you can use that certificate to enroll again.  Only this time
-    the EST client will present a certificate for it's identity:
+    the server instead of specifying the HTTP user name/password.  
+    Now that you've enrolled a certificate in step #3
+    above, you can use that certificate to enroll again. Note, your
+    EST server should be configured to disable HTTP authentication. 
 
     First, convert the pkcs7 cert from step 3 to a PEM cert:
 
     openssl base64 -d -in /tmp/cert-0-0.pkcs7 | \
         openssl pkcs7 -inform DER  -print_certs -out /tmp/cert-0-0.pem
 
+    Next, save the private key:
+
+	cp /tmp/key-x-x.pem /tmp/savekey.pem
+
     Next, use this cert as identity to do another enroll operation:
 
     ./estclient -e -s 127.0.0.1 -p 8085 -c /tmp/cert-0-0.pem \
-        -k /tmp/key-x-x.pem -o /tmp
+        -k /tmp/savekey.pem -o /tmp

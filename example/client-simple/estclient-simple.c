@@ -31,6 +31,8 @@
  */
 static unsigned char *cacerts = NULL;
 static int cacerts_len = 0;
+static char est_http_uid[MAX_UID_LEN];
+static char est_http_pwd[MAX_PWD_LEN];
 static char est_server[MAX_SERVER_LEN];
 static int est_port;
 
@@ -51,6 +53,8 @@ static void show_usage_and_exit (void)
     printf("\nAvailable client OPTIONS\n"
 	"  -s <server>       Enrollment server IP address\n"
 	"  -p <port#>        TCP port# for enrollment server\n"
+	"  -u                Specify user name for HTTP authentication.\n"
+	"  -h                Specify password for HTTP authentication.\n"
         "\n");
     exit(255);
 }
@@ -157,7 +161,7 @@ static EST_CTX * setup_est_context (void)
      * simply hard-coding the userID and password, which will be
      * used for HTTP authentication.
      */
-    rv = est_client_set_auth(ectx, "estuser", "estpwd", NULL, NULL);
+    rv = est_client_set_auth(ectx, est_http_uid, est_http_pwd, NULL, NULL);
     if (rv != EST_ERR_NONE) {
         printf("\nUnable to configure client authentication.  Aborting!!!\n");
         printf("EST error code %d (%s)\n", rv, EST_ERR_NUM_TO_STR(rv));
@@ -191,8 +195,17 @@ int main (int argc, char **argv)
     unsigned char *new_client_cert;
     unsigned char *new_certs;
 
-    while ((c = getopt(argc, argv, "s:p:")) != -1) {
+    est_http_uid[0] = 0x0;
+    est_http_pwd[0] = 0x0;
+
+    while ((c = getopt(argc, argv, "s:p:u:h:")) != -1) {
         switch (c) {
+            case 'u':
+		strncpy(est_http_uid, optarg, MAX_UID_LEN);
+                break;
+            case 'h':
+		strncpy(est_http_pwd, optarg, MAX_PWD_LEN);
+                break;
             case 's':
 		strncpy(est_server, optarg, MAX_SERVER_LEN);
                 break;
@@ -212,6 +225,11 @@ int main (int argc, char **argv)
     }    
     argc -= optind;
     argv += optind;
+
+    if (est_http_uid[0] && !est_http_pwd[0]) {
+	printf ("Error: The password for HTTP authentication must be specified when the HTTP user name is set.\n");
+	exit(1);
+    }
 
     /*
      * Initialize the library, including OpenSSL

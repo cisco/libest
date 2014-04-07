@@ -2,7 +2,9 @@ This directory contains a minimal EST client application.  Unlike the
 other example client application that allows granular control over
 the individual EST operations, this example code shows how the
 individual operations are used together during the certificate
-provisioning process.  The EST process works as follows:
+provisioning process.  This README assumes the EST server is
+listening on the local host using port 8085.  The EST process works 
+as follows:
 
     - First the /cacerts request is sent to the server
     - Next, the /csrattrs request is sent to the server
@@ -18,14 +20,16 @@ To run the example:
 
 2.  Set the following environment variable to specify the location
     of the file containing the CA certificates used for verifying
-    the server. 
+    the server.  In this example we use the trusted certs for
+    the example EST server:
 
     export EST_OPENSSL_CACERT=../server/estCA/cacert.crt
 
 3.  Connect to the EST server listening on port 8085 and request a 
-    new certificate using the following command:
+    new certificate.  The example EST server uses the user ID and
+    password estuser/estpwd:
 
-    ./estclient_simple  -s 127.0.0.1 -p 8085  
+    ./estclient_simple  -s 127.0.0.1 -p 8085 -u estuser -h estpwd  
 
     Note: The user ID and password are hard-coded in this example.  
           There is currently no way to change the user ID presented 
