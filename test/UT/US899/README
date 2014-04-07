@@ -1,0 +1,23 @@
+The following commands were used to create the certs used for
+Testing the FQDN logic against certs containing a 
+SubjectAlternativeName extension.  Use these steps to
+create a cert that contains the extension.
+-------------------------------------------------------
+1. Modify the very last line of ext.cnf
+
+2. Generate a key pair using this command: 
+
+    openssl genrsa -out key_san_match.pem 1024
+
+3. Generate the CSR using this command:
+
+    openssl req -new -out csr.pem -outform PEM -key key_san_match.pem 
+
+    optional: view the request...
+
+    openssl req -text -in csr.pem
+
+4. Move up one directory and issue the cert using this openssl command:
+
+    openssl ca -days 1500 -config CA/estExampleCA.cnf -in US899/csr.pem  -out US899/cert_san_match.pem -extfile US899/ext.cnf
+

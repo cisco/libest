@@ -1,0 +1,518 @@
+/**
+ 
+@mainpage Introduction to libest 
+ 
+This document describes libest, a library that implements the 
+Enrollment over Secure Transport protocol (RFC 7030).  This protocol is a
+replacement for SCEP.  It allows X509 certificates to be provisioned
+on end-user devices and network infrastructure devices.  Users of
+libest are encouraged to read RFC 7030 prior to using the API.
+See the @ref Features section for more detailed information.
+
+libest provides a subset of the EST specification.  The 
+following message flows are provided:
+
+@latexonly
+\begin{itemize}
+\item  cacerts
+\item  csrattrs
+\item  simpleenroll
+\item  simiplereenroll
+\end{itemize}
+@endlatexonly
+
+ 
+This document is organized as follows.  The first chapter provides 
+background material on EST and an overview of libest.  The subsequent
+chapters provide a detailed reference to the libest API and related
+functions.  The reference material is created automatically (using the
+doxygen utility) from comments embedded in some of the C header
+files. 
+
+@section LICENSE License and Disclaimer
+
+libest is distributed under the following license, which is included
+in the source code distribution.  It is reproduced in the manual in
+case you attained the library from another source.
+	
+@latexonly
+\begin{quote}
+Copyright (c) 2013-2014 Cisco Systems, Inc.  All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+\begin{itemize}
+\item  Redistributions of source code must retain the above copyright
+  notice, this list of conditions and the following disclaimer.
+\item Redistributions in binary form must reproduce the above
+  copyright notice, this list of conditions and the following
+  disclaimer in the documentation and/or other materials provided
+  with the distribution.
+\item Neither the name of the Cisco Systems, Inc. nor the names of its
+  contributors may be used to endorse or promote products derived
+  from this software without specific prior written permission.
+\end{itemize}
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+OF THE POSSIBILITY OF SUCH DAMAGE.
+\end{quote}
+@endlatexonly
+
+@section Features Supported Features
+
+The EST specification defines requirements for enrolling X509
+certifications for end-entities, Registration Authorities (RA), and 
+Certificate Authorities (CA).  There are six message flows described
+in the EST specification.  libest supports a subset of these
+message flows, but it designed to operate as a client, RA, or CA.
+libest supports the following four EST message flows:
+
+@latexonly
+\begin{itemize}
+\item  cacerts
+\item  csrattrs
+\item  simpleenroll
+\item  simiplereenroll
+\end{itemize}
+@endlatexonly
+
+@latexonly
+The following message flows are currently not supported:
+\begin{itemize}
+\item fullcmc 
+\item serverkeygen 
+\end{itemize}
+@endlatexonly
+ 
+The user should be aware that it is possible to misuse this library,
+which may result in inadequate security.  If you are implementing a 
+feature using this library, you will want to read the Security Considerations 
+section of the EST specification (RFC 7030).  In addition, it is important that 
+you read and understand the terms outlined in the @ref LICENSE section.
+
+
+@section Installing Installing and Building libest 
+
+@latexonly
+
+To install libest, download the latest release of the distribution.  
+The naming convention of the tarball is 
+\texttt{libest-A.B.gz}, where \texttt{A} is the
+major release number and \texttt{B} is
+the minor release number, and \texttt{gz} is the file
+extension.  Users are encouraged to use the most recent release.  
+Unpack the distribution and
+extract the source files; the directory into which the source files
+will go is named \texttt{libest-A-B}.
+
+libest uses the GNU \texttt{autoconf} and \texttt{make}
+utilities\footnote{BSD make may not work; if both versions of make
+are on your platform, you may have to invoke GNU make as \texttt{gmake}.}.  In
+the \texttt{libest} directory, run the configure script and then make:
+\begin{verbatim}
+  ./configure [ options ]       
+  make                          
+  make install
+\end{verbatim}
+
+This package has been tested on both 32 and 64 bit Linux systems running
+CentOS and Ubuntu.  The OpenSSL development package should be installed
+on the system.  libest is designed to work 
+with the OpenSSL 1.0.1 API.  You can use the --with-ssl-dir option with
+the ./configure command to specify the location of the OpenSSL
+installation on the host system.
+
+\subsection{Static Linking}
+
+By default, both the shared and statically linked version of 
+libest are built.  If only the static version is to be used, 
+the --disable-shared option should be used with ./configure.
+This will disbale the generation of the shared version of the libest 
+library, forcing the linker to use the statically linked version.
+
+\subsection{Release builds}
+
+By default libest includes debug symbols in the target binary.  To perform
+a production release build that does not contain debug symbols, the 
+following procedure can be used:
+
+\begin{verbatim}
+  ./configure [ options ]       
+  make                          
+  make install-strip
+\end{verbatim}
+
+@endlatexonly
+
+@section Examples Example Code
+
+@latexonly
+
+Several example applications are included in the release tarball. These
+are located in the \texttt{/example} subdirectory.
+
+\begin{center}
+\begin{tabular}{ll}
+\hline
+Example Applications    	& Function tested	\\
+\hline
+client-simple   & Example EST client application using the easy provision API \\
+client   & Example EST client application using the granular API \\
+server	& Example EST server application using OpenSSL CA \\
+proxy	& Example EST proxy application acting as an RA \\
+\hline
+\end{tabular}
+\end{center}
+
+There are README files in each of the example subdirectories.  The
+samples are built automatically when libest is configured and
+compiled.  When running the example server application, there is a
+script called createCA.sh that must be run once to create the
+root CA certificate and certificate chain that is required for 
+running the EST example server.  This script uses the host-resident
+copy of OpenSSL on the system to create a CA database.  Your
+host-resident copy of OpenSSL should provide support for ECC
+operations.  
+
+Note, the example code is not suitable for including into 
+commercial software.  The examples are primarily used to test
+the libest library and to show how the API should be used.  The
+example code does not have all the appropriate error handling
+and robust design required for commercial software.  For example,
+the OpenSSL CA used by the example EST server is not thread safe and
+provides no means to enforce certificate policy. 
+
+@endlatexonly
+
+
+@section Overview EST Overview
+
+EST provides for a standards based mechanism to provision X509 certificates
+from either an RA or CA.  An entity that desires to attain a valid
+X509 certificate bound to a trust point acts as an EST client and
+communicates with either an RA or a CA to request and receive an
+X509 certificate from a trusted CA.  libest provides
+both client-side and server-side capabilities to operate as any
+role in the EST enrollment process (end-entity, RA, or CA). 
+It is important to note that libest is not a CA.  libest is only
+the EST stack, which can be used by a CA to comply with RFC 7030.
+
+The EST specification requires the use of TLS for transport.  This 
+allows all the entities participating in the enrollment process to
+verify the identity of each other.  TLS also provides privacy on the
+communication channel between the EST client and RA/CA.  
+Using the simple case of an
+EST client communicating with an EST enabled CA server, the following
+minimal setup is required prior to initiating the enrollment process:
+
+@latexonly
+\begin{itemize}
+\item   A server certificate must be provisioned for the EST enabled
+  CA server.  This allows the CA to identify itself to EST clients.
+\item   The certificate chain used to sign the server certificate 
+  must be provided to libest on the server side.
+\item   The root certificate of the chain used to sign the server
+  certificate should be pre-provisioned on the EST client.  This allows
+  the EST client to verify the identity of the EST enabled CA 
+  server\footnote{This statement does not address the bootstrap enrollment process.  The bootstrap method is supported by libest, but requires additional configuration.}.  If this root certificate can not be pre-provisioned, then
+  a fingerprint of the EST server identity certificate can be used by the
+  EST client to verify the EST server identity.
+\end{itemize}
+@endlatexonly
+
+With the above setup requirements satisfied, the enrollment process 
+consists of the following procedure:
+
+@latexonly
+\begin{itemize}
+\item   The EST client issues the /cacerts request to the server.  During 
+  this process the EST client verifies the server identity using the 
+  pre-provisioned root certificate described above, or using a fingerprint
+  of the server certificate.
+\item   The EST client replaces the pre-provisioned trusted root certificates
+  with the certificates provided by the EST enabled CA server in the /cacerts
+  response.  This new certificate chain is used for all future client-side
+  EST operations.  The client should persist this new trust chain for 
+  future use, such as certificate renewal.
+\item   The EST client issues the /csrattrs request to the server.  The
+  server responds by providing X509 attributes that should be included in
+  the forthcoming PKCS10 CSR request.  The required X509 attributes are
+  derived from the certificate policy configured on the CA.
+\item   The EST client generates a PKCS10 CSR and includes any specific 
+  X509 attributes required by the server based on the response in the /csrattrs
+  request.
+\item   The EST client sends the PKCS10 CSR to the server using the 
+  /simpleenroll request.  The EST enabled CA server will sign the CSR and 
+  return the X509 certificate to the client.
+\end{itemize}
+@endlatexonly
+
+
+@section ESTClient EST Client Operation
+
+Applications that need to provision X509 certificates can utilize
+libest in client mode.  libest provides an API that performs the
+steps in the enrollment process described in the @ref Overview section. 
+The first step when using the API is to create an EST context.  Once
+created, the context is used for subsequent API calls into the libest 
+library.  The EST specification allows for several authentication methods.
+This includes HTTP basic authentication, HTTP digest authentication, and
+certificate based authentication.  The example client code provided
+with the libest distribution tarball shows how to use the various capabilities 
+in the libest API, including the various authentication methods.
+
+There are two methods for provisioning a certifice while operating
+in client mode.  The first is the easy provision API, which provides
+a simplified API that encapsulates all the client-side EST operations
+into a single enroll operation.  The second method is to use the
+granular API for performing the /cacerts, /csrattrs, and /simpleenroll
+operations individually.  The easy provision API is limited in that
+the client can only specify the X509 Common Name value in the certificate
+request.  If the CA certificate policy is configured such that additional
+X509 attributes are required to be supplied by the client, then the
+easy provision API should not be used.
+
+
+@latexonly
+\subsection{Easy Provision API}
+@endlatexonly
+
+The easy provision API provides a simplied entry point into libest to
+enroll a certificate request with a CA.  This API encapsulates the
+recommended steps as defined in RFC 7030, which includes:
+
+@latexonly
+\begin{itemize}
+\item   Attain a fresh copy of the EST server CA certificates.
+\item   Request the CSR attributes from the EST server to determine if proof-of-possession is required.
+\item   Issue the simple enroll request to the EST server. 
+\end{itemize}
+@endlatexonly
+
+The following procedure outlines the steps to utilize the easy provision API:
+
+1.  Invoke the est_apps_startup() helper function, which
+    initializes the OpenSSL library. This may not be required if
+    your application has already initialized OpenSSL elsewhere.
+2.  Invoke est_client_init() to attain an EST context. Use the
+    pre-provisioned trusted root certificates. 
+3.  Invoke est_client_set_auth() to specify the HTTP username
+    and password to be used.  Optionally, an existing X509 certificate
+    can be used to identify the client to the EST server.  For example,
+    a previously issued certificate or a bootstrap certificate could
+    be used.  The HTTP username is optional when a client certificate
+    is provided.
+4.  Invoke est_client_set_server() to specify the IP address of the
+    EST server, which may be either an RA or CA.
+5.  Invoke est_client_provision_cert() to create a PKCS10 CSR and
+    forward it to the EST server, expecting the EST server to return
+    the signed X509 certificate.
+6.  Invoke est_client_copy_enrolled_cert() to copy the X509 cert provided
+    by the EST server to local storage.
+7.  Invoke est_client_copy_cacerts() to retrieve the latest trust chain that
+    was provided by the EST server.  These certs should be persisted for future use.
+8.  Invoke est_destroy() to remove the EST context.   
+
+@latexonly
+\subsection{Full Provision API}
+@endlatexonly
+
+While the easy provision API is easier to use, it does not allow the application
+to specify X509 attributes in the PKCS10 CSR other than the Common Name.  Because
+the CA may be configured with policy requiring the certificate requestor to provide
+additional X509 attributes in the CSR, the easy provision API may not be suitable
+for your application.  When this occurs, libest provides a more granular API that
+allows your application to create the PKCS10 CSR itself, rather than having libest 
+create the CSR on behalf of your application.  This allows your application to include
+any required X509 attributes in the CSR.  The following steps outline the procedure 
+for using the granular API: 
+
+1.  Invoke the est_apps_startup() helper function, which
+    initializes the OpenSSL library. This may not be required if
+    your application has already initialized OpenSSL elsewhere.
+2.  Invoke est_client_init() to attain an EST context. Use the
+    pre-provisioned trusted root certificates. 
+3.  Invoke est_client_set_auth() to specify the HTTP username
+    and password to be used.  Optionally, an existing X509 certificate
+    can be used to identify the client to the EST server.  For example,
+    a previously issued certificate or a bootstrap certificate could
+    be used.  The HTTP username is optional when a client certificate
+    is provided.
+4.  Invoke est_client_set_server() to specify the IP address of the
+    EST server, which may be either an RA or CA.
+5.  Invoke est_client_get_cacerts() and est_client_copy_cacerts() to 
+    retrieve the latest trust chain from the EST server.
+6.  Invoke est_destroy() to clean the EST context.
+7.  Invoke est_client_init() to attain a new EST context.  Unlike 
+    step 2, we use the new CA certs just attained in step 5.  Repeat
+    steps 3 and 4 again too.
+8.  Invoke est_client_get_csrattrs() to retrieve the required 
+    X509 attributes from the CA.  
+9.  Generate a public/private key pair if needed.
+10. Using OpenSSL, generate a PKCS10 CSR and populate any required CSR attributes
+    based on the response in step 8.
+11. Invoke est_client_enroll_csr() to send the PKCS10 CSR to the CA and
+    receive the X509 certificate.
+12. Invoke est_client_copy_enrolled_cert() to copy the X509 cert provided
+    by the EST server to local storage.
+13. Invoke est_destroy() to remove the EST context.   
+
+The procedure outlined above describes the general use case for
+provisioning a certificate.  Please be aware the EST specification 
+allows for many variations.  Other considerations include:
+
+@latexonly
+\begin{itemize}
+\item   Handling the retry-after response when the CA isn't configured 
+  for automatic approval.
+\item   Manual verification of the CA server when trusted root 
+  certificates are not pre-provisioned on the EST client.
+\item   Bootstrap use case where multiple trust anchors are used.
+\item   The re-enrollment process to renew a certificate.
+\item   Enable CRL checks when verifying the server identity.
+\item   Provide thread locking mechanism required by OpenSSL.
+\end{itemize}
+@endlatexonly
+
+@section ESTServer EST Server Operation
+
+The EST specification covers a broad spectrum of the OSI
+model.  EST places requirements on TLS, HTTP, and the certificate
+authority (CA).  libest is not a CA.  libest only implements the
+TLS and HTTP layers as defined in RFC 7030.  It
+is the responsibility of your application to bind
+the CA server to libest.  Additionally, libest does not implement
+the TCP server required to accept incoming requests. 
+Your application must initialize and manage the
+TCP sockets for incoming connections.  
+
+When implementing an EST server your application is
+responsible for binding the EST stack to a CA.  The
+application is also responsible for opening the TCP sockets that will
+receive incoming connections.  An overview of implementing a server is:
+
+@latexonly
+\begin{itemize}
+\item  Initialize an EST context.  The application provides the server
+    certificate and private key used to identify itself to any
+    EST clients.  The application also provides the trusted certificate chain
+    to be used when responding to the /cacerts requests. 
+\item  Specify the callback function that libest will use to process
+    an incoming CSR from the client.  This callback function is the
+    glue that binds libest to the CA.  This function will forward
+    the CSR to the CA and return the response to libest.  Your application
+    must implement this callback function.
+\item  Specify the callback function that libest will invoke to verify
+    the client identity when HTTP basic or digest authentication
+    is used.  This callback function would verify the user's identity
+    and return a response to libest.  A typical use case would be
+    to utilize a RADIUS server from within callback function.  Your application
+    is responsible for hooking into the desired authentication server,
+    such as RADIUS, LDAP, OAuth, etc.  libest currently does not contain
+    support for authentication protocols.  In the future libest may
+    include built-in support for RADIUS, LDAP, etc.
+\item  Open one or more listening TCP sockets.  These sockets must be
+    managed by the application.  An example of doing this would be
+    to write an NGINX module that utlized NGINX to manage the
+    listening sockets, while forwarding incoming requests on these
+    sockets to libest.  Another example would be to write a custom
+    multi-threaded TCP server to accept incoming socket requests and
+    forward them to libest.
+\end{itemize}
+@endlatexonly
+
+The following API calls would be invoked to implement an EST server.  These
+represent the minimal configuration to implementing an EST server:
+
+1.  Invoke the est_apps_startup() helper function, which
+    initializes the OpenSSL library.  
+2.  Invoke est_server_init() to attain a new EST context.  The server's
+    certificate and private key are provided to this call.
+3.  Invoke est_set_ca_enroll_cb() to provide a callback function to 
+    libest that is invoked by libest when a PKCS10 CSR needs to be
+    signed by the CA.  Your application must implement this callback
+    function to forward the CSR to the CA.
+4.  Invoke est_set_csr_cb() to provide a callback function to
+    libest that is invoked by libest when requesting the CSR 
+    attributes that should be included by EST clients during the
+    enrollment process.
+5.  Invoke est_server_start() to initialize the HTTPS services.
+    This step is required to setup the TLS context within the
+    HTTPS layer prior to receiving EST requests in step 7.
+6.  Open a TCP listening socket and wait for incoming requests.
+7.  Accept new incoming connections on the socket and invoke
+    est_server_handle_request().
+
+The procedure outlined above describes the general use case for
+implementing a simple EST server operating as either an RA or CA. 
+The EST specification allows for many
+variations.  libest provides additional API entry points to customize
+the behavior of the server.  Other considerations include:
+
+@latexonly
+\begin{itemize}
+\item   Specify the retry period when the CA is configured for manual 
+  approval.
+\item   Enable CRL checks when verifying the client identity.
+\item   Configuring either HTTP basic, HTTP digest, or no HTTP 
+  authentication.
+\item   Disabling the proof-of-possession check.
+\item   Implementing a multi-threaded EST server to allow for simultaneous
+  processing of EST requests.
+\item   Providing support for the EST /simplereenroll flow.
+\item   Provide thread locking mechanism required by OpenSSL.
+\item   Enable TLS single-use DH key generation.
+\end{itemize}
+@endlatexonly
+
+@section ESTProxy EST Proxy Operation
+
+libest provides the ability to operate as an EST proxy.  An EST proxy receives
+incoming EST requests and forwards outgoing EST requests to either an RA or CA.
+A typical use case for EST proxy mode would be to deploy the proxy on a VPN
+head-end device that is dual-homed on both a public and private network.  This would
+allow EST requests orginating from VPN clients on the public Internet to be 
+forwarded to an RA or CA residing on a private network.
+
+Using libest in proxy mode is similar to server mode operation.  The application
+is responsible for implementing the TCP listener and managing the TCP connections.
+However, there is no need to integrate a CA with libest when operating in
+proxy mode, which makes proxy mode suitable for operating as an RA.  The following 
+steps outline the minimal API calls required to implement an EST proxy:
+
+1.  Invoke the est_apps_startup() helper function, which
+    initializes the OpenSSL library.  
+2.  Invoke est_proxy_init() to attain a new EST context.  The proxy server
+    certificate and private key are provided to this call.  This certificate is
+    used to identify the proxy to both the client and to the RA/CA.
+3.  Invoke est_proxy_set_server() to specify the IP address and port of the RA/CA.
+4.  Invoke est_proxy_start() to initialize the HTTPS services.
+    This step is required to setup the TLS context within the
+    HTTPS layer prior to receiving EST requests in step 6.
+5.  Open a TCP listening socket and wait for incoming requests.
+6.  Accept new incoming connections on the socket and invoke
+    est_server_handle_request().
+
+
+@section FIPS FIPS 140-2 Compliance
+
+Another consideration is FIPS 140 compliance.  libest was developed
+using OpenSSL 1.0.1.  OpenSSL can be configured and compiled 
+with FIPS 140 support.  This allows libest to claim FIPS compliance when the 
+application invokes the FIPS_mode_set() entry point in the OpenSSL
+API.  When in FIPS mode, some ciphers are not allowed, including MD5.
+Since HTTP digest authentication uses MD5, FIPS should not be enabled
+in conjunction with HTTP digest authentication.  Also, all certificates
+and CSRs should not use MD5 and must use FIPS approved key sizes.
+
+ */

@@ -1,0 +1,8 @@
+This entire directory of unit test code started from US901 @2003 on 11/14/2013.  Changes
+were made to support the proxy function being tested instead of the EST server function.
+
+//These are the commands used to generate CSR file (req.p10).  
+//The OpenSSL config file came from Max's EST prototype code
+openssl req -new -nodes -out test.req -keyout test.key -config demoClient/demostep2.req.cnf
+openssl req -in test.req -outform DER | openssl base64 -e > req.p10
+

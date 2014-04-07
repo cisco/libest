@@ -1,0 +1,47 @@
+This directory contains a sample EST server application.  It utilizes
+libest for the EST stack and OpenSSL for basic CA services. 
+
+
+DISCLAIMER:  This example code should not be used "as is". 
+             The CA server used by the example was taken
+	     from the OpenSSL example code.  It has not been tested 
+	     to comply with X509 requirements for operating as a 
+	     certificate authority.  There are known issues with the
+	     OpenSSL CA, such as the basic constraints are not checked
+	     when signing a certificate request.  Additionally, the  
+	     OpenSSL CA implementation is not thread safe.
+ 
+
+
+To run the example:
+
+1.  Ensure libcrypto.so and libest.so are in the LD_LIBRARY_PATH.
+    Here's an example:
+
+    export LD_LIBRARY_PATH=/usr/local/ssl/lib:/usr/local/est/lib
+
+2.  Run the createCA.sh script to create the sample CA database.
+    This only needs to be done once.  This will create the estCA
+    directory, which contains the CA database.  Your host resident
+    copy of openssl should support ECC certificates.
+
+3.  Run the runserver.sh script to start the server.  The server
+    will listen on port 8085.
+
+4.  Use an EST client to exercise the server.
+
+
+
+Certificate Revocation
+----------------------
+libest supports CRL checks when verifying the client certificate.
+To use this, the CA cert chain file, which is a PEM file, should have
+the CRL records appended to it.  To generate the CRL, follow
+this example:
+
+    # revoke a certificate, repeat as needed
+    openssl ca -config ./estExampleCA.cnf  -revoke certtorevoke.pem 
+    # generate the CRL
+    openssl ca -config ./estExampleCA.cnf  -gencrl -out crl.pem
+    # append the CRL to the CA certs
+    cat crl.pem >> estCA/cacert.crt 

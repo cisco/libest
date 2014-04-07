@@ -1,0 +1,90 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            ab:fa:30:52:b3:22:d6:14
+        Signature Algorithm: ecdsa-with-SHA1
+        Issuer: CN=estEXTERNALCA
+        Validity
+            Not Before: Jul  2 17:10:06 2013 GMT
+            Not After : Jul  2 17:10:06 2014 GMT
+        Subject: CN=estEXTERNALCA
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+            EC Public Key:
+                pub: 
+                    04:e9:99:30:49:a7:a3:bd:cf:69:c6:3a:70:ec:ce:
+                    92:08:8f:88:33:44:a7:71:26:4a:0b:f3:a7:93:4a:
+                    a9:2c:68:74:a9:5b:38:e7:81:10:4d:4a:8a:da:58:
+                    b4:8f:b1:88:71:9e:fa:72:de:0a:0d:79:bb:80:4c:
+                    b2:70:60:15:17
+                ASN1 OID: prime256v1
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:TRUE
+            X509v3 Subject Key Identifier: 
+                CF:B1:92:EB:0E:B3:8A:DC:0E:E9:55:50:4E:55:AD:A6:45:5C:58:B1
+    Signature Algorithm: ecdsa-with-SHA1
+        30:45:02:21:00:f4:8c:ed:86:81:e8:5a:4f:33:44:78:73:c9:
+        1e:12:81:71:de:de:b0:b9:33:0b:a8:20:67:0a:80:c7:c9:30:
+        f6:02:20:54:c9:61:f8:ab:b8:66:10:d9:d7:e8:7c:1f:ca:c2:
+        bd:cf:f8:72:67:0c:0e:96:1a:0c:bb:fc:42:a6:1b:c4:1a
+-----BEGIN CERTIFICATE-----
+MIIBUzCB+6ADAgECAgkAq/owUrMi1hQwCQYHKoZIzj0EATAYMRYwFAYDVQQDEw1l
+c3RFWFRFUk5BTENBMB4XDTEzMDcwMjE3MTAwNloXDTE0MDcwMjE3MTAwNlowGDEW
+MBQGA1UEAxMNZXN0RVhURVJOQUxDQTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IA
+BOmZMEmno73PacY6cOzOkgiPiDNEp3EmSgvzp5NKqSxodKlbOOeBEE1KitpYtI+x
+iHGe+nLeCg15u4BMsnBgFRejLzAtMAwGA1UdEwQFMAMBAf8wHQYDVR0OBBYEFM+x
+kusOs4rcDulVUE5VraZFXFixMAkGByqGSM49BAEDSAAwRQIhAPSM7YaB6FpPM0R4
+c8keEoFx3t6wuTMLqCBnCoDHyTD2AiBUyWH4q7hmENnX6HwfysK9z/hyZwwOlhoM
+u/xCphvEGg==
+-----END CERTIFICATE-----
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 15 (0xf)
+    Signature Algorithm: ecdsa-with-SHA1
+        Issuer: CN=estEXTERNALCA
+        Validity
+            Not Before: Aug 28 09:14:03 2012 GMT
+            Not After : Aug 28 10:35:00 2013 GMT
+        Subject: CN=TRIAD-Implicit-Expired-Cert
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (1024 bit)
+                Modulus:
+                    00:d1:5c:16:4e:eb:3f:f2:37:5e:64:1a:9e:e1:c2:
+                    58:74:21:0b:89:b7:71:9e:5e:8f:bc:e9:46:ca:27:
+                    ed:61:1a:bd:f7:80:ae:2a:9e:23:22:9b:f9:28:20:
+                    47:95:1c:f7:85:8c:0b:f0:e9:72:01:60:dd:c2:c9:
+                    a4:12:e1:bc:60:cd:eb:72:e7:a9:f2:31:d4:1d:64:
+                    42:fc:d3:7e:50:97:da:7c:43:1f:92:ee:6d:6e:b6:
+                    b2:9f:e9:cc:39:08:bf:07:99:87:f6:7c:f6:57:cd:
+                    23:27:10:b5:d1:69:cc:75:33:93:d8:ad:7b:83:5f:
+                    13:7f:4c:e8:31:9a:a9:e4:01
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:TRUE
+            X509v3 Subject Key Identifier: 
+                F5:DF:46:B6:5B:04:A8:49:26:A2:D3:E0:A6:8F:CD:B4:80:2E:48:BE
+            X509v3 Authority Key Identifier: 
+                keyid:CF:B1:92:EB:0E:B3:8A:DC:0E:E9:55:50:4E:55:AD:A6:45:5C:58:B1
+
+    Signature Algorithm: ecdsa-with-SHA1
+         30:46:02:21:00:f6:06:48:98:8e:f0:8a:0c:e7:94:f9:18:c4:
+         24:4e:c7:33:da:aa:d4:08:c4:6d:82:c8:fd:23:f8:5d:fc:82:
+         06:02:21:00:e7:c0:bf:50:ba:b0:b6:d0:e8:29:3a:2a:4e:a5:
+         84:97:2a:82:b9:d0:bf:4e:99:1c:0a:0b:31:14:fd:53:85:73
+-----BEGIN CERTIFICATE-----
+MIIBwzCCAWmgAwIBAgIBDzAJBgcqhkjOPQQBMBgxFjAUBgNVBAMTDWVzdEVYVEVS
+TkFMQ0EwHhcNMTIwODI4MDkxNDAzWhcNMTMwODI4MTAzNTAwWjAmMSQwIgYDVQQD
+DBtUUklBRC1JbXBsaWNpdC1FeHBpcmVkLUNlcnQwgZ8wDQYJKoZIhvcNAQEBBQAD
+gY0AMIGJAoGBANFcFk7rP/I3XmQanuHCWHQhC4m3cZ5ej7zpRson7WEavfeAriqe
+IyKb+SggR5Uc94WMC/DpcgFg3cLJpBLhvGDN63LnqfIx1B1kQvzTflCX2nxDH5Lu
+bW62sp/pzDkIvweZh/Z89lfNIycQtdFpzHUzk9ite4NfE39M6DGaqeQBAgMBAAGj
+UDBOMAwGA1UdEwQFMAMBAf8wHQYDVR0OBBYEFPXfRrZbBKhJJqLT4KaPzbSALki+
+MB8GA1UdIwQYMBaAFM+xkusOs4rcDulVUE5VraZFXFixMAkGByqGSM49BAEDSQAw
+RgIhAPYGSJiO8IoM55T5GMQkTscz2qrUCMRtgsj9I/hd/IIGAiEA58C/ULqwttDo
+KToqTqWElyqCudC/TpkcCgsxFP1ThXM=
+-----END CERTIFICATE-----

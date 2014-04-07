@@ -1,0 +1,4 @@
+HTTP/1.1 202 Accepted
+Status: 202 Accepted
+Retry-After: 3600
+

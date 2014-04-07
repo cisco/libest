@@ -1,0 +1,17 @@
+This directory contains the unit test code for verifying libest.
+The unit test code utilizes CUnit and libcurl.  Be warned that
+this directory is not integrated with the libest autoconf
+configuration.  You'll need to manually ensure the CUnit and libcurl
+dependencies are working properly on your host.  The following
+versions are known to work:
+
+CUnit 2.1.2
+libcurl 7.31.0
+
+To use the unit test, descend into the the UT directory and issue
+the 'make' command.  If your host meets the dependencies, the target
+'runtest' should be built.  Running this from the command line
+should run all the unit tests.  The OpenSSL libraries and libest
+should be in your shared library path (LD_LIBRARY_PATH) prior to 
+running the unit tests.
+

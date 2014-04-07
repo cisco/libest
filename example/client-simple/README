@@ -1,0 +1,56 @@
+This directory contains a minimal EST client application.  Unlike the
+other example client application that allows granular control over
+the individual EST operations, this example code shows how the
+individual operations are used together during the certificate
+provisioning process.  The EST process works as follows:
+
+    - First the /cacerts request is sent to the server
+    - Next, the /csrattrs request is sent to the server
+    - The local application creates a certificate request (CSR)
+    - The CSR is sent to the server and a X509 cert is returned.
+
+To run the example:
+
+1.  Set LD_LIBRARY_PATH to include the directories where libest.so
+    and libcrypto.so are installed. For example... 
+
+    export LD_LIBRARY_PATH=/usr/local/ssl/lib:/usr/local/est/lib
+
+2.  Set the following environment variable to specify the location
+    of the file containing the CA certificates used for verifying
+    the server. 
+
+    export EST_OPENSSL_CACERT=../server/estCA/cacert.crt
+
+3.  Connect to the EST server listening on port 8085 and request a 
+    new certificate using the following command:
+
+    ./estclient_simple  -s 127.0.0.1 -p 8085  
+
+    Note: The user ID and password are hard-coded in this example.  
+          There is currently no way to change the user ID presented 
+	  to the EST server.
+
+
+After successfully provisioning a new certificate, the following
+files are generated in the current working directory:
+
+    newcacerts.pkcs7 This file contains the latest copy of
+                    the CA certifications from the EST server.
+    cert-b64.pkcs7  This file contains the newly provisioned
+                    certificate.
+    new_key.pem     This file contains the new keypair that
+                    was generated when creating the certificate
+		    request.  This contains the private key that
+		    matches the public key in the new cert.
+
+Use this command to view the new CA certs returned by the server:
+
+    openssl base64 -d -in ./newcacerts.pkcs7 | \
+        openssl pkcs7 -inform DER -text -print_certs
+
+Use this command to view the new certificate from the server:
+
+    openssl base64 -d -in ./cert-b64.pkcs7 | \
+        openssl pkcs7 -inform DER -text -print_certs
+
