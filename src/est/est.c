@@ -910,13 +910,17 @@ char * est_get_tls_uid (SSL *ssl, int is_client)
     (void)BIO_flush(bio);
     BIO_get_mem_ptr(bio, &bptr);
 
+    /*
+     * Be aware that OpenSSL adds a newline character at the
+     * end of the base64 encoded data
+     */
     if (bptr->length != EST_TLS_UID_LEN) {
         EST_LOG_WARN("TLS UID length mismatch (%d/%d)", bptr->length,
                      EST_TLS_UID_LEN);
     } else {
         rv = malloc(EST_TLS_UID_LEN + 1);
         memcpy(rv, bptr->data, EST_TLS_UID_LEN);
-        rv[EST_TLS_UID_LEN] = '\0';
+        rv[EST_TLS_UID_LEN-1] = '\0';
         EST_LOG_INFO("TLS UID was found");
     }
     BIO_free_all(bio);
