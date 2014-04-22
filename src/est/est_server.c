@@ -283,10 +283,14 @@ EST_AUTH_STATE est_enroll_auth (EST_CTX *ctx, void *http_ctx, SSL *ssl,
     }
 
     /*
-     * If the application layer has enabled HTTP authentication,
-     * then check the user's credentials
+     * If the application layer has enabled HTTP authentication we
+     * will attempt HTTP authentication when TLS client auth fails
+     * or when the require_http_auth flag is set by the application.
+     * All this assumes the application layer has provided the HTTP auth
+     * callback facility.
      */
-    if (ctx->est_http_auth_cb) {
+    if (ctx->est_http_auth_cb && 
+	(rv != EST_CERT_AUTH || HTTP_AUTH_REQUIRED == ctx->require_http_auth)) {
         /*
          * Try HTTP authentication.
          */
@@ -911,7 +915,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
 	    } else {
 		est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
 	    }
-            return (EST_ERR_BAD_PKCS10);
+            return rc;
         }
     }
 
@@ -1163,6 +1167,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
     memset(ctx, 0, sizeof(EST_CTX));
     ctx->est_mode = EST_SERVER;
     ctx->retry_period = EST_RETRY_PERIOD_DEF;
+    ctx->require_http_auth = HTTP_AUTH_REQUIRED;
 
     /*
      * Load the CA certificates into local memory and retain
@@ -1380,6 +1385,33 @@ EST_ERROR est_set_http_auth_cb (EST_CTX *ctx,
     }
 
     ctx->est_http_auth_cb = cb;
+
+    return (EST_ERR_NONE);
+}
+
+/*! @brief est_set_http_auth_required() is used by an application to define whether
+    HTTP authentication should be required in addition to using client certificates.
+ 
+    @param ctx Pointer to the EST context
+    @param required Flag indicating that HTTP authentication is required. Set 
+    to HTTP_AUTH_REQUIRED value to require HTTP auth.  Set to HTTP_AUTH_NOT_REQUIRED 
+    if HTTP auth should occur only when TLS client authentication fails.
+ 
+    @return EST_ERROR.
+
+    The default mode is HTTP_AUTH_REQUIRED.  This means that HTTP authentication
+    will be attempted even when TLS client authentication succeeds.  If HTTP
+    authentication is only needed when TLS client auth fails, then set this
+    to HTTP_AUTH_NOT_REQUIRED.
+ */
+EST_ERROR est_set_http_auth_required (EST_CTX *ctx, EST_HTTP_AUTH_REQUIRED required)
+{
+    if (!ctx) {
+	EST_LOG_ERR("Null context");
+        return (EST_ERR_NO_CTX);
+    }
+
+    ctx->require_http_auth = required;
 
     return (EST_ERR_NONE);
 }

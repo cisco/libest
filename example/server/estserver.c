@@ -51,6 +51,7 @@ static int manual_enroll = 0;
 static int tcp_port = 8085;
 static int http_digest_auth = 0;
 static int http_auth_disable = 0;
+static int disable_forced_http_auth = 0;
 static int set_fips_return = 0;
 static unsigned long set_fips_error = 0;
 static int test_app_data = 0xDEADBEEF;
@@ -129,17 +130,18 @@ static void print_version (FILE *fp)
 
 static void show_usage_and_exit (void)
 {
-    fprintf(stderr, "\nAvailable estserver options\n"
+    fprintf(stderr, "\nAvailable EST server options\n"
             "  -v           Verbose operation\n"
             "  -c <file>    PEM file to use for server cert\n"
             "  -k <file>    PEM file to use for server key\n"
             "  -r <value>   HTTP realm to present to clients\n"
             "  -l           Enable CRL checks\n"
-            "  -t           Enable PoP check of TLS UID\n"
+            "  -t           Enable check for binding client PoP to the TLS UID\n"
 #ifndef DISABLE_TSEARCH
             "  -m <seconds> Simulate manual CA enrollment\n"
 #endif
-            "  -n           Disable HTTP authentication\n"
+            "  -n           Disable HTTP authentication (TLS client auth required)\n"
+            "  -o           Disable HTTP authentication when TLS client auth succeeds\n"
             "  -h           Use HTTP Digest auth instead of Basic auth\n"
 	    "  -p <num>     TCP port number to listen on\n"
 #ifndef DISABLE_PTHREADS
@@ -147,7 +149,8 @@ static void show_usage_and_exit (void)
 #endif
 	    "  -f           Runs EST Server in FIPS MODE = ON\n"
 	    "  -6           Enable IPv6\n"
-            "  -w           Allow for attribute capture on server\n"
+            "  -w           Dump the CSR to '/tmp/csr.p10' allowing for manual attribute capture on server\n"
+	    "  -?           Print this help message and exit\n"
             "\n");
     exit(255);
 }
@@ -248,7 +251,7 @@ int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
 	/* We have a match, allow the enrollment */
 	rv = 1;	
 	tdelete(n, (void **)&lookup_root, compare);
-	printf("\nRemoving key from lookup table:\n");
+	if (verbose) printf("\nRemoving key from lookup table:\n");
 	dumpbin((unsigned char*)n->data, n->length);
 	free(n->data);
 	free(n);
@@ -256,7 +259,7 @@ int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
 	/* Not a match, add it to the list and return */
 	l = tsearch(n, (void **)&lookup_root, compare);
 	rv = 0;
-	printf("\nAdding key to lookup table:\n");
+	if (verbose) printf("\nAdding key to lookup table:\n");
 	dumpbin((unsigned char*)n->data, n->length);
     }
 DONE:
@@ -297,7 +300,7 @@ static void extract_sub_name(X509 *cert, char *name, int len)
 
 
 /****************************************************************************************
- * The following funcitons are the callbacks used by libest to bind
+ * The following functions are the callbacks used by libest to bind
  * the EST stack to the HTTP/SSL layer and the CA server.
  ***************************************************************************************/
 pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
@@ -331,19 +334,21 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
     char sn[64];
     char file_name[MAX_FILENAME_LEN];
 
-    /*
-     * Informational only
-     */
-    if (user_id) {
-	printf("\n%s - User ID is %s\n", __FUNCTION__, user_id);
-    }
-    if (peer_cert) {
-	memset(sn, 0, 64);
-        extract_sub_name(peer_cert, sn, 64);
-        printf("\n%s - Peer cert CN is %s\n", __FUNCTION__, sn);
-    }
-    if (app_data) {
-	printf("ex_data value is %x\n", *((unsigned int *)app_data));
+    if (verbose) {
+	/*
+	 * Informational only
+	 */
+	if (user_id) {
+	    printf("\n%s - User ID is %s\n", __FUNCTION__, user_id);
+	}
+	if (peer_cert) {
+	    memset(sn, 0, 64);
+	    extract_sub_name(peer_cert, sn, 64);
+	    printf("\n%s - Peer cert CN is %s\n", __FUNCTION__, sn);
+	}
+	if (app_data) {
+	    printf("ex_data value is %x\n", *((unsigned int *)app_data));
+	}
     }
 
     /*
@@ -389,7 +394,7 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
         /*
          * Dump out pkcs10 to a file, this will contain a list of the OIDs in the CSR.
          */
-        snprintf(file_name, MAX_FILENAME_LEN, "/tmp/test4_US1010.csr.pkcs10");
+        snprintf(file_name, MAX_FILENAME_LEN, "/tmp/csr.p10");
         write_binary_file(file_name, pkcs10, p10_len);        
     }    
     
@@ -585,7 +590,7 @@ int main (int argc, char **argv)
         show_usage_and_exit();
     }
 
-    while ((c = getopt(argc, argv, "fhwnvr:c:k:m:p:d:lt6")) != -1) {
+    while ((c = getopt(argc, argv, "?fhwnovr:c:k:m:p:d:lt6")) != -1) {
         switch (c) {
 #ifndef DISABLE_TSEARCH
         case 'm':
@@ -601,6 +606,9 @@ int main (int argc, char **argv)
             break;
         case 'n':
             http_auth_disable = 1;
+            break;
+        case 'o':
+            disable_forced_http_auth = 1;
             break;
         case 'v':
             verbose = 1;
@@ -738,9 +746,11 @@ int main (int argc, char **argv)
         exit(1);
     }
 
-    est_init_logger(EST_LOG_LVL_INFO, NULL);
     if (verbose) {
+	est_init_logger(EST_LOG_LVL_INFO, NULL);
 	est_enable_backtrace(1);
+    } else {
+	est_init_logger(EST_LOG_LVL_ERR, NULL);
     }
     ectx = est_server_init(trustcerts, trustcerts_len,
 	    cacerts_raw, cacerts_len,  
@@ -755,14 +765,14 @@ int main (int argc, char **argv)
      * Change the retry-after period.  This is not
      * necessary, it's only shown here as an example.
      */
-    printf("\nRetry period being set to: %d \n", retry_period);
+    if (verbose) printf("\nRetry period being set to: %d \n", retry_period);
     est_server_set_retry_period(ectx, retry_period);
 
     if (crl) {
 	est_enable_crl(ectx);
     }
     if (!pop) {
-	printf("\nDisabling PoP check");
+	if (verbose) printf("\nDisabling PoP check");
 	est_server_disable_pop(ectx);
     }
 
@@ -787,6 +797,13 @@ int main (int argc, char **argv)
     if (!http_auth_disable) {
 	if (est_set_http_auth_cb(ectx, &process_http_auth)) {
 	    printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");
+	    exit(1);
+	}    
+    }
+    if (disable_forced_http_auth) {
+	if (verbose) printf("\nDisabling HTTP authentication when TLS client auth succeeds\n");
+	if (est_set_http_auth_required(ectx, HTTP_AUTH_NOT_REQUIRED)) {
+	    printf("\nUnable disable required HTTP auth.  Aborting!!!\n");
 	    exit(1);
 	}    
     }
