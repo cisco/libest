@@ -25,65 +25,64 @@
 static ASN1_OBJECT *o_cmcRA = NULL;
 
 /*
- * This function sends an HTTP error response.
+ * This function sends EST specific HTTP error responses.
  */
 void est_send_http_error (EST_CTX *ctx, void *http_ctx, int fail_code)
 {
+    struct mg_connection *conn = (struct mg_connection*)http_ctx;
+
     switch (fail_code) {
     case EST_ERR_BAD_PKCS10:
-        if (!mg_write(http_ctx, EST_HDR_BAD_PKCS10, strnlen(EST_HDR_BAD_PKCS10, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
-        if (!mg_write(http_ctx, EST_BODY_BAD_PKCS10, strnlen(EST_BODY_BAD_PKCS10, EST_BODY_MAX_LEN))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_400, EST_HTTP_STAT_400_TXT, EST_BODY_BAD_PKCS10);
         break;
     case EST_ERR_AUTH_FAIL:
-        if (!mg_write(http_ctx, EST_HDR_UNAUTHORIZED, strnlen(EST_HDR_UNAUTHORIZED, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
-        if (!mg_write(http_ctx, EST_BODY_UNAUTHORIZED, strnlen(EST_BODY_UNAUTHORIZED, EST_BODY_MAX_LEN))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_401, EST_HTTP_STAT_401_TXT, EST_BODY_UNAUTHORIZED);
         break;
     case EST_ERR_WRONG_METHOD:
-        if (!mg_write(http_ctx, EST_HDR_BAD_METH, strnlen(EST_HDR_BAD_METH, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
-        if (!mg_write(http_ctx, EST_BODY_BAD_METH, strnlen(EST_BODY_BAD_METH, EST_BODY_MAX_LEN))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_400, EST_HTTP_STAT_400_TXT, EST_BODY_BAD_METH);
         break;
     case EST_ERR_NO_SSL_CTX:
-        if (!mg_write(http_ctx, EST_HDR_BAD_SSL, strnlen(EST_HDR_BAD_SSL, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
-        if (!mg_write(http_ctx, EST_BODY_BAD_SSL, strnlen(EST_BODY_BAD_SSL, EST_BODY_MAX_LEN))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_400, EST_HTTP_STAT_400_TXT, EST_BODY_BAD_SSL);
         break;
     case EST_ERR_HTTP_NOT_FOUND:
-        if (!mg_write(http_ctx, EST_HDR_NOT_FOUND, strnlen(EST_HDR_NOT_FOUND, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
-        if (!mg_write(http_ctx, EST_BODY_NOT_FOUND, strnlen(EST_BODY_NOT_FOUND, EST_BODY_MAX_LEN))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_404, EST_HTTP_STAT_404_TXT, EST_BODY_NOT_FOUND);
         break;
     case EST_ERR_HTTP_NO_CONTENT:
-        if (!mg_write(http_ctx, EST_HTTP_HDR_204, strnlen(EST_HTTP_HDR_204, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_204, EST_HTTP_STAT_204_TXT, "");
         break;
     default:
-        if (!mg_write(http_ctx, EST_HDR_UNKNOWN_ERR, strnlen(EST_HDR_UNKNOWN_ERR, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
-        if (!mg_write(http_ctx, EST_BODY_UNKNOWN_ERR, strnlen(EST_BODY_UNKNOWN_ERR, EST_BODY_MAX_LEN))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_400, EST_HTTP_STAT_400_TXT, EST_BODY_UNKNOWN_ERR);
         break;
     }
+}
+
+/*
+ * This function sends a HTTP 202 Accepted response to the 
+ * client with the retry-after value from the CA. This
+ * notifies the client that it should check back later to
+ * see if the CSR was approved.
+ */
+EST_ERROR est_server_send_http_retry_after (EST_CTX *ctx, void *http_ctx, int delay)
+{
+    char http_hdr[EST_HTTP_HDR_MAX];
+    struct mg_connection *conn = (struct mg_connection*)http_ctx;
+
+    snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s%s: %d%s%s", 
+	EST_HTTP_HDR_202,
+        EST_HTTP_HDR_EOL, 
+	EST_HTTP_HDR_STAT_202, 
+	EST_HTTP_HDR_EOL,
+	EST_HTTP_HDR_RETRY_AFTER, 
+	delay, 
+	EST_HTTP_HDR_EOL, 
+	EST_HTTP_HDR_EOL);
+
+    conn->status_code = EST_HTTP_STAT_202;
+    if (!mg_write(http_ctx, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
+        EST_LOG_ERR("HTTP write error while propagating retry-after");
+        return (EST_ERR_HTTP_WRITE);
+    }
+    return (EST_ERR_NONE);
 }
 
 /*
@@ -707,18 +706,8 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
          * the CA is not configured for automatic enrollment.
          * Send the HTTP retry response to the client.
          */
-        EST_LOG_INFO("CA server requests retry, likely not setup for auto-enroll");
-        snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s%s: %d%s%s", 
-		EST_HTTP_HDR_202,
-                EST_HTTP_HDR_EOL, 
-		EST_HTTP_HDR_STAT_202, 
-		EST_HTTP_HDR_EOL,
-                EST_HTTP_HDR_RETRY_AFTER, 
-		ctx->retry_period, 
-		EST_HTTP_HDR_EOL, 
-		EST_HTTP_HDR_EOL);
-        hdrlen = strnlen(http_hdr, EST_HTTP_HDR_MAX);
-        if (!mg_write(http_ctx, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
+        EST_LOG_INFO("CA server requests retry, possibly it's not setup for auto-enroll");
+        if (EST_ERR_NONE != est_server_send_http_retry_after(ctx, http_ctx, ctx->retry_period)) { 
 	    X509_REQ_free(csr);
             return (EST_ERR_HTTP_WRITE);
         }
@@ -880,7 +869,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     /*
      * See if this is a simple enrollment request
      */
-    if (strncmp(uri, EST_SIMPLE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_SIMPLE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strncmp(method, "POST", 4)) {
             EST_LOG_WARN("Incoming HTTP request used wrong method\n");
@@ -918,7 +907,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     /*
      * See if this is a re-enrollment request
      */
-    if (strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strncmp(method, "POST", 4)) {
             EST_LOG_WARN("Incoming HTTP request used wrong method\n");
@@ -958,7 +947,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
      * See if this is a keygen request
      * FIXME: this is currently not implemented
      */
-    if (strncmp(uri, EST_KEYGEN_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_KEYGEN_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strncmp(method, "POST", 4)) {
             EST_LOG_WARN("Incoming HTTP request used wrong method\n");
@@ -979,7 +968,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     /*
      * See if this is a CSR attributes request
      */
-    if (strncmp(uri, EST_CSR_ATTRS_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_CSR_ATTRS_URI, EST_URI_MAX_LEN) == 0) {
         /* Only GET is allowed */
         if (strncmp(method, "GET", 4)) {
             EST_LOG_WARN("Incoming HTTP request used wrong method\n");
@@ -992,6 +981,13 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
             est_send_http_error(ctx, http_ctx, rc); 
             return (rc);
         }
+    }
+
+    /*
+     * Send a 404 error if the URI didn't match 
+     */
+    else {
+        est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NOT_FOUND);
     }
 
     return (EST_ERR_NONE);

@@ -376,8 +376,15 @@ static int should_keep_alive (const struct mg_connection *conn)
     const char *http_version = conn->request_info.http_version;
     const char *header = mg_get_header(conn, "Connection");
 
+    /*
+     * Slight deviation from Mongoose behavior here.  We will close the
+     * connection when sending a 202 Accepted response.  We will also
+     * close the connection for any 4xx response, where Mongoose was only
+     * closing for the 401 Unauthorized
+     */
     if (conn->must_close ||
-        conn->status_code == 401 ||
+	conn->status_code == EST_HTTP_STAT_202 ||
+        conn->status_code >= 400 ||
         !conn->ctx->enable_keepalives ||
         (header != NULL && mg_strcasecmp(header, "keep-alive") != 0) ||
         (header == NULL && http_version && strcmp(http_version, "1.1"))) {
@@ -1632,9 +1639,7 @@ struct mg_context *mg_start (void *user_data)
     }
     ctx->user_data = user_data;
     ctx->est_ctx = (EST_CTX*)user_data;
-    ctx->enable_keepalives = 0; //Probably not going to support keep-alives,
-                                //but we'll keep this knob here in case we
-                                //want to support them in the future.
+    ctx->enable_keepalives = 1; 
     if (!set_ssl_option(ctx)) {
         free_context(ctx);
         return NULL;

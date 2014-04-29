@@ -36,17 +36,27 @@
  */
 #define EST_CIPHER_LIST             "ALL:!aNULL:!eNULL:!SSLv2:!EXPORT"
 
+#define EST_HTTP_STAT_202	    202 
+#define EST_HTTP_STAT_204	    204 
+#define EST_HTTP_STAT_400	    400 
+#define EST_HTTP_STAT_401	    401
+#define EST_HTTP_STAT_404	    404
+
+#define EST_HTTP_STAT_202_TXT	    "Accepted" 
+#define EST_HTTP_STAT_204_TXT	    "No Content" 
+#define EST_HTTP_STAT_400_TXT	    "Bad Request" 
+#define EST_HTTP_STAT_401_TXT	    "Unauthorized" 
+#define EST_HTTP_STAT_404_TXT	    "Not Found" 
 
 #define EST_HTTP_HDR_MAX            1024 
 #define EST_HTTP_HDR_200            "HTTP/1.1 200 OK"
 #define EST_HTTP_HDR_STAT_200       "Status: 200 OK"
-#define EST_HTTP_HDR_202            "HTTP/1.1 202 Accepted"
-#define EST_HTTP_HDR_STAT_202       "Status: 202 Accepted"
-#define EST_HTTP_HDR_204            "HTTP/1.1 204 No Content"
-#define EST_HTTP_HDR_STAT_204       "Status: 204 No Content"
-#define EST_HTTP_HDR_400            "HTTP/1.1 400 Bad Request"
-#define EST_HTTP_HDR_401            "HTTP/1.1 401 Unauthorized"
-#define EST_HTTP_HDR_404            "HTTP/1.1 404 Not Found"
+#define EST_HTTP_HDR_202            "HTTP/1.1 202 " EST_HTTP_STAT_202_TXT
+#define EST_HTTP_HDR_STAT_202       "Status: 202 "  EST_HTTP_STAT_202_TXT
+#define EST_HTTP_HDR_204            "HTTP/1.1 204 " EST_HTTP_STAT_204_TXT
+#define EST_HTTP_HDR_400            "HTTP/1.1 400 " EST_HTTP_STAT_400_TXT
+#define EST_HTTP_HDR_401            "HTTP/1.1 401 " EST_HTTP_STAT_401_TXT
+#define EST_HTTP_HDR_404            "HTTP/1.1 404 " EST_HTTP_STAT_404_TXT
 #define EST_HTTP_HDR_CT             "Content-Type"
 #define EST_HTTP_HDR_CE             "Content-Transfer-Encoding"
 #define EST_HTTP_HDR_CL             "Content-Length"
@@ -71,27 +81,11 @@
 /*
  * HTTP error responses
  */
-#define EST_HDR_BAD_URI         "HTTP/1.1 400 Bad Request\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
-#define EST_BODY_BAD_URI        "Invalid URI.  Valid URI may be one of: \n" \
-    "/cacerts, /simpleenroll and /simplereenroll\n"
-#define EST_HDR_BAD_PKCS10      "HTTP/1.1 400 Bad Request\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
 #define EST_BODY_BAD_PKCS10     "Invalid or corrupted pkcs10 request.\n"
-#define EST_HDR_UNAUTHORIZED    "HTTP/1.1 401 Unauthorized\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
 #define EST_BODY_UNAUTHORIZED   "The server was unable to authorize the request.\n"
-#define EST_HDR_BAD_METH        "HTTP/1.1 400 Bad Request\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
 #define EST_BODY_BAD_METH       "Invalid HTTP method used.  Either GET or POST required depending on the request type.\n"
-#define EST_HDR_BAD_SSL         "HTTP/1.1 400 TLS error\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
 #define EST_BODY_BAD_SSL        "An unknown TLS error has occured.\n"
-#define EST_HDR_UNKNOWN_ERR     "HTTP/1.1 400 error\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
 #define EST_BODY_UNKNOWN_ERR    "An unknown error has occured.\n"
-#define EST_HDR_NOT_FOUND       "HTTP/1.1 404 Not Found\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
 #define EST_BODY_NOT_FOUND      "Requested content is currently not available on the server.\n"
 
 
