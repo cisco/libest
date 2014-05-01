@@ -52,6 +52,7 @@ int est_client_set_cert_and_key (SSL_CTX *ctx, X509 *cert, EVP_PKEY *key)
     }
 
     if (SSL_CTX_use_PrivateKey(ctx, key) <= 0) {
+
         EST_LOG_ERR("Unable to set private key");
         ossl_dump_ssl_errors();
         return 1;
@@ -1550,16 +1551,14 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
     return (rv);
 }
 
-/*  est_client_enroll_csr() 
- *
- *  This function implements the Simple Enroll
+/*  est_client_enroll_pkcs10() This function implements the Simple Enroll
  *  flow. It signs the CSR that was provided and then sends the CSR
- *   to the EST server and retrieves the pkcs7 response.
+ *  to the EST server and retrieves the pkcs7 response.
  *
  *  Parameters:
  *    ctx    EST context
  *    ssl    SSL context being used for this EST session
- *    csr    Ponter to X509_REQ object containing the PKCS10 CSR
+ *    csr    Pointer to X509_REQ object containing the PKCS10 CSR
  *    pkcs7_len  pointer to an integer in which the length of the recieved
  *               pkcs7 response is placed.
  *    priv_key Pointer to the private key used to sign the CSR.
@@ -2450,7 +2449,6 @@ EST_ERROR est_client_set_uid_pw (EST_CTX *ctx, const char *uid, const char *pwd)
     return (EST_ERR_NONE);
 }
 
-
 /*
  * Application API
  */
@@ -2463,15 +2461,17 @@ EST_ERROR est_client_set_uid_pw (EST_CTX *ctx, const char *uid, const char *pwd)
     X509_REQ.
     @param pkcs7_len Pointer to an integer to hold the length of the PKCS7
     buffer.
-    @param priv_key Pointer to the private key that will be used to sign the CSR.
+    @param priv_key Pointer to the private key that will be used to sign the CSR,
+    or NULL if the CSR is already signed.
  
     @return EST_ERROR
 
     est_client_enroll_csr() connects to the EST server, establishes a SSL/TLS
     connection to the EST server that was configured with the previous call to
     est_client_set_server(), and sends the simple enroll request.  The application
-    layer must provide the PKCS10 CSR that will be enrolled.  The CSR should not
-    need to be signed by the private key.  The EST library will take care of
+    layer must provide the PKCS10 CSR that will be enrolled.
+    If the priv_key argument given is not NULL, then the CSR should not
+    need to be signed by the private key, and the EST library will take care of
     signing the CSR.  However, the CSR must contain everything else that is
     required, including the public key.  
     
@@ -2481,7 +2481,8 @@ EST_ERROR est_client_set_uid_pw (EST_CTX *ctx, const char *uid, const char *pwd)
     call est_client_copy_enrolled_cert() to retrieve the new client certificate 
     from the context.
 
-    The application must provide a pointer to the private key used to sign the CSR.
+    Unless the CSR is not already signed, which is indicated by a NULL priv_key,
+    the application must provide a pointer to the private key used to sign the CSR.
     This is required by the EST library in the event that the EST server has
     requested the proof-of-possession value be included in the CSR.  The EST library
     will automatically include the proof-of-posession value and sign the CSR
@@ -2508,20 +2509,18 @@ EST_ERROR est_client_enroll_csr (EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EV
         return (EST_ERR_NO_CSR);
     }
 
-    if (!priv_key) {
-        return (EST_ERR_NO_KEY);
-    }
-
     if (!ctx->est_client_initialized) {
         return EST_ERR_CLIENT_NOT_INITIALIZED;
     }
 
-    /*
-     * Do a sanity check on the CSR
-     */
-    rv = est_client_check_csr(csr); 
-    if (EST_ERR_NONE != rv) {
-	return (rv);
+    if (priv_key) {
+	/*
+	 * Do a sanity check on the CSR
+	*/
+	rv = est_client_check_csr(csr); 
+	if (EST_ERR_NONE != rv) {
+	    return (rv);
+	}
     }
     /*
      * Establish TLS session with the EST server
@@ -2531,7 +2530,11 @@ EST_ERROR est_client_enroll_csr (EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EV
         goto err;
     }
 
-    rv = est_client_enroll_pkcs10(ctx, ssl, csr, pkcs7_len, priv_key, 0);
+    if (priv_key) {
+      rv = est_client_enroll_pkcs10(ctx, ssl, csr, pkcs7_len, priv_key, 0);
+    } else {
+        rv = est_client_enroll_req(ctx, ssl, csr, pkcs7_len, 0);
+    }
     est_client_disconnect(ctx, &ssl);
     if (rv == EST_ERR_AUTH_FAIL &&
         (ctx->auth_mode == AUTH_DIGEST ||
@@ -2554,7 +2557,11 @@ EST_ERROR est_client_enroll_csr (EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EV
             EST_LOG_ERR("Connection failed on second attempt with basic/digest parameters");
             goto err;
         }
-        rv = est_client_enroll_pkcs10(ctx, ssl, csr, pkcs7_len, priv_key, 0);
+	if (priv_key) {
+	  rv = est_client_enroll_pkcs10(ctx, ssl, csr, pkcs7_len, priv_key, 0);
+	} else {
+	  rv = est_client_enroll_req(ctx, ssl, csr, pkcs7_len, 0);
+	}
         if (rv != EST_ERR_NONE) {
             EST_LOG_ERR("Enroll failed on second attempt during basic/digest authentication");
         }
@@ -2851,7 +2858,7 @@ EST_ERROR est_client_reenroll (EST_CTX *ctx, X509 *cert, int *pkcs7_len, EVP_PKE
     }
 
     if (!cert) {
-        return (EST_ERR_NO_CSR);
+        return (EST_ERR_NO_CERT);
     }
 
     if (!priv_key) {
@@ -2942,7 +2949,7 @@ EST_ERROR est_client_reenroll (EST_CTX *ctx, X509 *cert, int *pkcs7_len, EVP_PKE
         }
         rv = est_client_enroll_pkcs10(ctx, ssl, req, pkcs7_len, priv_key, 1);
         if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Enroll failed on second attempt during basic/digest authentication");
+            EST_LOG_ERR("Reenroll failed on second attempt during basic/digest authentication");
         }
         est_client_disconnect(ctx, &ssl);
     }
@@ -3346,7 +3353,7 @@ EST_ERROR est_client_enable_basic_auth_hint (EST_CTX *ctx)
     @param cert_verify_cb A pointer to a function in the ET client application
     that is called when a received server identity certificate has failed
     verification from the SSL code.  This function takes as input two
-    parameters, a pointer to the X509 structure contianing the server's
+    parameters, a pointer to the X509 structure containing the server's
     certificate, and a integer value set to the OpenSSL defined error
     for this certificate.  This callback function returns a 0 if the server's
     identity certificate has been rejected, and any other value if it

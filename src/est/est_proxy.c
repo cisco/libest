@@ -977,6 +977,7 @@ EST_CTX * est_proxy_init (unsigned char *ca_chain, int ca_chain_len,
     ctx->est_mode = EST_PROXY;
     ctx->retry_period = EST_RETRY_PERIOD_DEF;
     ctx->server_enable_pop = 1;
+    ctx->require_http_auth = HTTP_AUTH_REQUIRED;
 
     if (est_client_set_uid_pw(ctx, uid, pwd) != EST_ERR_NONE) {
         EST_LOG_ERR("Failed to store the userid and password during proxy initialization");

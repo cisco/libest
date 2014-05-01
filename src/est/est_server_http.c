@@ -1046,7 +1046,7 @@ static int parse_http_message (char *buf, int len, struct mg_request_info *ri)
         ri->http_version = skip(&buf, "\r\n");
         parse_http_headers(&buf, ri);
     }
-    printf("\nrequest_len=%d\n", request_length);
+    EST_LOG_INFO("request_len=%d\n", request_length);
     return request_length;
 }
 

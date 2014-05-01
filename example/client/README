@@ -18,39 +18,52 @@ To run the example:
 
     export EST_OPENSSL_CACERT=../server/estCA/cacert.crt
 
-3.  Connect to the EST server listening on port 8085 and request a 
-    new certificate.  The example EST server uses the user ID and
+3.  Produce a new private key, connect to the EST server listening on port 8085,
+    and request a new certificate.  The example EST server uses the user ID and
     password estuser/estpwd: 
 
-    ./estclient  -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp 
+    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp 
 
-    Note: To check the cert response, use this command:
+    Note: The new private key is stored at /tmp/key-x-x.pem.
+    To check the cert response, use this command:
 
     openssl base64 -d -in /tmp/cert-0-0.pkcs7 | \
         openssl pkcs7 -inform DER -text -print_certs
+
+    Instead of producing a new key along with a (re-)enrollment request,
+    you may use an existing key stored in a PEM file
+    or generate a fresh one yourself, using for instance the following command:
+
+    openssl ecparam -name prime256v1 -genkey -out privkey.pem
+
+    To use an existing private key for the CSR, supply it using the -x option:
+
+    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -x privkey.pem -o /tmp
+
+    You may also use an existing CSR for entrollment, supplied using the -y option:
+
+    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -y req.p10 -o /tmp
 
 4.  Optionally you can request attributes as a single request or as
     part of the enroll. For a simple attributes request use the
     following command:
 
-    ./estclient -p 8085 -s 127.0.0.1 -a -o /tmp
+    ./estclient -a -s 127.0.0.1 -p 8085 -o /tmp
 
-    For attributes request with the attributes added to the CSR you
-    must first have a public key.  This file must be named 'estclient_keypair' 
-    and reside in the same directory as 'estclient'. If the key does not
-    already exist generate it using the following command:
+    To view the list attributes obtained this way, you may use:
 
-    openssl ecparam -name prime256v1 -genkey -out ./estclient_keypair
-
-    And perform the enroll  using this command:
-
-    ./estclient -p 8085 -s 127.0.0.1 -u estuser -h estpwd -e -a -o /tmp
-
-5.  Optionally, you can use a certificate to identify the EST client to
-    the server instead of specifying the HTTP user name/password.  
+    openssl base64 -d -A -in /tmp/csr-0-0.base64 | \
+        openssl asn1parse -inform DER
+ 
+    Then you can perform the enroll using this command:
+ 
+    ./estclient -e -a -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp
+ 
+5.  Optionally, you can use a certificate to identify the EST client
+    to the server instead of specifying the HTTP user name/password.  
     Now that you've enrolled a certificate in step #3
     above, you can use that certificate to enroll again. Note, your
-    EST server should be configured to disable HTTP authentication. 
+    EST server should be configured not to force HTTP authentication. 
 
     First, convert the pkcs7 cert from step 3 to a PEM cert:
 
