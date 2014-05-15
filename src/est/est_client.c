@@ -1642,7 +1642,7 @@ static EST_ERROR est_client_enroll_cn (EST_CTX *ctx, SSL *ssl, char *cn,
     char        *tls_uid;
 
     if (!ctx) {
-        return (EST_ERR_NO_SSL_CTX);
+        return (EST_ERR_NO_CTX);
     }
 
     /*
@@ -2987,7 +2987,7 @@ EST_ERROR est_client_copy_enrolled_cert (EST_CTX *ctx, unsigned char *pkcs7)
 {
 
     if (!ctx) {
-        return (EST_ERR_NO_SSL_CTX);
+        return (EST_ERR_NO_CTX);
     }
 
     if (!ctx->est_client_initialized) {
@@ -3044,7 +3044,7 @@ EST_ERROR est_client_get_cacerts (EST_CTX *ctx, int *ca_certs_len)
     SSL *ssl = NULL;
 
     if (!ctx) {
-        return (EST_ERR_NO_SSL_CTX);
+        return (EST_ERR_NO_CTX);
     }
 
     if (!ctx->est_client_initialized) {
@@ -3099,7 +3099,7 @@ EST_ERROR est_client_copy_cacerts (EST_CTX *ctx, unsigned char *ca_certs)
 {
 
     if (!ctx) {
-        return (EST_ERR_NO_SSL_CTX);
+        return (EST_ERR_NO_CTX);
     }
 
     if (!ctx->est_client_initialized) {
@@ -3607,7 +3607,7 @@ EST_ERROR est_client_copy_retry_after (EST_CTX *ctx, int *retry_delay,
 {
 
     if (!ctx) {
-        return (EST_ERR_NO_SSL_CTX);
+        return (EST_ERR_NO_CTX);
     }
 
     if (!ctx->est_client_initialized) {
