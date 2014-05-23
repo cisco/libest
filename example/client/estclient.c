@@ -235,7 +235,7 @@ static int simple_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
 
     if (force_pop) {
         rv =  est_client_force_pop(ectx);
-        if (rv == EST_ERR_NONE) {
+        if (rv != EST_ERR_NONE) {
   	    printf("\nFailed to enable force PoP");
         }
     }
