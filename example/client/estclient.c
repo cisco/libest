@@ -43,9 +43,12 @@
  */
 static char est_http_uid[MAX_UID_LEN];
 static char est_http_pwd[MAX_PWD_LEN];
+static char est_srp_uid[MAX_UID_LEN];
+static char est_srp_pwd[MAX_PWD_LEN];
 static char est_server[MAX_SERVER_LEN];
 static int est_port;
 static int verbose = 0;
+static int srp = 0;
 static char csr_file[MAX_FILENAME_LEN];
 static char priv_key_file[MAX_FILENAME_LEN];
 static char client_key_file[MAX_FILENAME_LEN];
@@ -122,6 +125,9 @@ static void show_usage_and_exit (void)
 	"  -u <string>       Specify user name for HTTP authentication.\n"
 	"  -h <string>       Specify password for HTTP authentication.\n"
 	"  -?                Print this help message and exit.\n"
+	"  --srp                       Enable TLS-SRP cipher suites.  Use with --srp-user and --srp-password options.\n"
+	"  --srp-user     <string>     Specify the SRP user name.\n"
+	"  --srp-password <string>     Specify the SRP password.\n"
         "\n");
     exit(255);
 }
@@ -139,7 +145,7 @@ static unsigned char * generate_private_key (int *key_len)
 
     BN_set_word(bn, 0x10001);
 
-    RSA_generate_key_ex(rsa, 1024, bn, NULL);
+    RSA_generate_key_ex(rsa, SRP_MINIMAL_N, bn, NULL);
     out = BIO_new(BIO_s_mem());
     PEM_write_bio_RSAPrivateKey(out,rsa,NULL,NULL,0,NULL,NULL);
     *key_len = BIO_get_mem_data(out, &tdata);
@@ -241,7 +247,7 @@ static int simple_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
     }
 
     if (csr_file[0]) {
-	X509_REQ *csr = read_csr(csr_file);
+	csr = read_csr(csr_file);
         if (csr == NULL){
             rv = EST_ERR_PEM_READ;
         }                    
@@ -569,6 +575,15 @@ static void worker_thread (void *ptr)
 	    exit(1);
 	}        
 
+
+	if (srp) {
+	    rv = est_client_enable_srp(ectx, 1024, est_srp_uid, est_srp_pwd);
+	    if (rv != EST_ERR_NONE) {
+		printf("\nUnable to enable SRP.  Aborting!!!\n");
+	        exit(1);
+	    }        
+	}
+
 	est_client_set_server(ectx, est_server, est_port);
 
 	if (getcert) {
@@ -755,6 +770,9 @@ int main (int argc, char **argv)
     BIO *certin;
     static struct option long_options[] = {
         {"trustanchor", 1, 0, 0},
+        {"srp", 0, 0, 0},
+        {"srp-user", 1, 0, 0},
+        {"srp-password", 1, 0, 0},
         {NULL, 0, NULL, 0}
     };
     int option_index = 0;
@@ -773,20 +791,28 @@ int main (int argc, char **argv)
     while ((c = getopt_long(argc, argv, "?zfvagerx:y:k:s:p:o:c:t:w:i:u:h:", long_options, &option_index)) != -1) {
         switch (c) {
             case 0:
+#if 0
                 printf("option %s", long_options[option_index].name);
                 if (optarg)
                     printf (" with arg %s", optarg);
                 printf ("\n");
-
+#endif
                 if (!strncmp(long_options[option_index].name,"trustanchor", strlen("trustanchor"))) {
                     if (!strncmp(optarg, "no", strlen("no"))) {
                         trustanchor = 0;
                     } else {
                         trustanchor_file = optarg;
                     }
-                } else if (0) {
-                    
                 }
+		if (!strncmp(long_options[option_index].name,"srp", strlen("srp"))) {
+		    srp = 1;
+		}
+		if (!strncmp(long_options[option_index].name,"srp-user", strlen("srp-user"))) {
+		    strncpy(est_srp_uid, optarg, MAX_UID_LEN);
+		}
+		if (!strncmp(long_options[option_index].name,"srp-password", strlen("srp-password"))) {
+		    strncpy(est_srp_pwd, optarg, MAX_PWD_LEN);
+		}
                 break;
             case 'v':
                 verbose = 1;

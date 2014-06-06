@@ -45,3 +45,13 @@ this example:
     openssl ca -config ./estExampleCA.cnf  -gencrl -out crl.pem
     # append the CRL to the CA certs
     cat crl.pem >> estCA/cacert.crt 
+
+
+TLS-SRP support
+---------------------
+To enable TLS-SRP use the -s switch when starting estserver.  You'll
+need to provide the SRP verifier file to be used.  This can be generated
+using OpenSSL.  An example follows:
+
+    touch passwd.srpv
+    openssl srp -srpvfile passwd.srpv -gn 1536 -add jsmith
