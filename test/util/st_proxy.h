@@ -23,6 +23,18 @@ int st_proxy_start(int listen_port,
 		   int server_port,
 	           int enable_pop,
 	           int ec_nid);
+int st_proxy_start_srp(int listen_port,
+	           char *certfile,
+	           char *keyfile,
+	           char *realm,
+	           char *ca_chain_file,
+	           char *trusted_certs_file,
+		   char *userid,
+		   char *password,
+		   char *server,
+		   int server_port,
+	           int enable_pop,
+		   char *vfile);
 void st_proxy_enable_pop(void);
 void st_proxy_disable_pop(void);
 void st_proxy_set_auth (EST_HTTP_AUTH_MODE auth_mode);

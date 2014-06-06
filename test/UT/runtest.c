@@ -31,6 +31,7 @@ extern int us901_add_suite(void);
 extern int us902_add_suite(void);
 extern int us903_add_suite(void);
 extern int us1005_add_suite(void);
+extern int us1060_add_suite(void);
 
 /* The main() function for setting up and running the tests.
  * Returns a CUE_SUCCESS on successful running, another
@@ -146,6 +147,13 @@ int main(int argc, char *argv[])
     rv = us1005_add_suite();
     if (rv != CUE_SUCCESS) {
 	printf("\nFailed to add test suite for US1005 (%d)", rv);
+	exit(1);
+    }
+#endif
+#if 10 
+    rv = us1060_add_suite();
+    if (rv != CUE_SUCCESS) {
+	printf("\nFailed to add test suite for US1060 (%d)", rv);
 	exit(1);
     }
 #endif
