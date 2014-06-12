@@ -13,6 +13,7 @@ SRC =  	runtest.c \
 	US902/us902.c \
 	US903/us903.c \
 	US1005/us1005.c \
+	US1060/us1060.c \
 	../util/curl_utils.c \
 	../util/test_utils.c \
 	../util/st_server.c \

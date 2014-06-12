@@ -10,4 +10,4 @@ export EST_CACERTS_RESP=CA/estCA/cacert.crt
 export EST_OPENSSL_CACONFIG=CA/estExampleCA.cnf
 
 #Start the EST server
-../../example/server/estserver -n -l -p 8089 -c CA/estCA/private/estservercertandkey.pem -k CA/estCA/private/estservercertandkey.pem -r estrealm -d 30 -v
+../../example/server/estserver -n -l -p 8089 -c CA/estCA/private/estservercertandkey.pem -k CA/estCA/private/estservercertandkey.pem -r estrealm -d 60 -v

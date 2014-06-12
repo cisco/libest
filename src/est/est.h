@@ -14,6 +14,7 @@
 #include <openssl/ssl.h>
 #include <openssl/engine.h>
 #include <openssl/conf.h>
+#include <openssl/srp.h>
 
 #ifdef  __cplusplus
 extern "C" {
@@ -92,6 +93,9 @@ typedef enum {
     E(EST_ERR_BAD_X509) \
     E(EST_ERR_BAD_BASE64) \
     E(EST_ERR_BAD_ASN1_HEX) \
+    E(EST_ERR_SRP_STRENGTH_LOW) \
+    E(EST_ERR_SRP_USERID_BAD) \
+    E(EST_ERR_SRP_PWD_BAD) \
     E(EST_ERR_UNKNOWN)
 
 #define GENERATE_ENUM(ENUM) ENUM,
@@ -164,6 +168,9 @@ typedef enum {
 \n EST_ERR_BAD_X509  An invalid or corrupted X509 certificate was provided to libest.  
 \n EST_ERR_BAD_BASE64  An invalid or corrupted CSR Attribute Base64 encoded string was provided. 
 \n EST_ERR_BAD_ASN1_HEX  An invalid or corrupted CSR Attribute ASN1 Hex string was provided.
+\n EST_ERR_SRP_STRENGTH_LOW  The SRP strength requested by the application was too small.
+\n EST_ERR_SRP_USERID_BAD  The SRP user ID was not accepted.
+\n EST_ERR_SRP_PWD_BAD  The SRP password was not accepted.
 \n EST_ERR_LAST  Last error in the enum definition. Should never be used.
 */
 typedef enum {
@@ -308,6 +315,7 @@ EST_ERROR est_server_set_auth_mode(EST_CTX *ctx, EST_HTTP_AUTH_MODE amode);
 char *est_server_generate_auth_digest(EST_HTTP_AUTH_HDR *ah, char *HA1);
 EST_ERROR est_server_start(EST_CTX *ctx);
 EST_ERROR est_server_stop(EST_CTX *ctx);
+EST_ERROR est_server_enable_srp(EST_CTX *ctx, int (*cb)(SSL *s, int *ad, void *arg));
 EST_ERROR est_server_enable_pop(EST_CTX *ctx);
 EST_ERROR est_server_disable_pop(EST_CTX *ctx);
 EST_ERROR est_server_handle_request(EST_CTX *ctx, int fd);
@@ -353,6 +361,7 @@ EST_ERROR est_client_set_read_timeout(EST_CTX *ctx, int timeout);
 EST_ERROR est_client_enable_basic_auth_hint(EST_CTX *ctx);
 EST_ERROR est_client_force_pop(EST_CTX *ctx);
 EST_ERROR est_client_unforce_pop(EST_CTX *ctx);
+EST_ERROR est_client_enable_srp(EST_CTX *ctx, int strength, char *uid, char *pwd); 
 
 /*
  * The following callback entry points must be set by the application

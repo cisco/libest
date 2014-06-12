@@ -10,13 +10,14 @@
 
 #ifndef HEADER_EST_LOCL_H
 #define HEADER_EST_LOCL_H
+#include <openssl/srp.h>
 
 #include "est_config.h"
 /*
  * Version identifiers.  These should be updated appropriately
  * for each release.
  */
-#define EST_API_LEVEL       2  //Update this whenever there's a change to the public API
+#define EST_API_LEVEL       3  //Update this whenever there's a change to the public API
 #define EST_VER_STRING      PACKAGE_STRING
 
 #define EST_URI_MAX_LEN     32
@@ -35,7 +36,16 @@
  * Cipher suite filter for OpenSSL
  */
 #define EST_CIPHER_LIST             "ALL:!aNULL:!eNULL:!SSLv2:!EXPORT"
-
+#define EST_CIPHER_LIST_SRP_SERVER  "ALL:!eNULL:!SSLv2:!EXPORT:SRP"
+#define EST_CIPHER_LIST_SRP_ONLY    "SRP:!aRSA:!aDSS"
+#define EST_CIPHER_LIST_SRP_AUTH    "SRP"
+/*
+ * SRP
+ */
+#define EST_SRP_STRENGTH_MIN	    SRP_MINIMAL_N  /* from OpenSSL */
+/*
+ * HTTP
+ */
 #define EST_HTTP_STAT_202	    202 
 #define EST_HTTP_STAT_204	    204 
 #define EST_HTTP_STAT_400	    400 
@@ -110,6 +120,7 @@ typedef enum {
     EST_HTTP_AUTH,
     EST_HTTP_AUTH_PENDING,
     EST_CERT_AUTH,
+    EST_SRP_AUTH,
 } EST_AUTH_STATE;
 
 
@@ -218,6 +229,8 @@ struct est_ctx {
     int   ca_chain_raw_len;
     CLIENT_CTX_LU_NODE_T *client_ctx_array;
     void *ex_data;
+    int enable_srp;
+    int (*est_srp_username_cb)(SSL *s, int *ad, void *arg);
 };
 
 /*

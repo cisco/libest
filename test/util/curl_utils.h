@@ -13,6 +13,12 @@
 #define CURL_UTILS_H
 
 long curl_http_get(char *url, char *cacert, void *writefunc);
+long curl_http_post_srp(char *url, char *ct, char *data, 
+	                char *uidpwd, char *cacert, long authmode,
+		        char *cipher_suite,
+		        char *srp_user, char *srp_pwd,
+		        void *writefunc,
+		        void *hdrfunc);
 long curl_http_post(char *url, char *ct, char *data, 
 	            char *uidpwd, char *cacert, long authmode,
 		    char *cipher_suite,

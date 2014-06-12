@@ -429,6 +429,7 @@ static EST_ERROR est_proxy_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
      */
     switch (est_enroll_auth(ctx, http_ctx, ssl, reenroll)) {
     case EST_HTTP_AUTH:
+    case EST_SRP_AUTH:
     case EST_CERT_AUTH:
         break;
     case EST_HTTP_AUTH_PENDING:

@@ -586,6 +586,9 @@ static int pull (FILE *fp, struct mg_connection *conn, char *buf, int len)
 	     */
 	    nread = 0;
 	    break;
+	case SSL_ERROR_WANT_X509_LOOKUP:
+	    EST_LOG_ERR("SSL_read error, wants lookup\n");
+	    break;
 	default:
 	    /*
 	     * For all other errors, simply log the error
@@ -1322,13 +1325,28 @@ static int set_ssl_option (struct mg_context *ctx)
 	ectx->dh_tmp = NULL;
     }
 
-    /*
-     * Set the TSL cipher suites that should be allowed.
-     * This disables anonymous and null ciphers
-     */
-    if (!SSL_CTX_set_cipher_list(ssl_ctx, EST_CIPHER_LIST)) { 
-        EST_LOG_ERR("Failed to set SSL cipher suites\n");
-	return 0;
+    if (ectx->enable_srp) {
+	EST_LOG_INFO("Enabling TLS SRP mode\n");
+	if (!SSL_CTX_set_cipher_list(ssl_ctx, EST_CIPHER_LIST_SRP_SERVER)) { 
+	    EST_LOG_ERR("Failed to set SSL cipher suites\n");
+	    return 0;
+	}
+	/*
+	 * Set the application specific handler for
+	 * providing the SRP parameters during user 
+	 * authentication.
+	 */
+	SSL_CTX_set_srp_username_callback(ssl_ctx, ectx->est_srp_username_cb);
+    } else {
+	EST_LOG_INFO("TLS SRP not enabled\n");
+	/*
+	 * Set the TLS cipher suites that should be allowed.
+	 * This disables anonymous and null ciphers
+	 */
+	if (!SSL_CTX_set_cipher_list(ssl_ctx, EST_CIPHER_LIST)) { 
+	    EST_LOG_ERR("Failed to set SSL cipher suites\n");
+	    return 0;
+	}
     }
 
     if (SSL_CTX_use_certificate(ssl_ctx, ectx->server_cert) == 0) {
@@ -1558,6 +1576,10 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
 		case SSL_ERROR_WANT_WRITE:
 		    EST_LOG_INFO("App using non-blocking socket");
 		    process_new_connection(conn);
+		    break;
+		case SSL_ERROR_WANT_X509_LOOKUP:
+		    EST_LOG_ERR("SSL_accept error, wants lookup");
+		    rv = EST_ERR_UNKNOWN;
 		    break;
 		case SSL_ERROR_NONE:
 		default:
