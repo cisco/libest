@@ -5,7 +5,7 @@
  *	       Assumptions:  - Web server using this module utilizes
  *	                       OpenSSL for HTTPS services.
  *	                     - OpenSSL is linked along with this
- *	                       modulue.
+ *	                       module.
  *
  * April, 2013
  *
@@ -283,10 +283,11 @@ EST_AUTH_STATE est_enroll_auth (EST_CTX *ctx, void *http_ctx, SSL *ssl,
     }
 
     /*
-     * If the application layer has enabled HTTP authentication,
+     * If the application layer has enabled HTTP authentication, and
+     * HTTP authentication is forced or certificate-based authentication did not succeed,
      * then check the user's credentials
      */
-    if (ctx->est_http_auth_cb) {
+    if (ctx->est_http_auth_cb && (rv != EST_CERT_AUTH || ctx->force_http_auth)) {
         /*
          * Try HTTP authentication.
          */
@@ -906,12 +907,11 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
             EST_LOG_WARN("Enrollment failed with rc=%d (%s)\n", 
 		         rc, EST_ERR_NUM_TO_STR(rc));
-	    if (rc == EST_ERR_AUTH_FAIL) {
-		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
-	    } else {
-		est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
+	    if (rc != EST_ERR_AUTH_FAIL && rc != EST_ERR_CA_ENROLL_FAIL) {
+		rc = EST_ERR_BAD_PKCS10;
 	    }
-            return (EST_ERR_BAD_PKCS10);
+	    est_send_http_error(ctx, http_ctx, rc);
+            return rc;
         }
     }
 
@@ -1242,6 +1242,7 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
 	return (EST_ERR_BAD_MODE);
 	break;
     }
+	return (EST_ERR_NONE); // just to prevent compiler warning on missing function return
 }
 
 /*! @brief est_set_ca_enroll_cb() is used by an application to install
@@ -1250,10 +1251,10 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
-    This function must be called prior to starting the EST server.  The
-    callback function must match the following prototype:
+    This function must be called prior to starting the EST server.
+    The callback function must match the following prototype:
 
-        int func(unsigned char*, int, unsigned char**, int*, char*, X509*)
+        int func(unsigned char*, int, unsigned char**, int*, char*, X509*, void *)
 
     This function is called by libest when a certificate request
     needs to be signed by the CA server.  The application will need
@@ -1286,7 +1287,7 @@ EST_ERROR est_set_ca_enroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10, i
     This function must be called prior to starting the EST server.  The
     callback function must match the following prototype:
 
-        int func(unsigned char*, int, unsigned char**, int*, char*, X509*)
+        int func(unsigned char*, int, unsigned char**, int*, char*, X509*, void *)
 
     This function is called by libest when a certificate 
     needs to be renewed by the CA server.  The application will need
@@ -1317,10 +1318,10 @@ EST_ERROR est_set_ca_reenroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10,
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
-    This function must be called prior to starting the EST server.  The
-    callback function must match the following prototype:
+    This function must be called prior to starting the EST server.
+    The callback function must match the following prototype:
 
-        char * func(int*)
+        char * func(int*, void*)
 
     This function is called by libest when a CSR attributes 
     request is received.  The attributes are provided by the CA
@@ -1356,7 +1357,7 @@ EST_ERROR est_set_csr_cb (EST_CTX *ctx, unsigned char *(*cb)(int*csr_len, void *
     This function must be called prior to starting the EST server.  The
     callback function must match the following prototype:
 
-        int func(EST_CTX *, EST_HTTP_AUTH_HDR *, X509 *)
+        int func(EST_CTX *, EST_HTTP_AUTH_HDR *, X509 *, void *)
 
     This function is called by libest when a performing HTTP authentication.
     libest will pass the EST_HTTP_AUTH_HDR struct to the application,
@@ -1380,6 +1381,26 @@ EST_ERROR est_set_http_auth_cb (EST_CTX *ctx,
     }
 
     ctx->est_http_auth_cb = cb;
+
+    return (EST_ERR_NONE);
+}
+
+/*! @brief est_set_http_auth_forced() is used by an application to define whether
+    HTTP authentication should be forced in addition to using client certificates.
+ 
+    @param ctx Pointer to the EST context
+    @param forced Flag indicating that HTTP authentication is forced
+ 
+    @return EST_ERROR.
+ */
+EST_ERROR est_set_http_auth_forced (EST_CTX *ctx, int forced)
+{
+    if (!ctx) {
+	EST_LOG_ERR("Null context");
+        return (EST_ERR_NO_CTX);
+    }
+
+    ctx->force_http_auth = forced;
 
     return (EST_ERR_NONE);
 }

@@ -209,6 +209,7 @@ struct est_ctx {
     EVP_PKEY *server_priv_key;
     int server_enable_pop; /* enable proof-of-possession check */
     int client_force_pop;  /* force proof-of-possession gen at the client */
+    int force_http_auth;  /* force http authentication at the client */
     int csr_pop_present;  /* proof-of-possession already in csr attributes */
     int csr_pop_required; /* proof-of-possession required in enroll */
     SSL_CTX         *ssl_ctx_proxy;
@@ -220,7 +221,8 @@ struct est_ctx {
     unsigned char *ca_chain_raw;
     int   ca_chain_raw_len;
     CLIENT_CTX_LU_NODE_T *client_ctx_array;
-    void *ex_data;
+    void *ex_data; /* Optional application specific data
+                      for use by the callback functions */
 };
 
 /*
