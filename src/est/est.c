@@ -5,7 +5,7 @@
  *	       Assumptions:  - Web server using this module utilizes
  *	                       OpenSSL for HTTPS services.
  *	                     - OpenSSL is linked along with this
- *	                       modulue.
+ *	                       module.
  *
  * November, 2012
  *
@@ -630,7 +630,7 @@ EST_ERROR est_set_ex_data (EST_CTX *ctx, void *ex_data)
     if (!ctx) {
         return (EST_ERR_NO_CTX);
     }
-    if (ctx->ex_data) {
+    if (ctx->ex_data && ex_data) {
 	EST_LOG_WARN("ex_data was already set, possible memory leak");
     }
     ctx->ex_data = ex_data;
