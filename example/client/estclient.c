@@ -38,8 +38,6 @@
 #define MAX_THREADS 10
 #define MAX_ITERATIONS 1000000
 
-#define CLIENT_PUBKEY         "./estclient_keypair"
-
 /*
  * Global variables to hold command line options
  */
@@ -48,9 +46,12 @@ static char est_http_pwd[MAX_PWD_LEN];
 static char est_server[MAX_SERVER_LEN];
 static int est_port;
 static int verbose = 0;
-static char client_cert_file[MAX_FILENAME_LEN];
+static char csr_file[MAX_FILENAME_LEN];
+static char priv_key_file[MAX_FILENAME_LEN];
 static char client_key_file[MAX_FILENAME_LEN];
+static char client_cert_file[MAX_FILENAME_LEN];
 static int num_threads = 1;
+static int read_timeout = EST_SSL_READ_TIMEOUT_DEF;
 static int iterations = 1;
 static unsigned char *new_pkey = NULL;
 static int new_pkey_len = 0;
@@ -70,7 +71,7 @@ static int c_key_len = 0;
 EVP_PKEY *client_priv_key;
 X509 *client_cert;
 
-EVP_PKEY *new_priv_key;
+EVP_PKEY *priv_key;
 
 typedef struct {
     int	    thread_id;
@@ -96,27 +97,31 @@ static void print_version ()
 
 static void show_usage_and_exit (void) 
 {
-    printf("estclient \n");
-    printf("Usage:\n");
-    printf("\nAvailable client OPTIONS\n"
-        "  -v                Verbose operation\n"
+  //    printf("estclient \n");
+  //    printf("Usage:\n");
+    fprintf(stderr, "\nAvailable EST client options\n"
+	"  -v                Verbose operation\n"
 	"  -g                Get CA certificate from EST server\n"
 	"  -e                Enroll with EST server and request a cert\n"
 	"  -a                Get CSR attributes from EST server\n"
-	"  -z                Force PoP in CSR request to server\n"
+	"  -z                Force binding the PoP with the PoI of the client via the TLS UID\n"
 	"  -r                Re-enroll with EST server and request a cert, must use -c option\n"
-	"  -c <cert>         Identity certificate to use for the TLS session\n"
-	"  -k <file>         Use with -c option to specify private key for the identity cert\n"
+	"  -c <certfile>     Identity certificate to use for the TLS session\n"
+	"  -k <keyfile>      Use with -c option to specify private key for the identity cert\n"
+	"  -x <keyfile>      Use existing private key in the given file for signing the CSR\n"
+	"  -y <csrfile>      Use existing CSR in the given file\n"
 	"  -s <server>       Enrollment server IP address\n"
-	"  -p <port#>        TCP port# for enrollment server\n"
+	"  -p <port>         TCP port number for enrollment server\n"
 	"  -o <dir>          Directory where pkcs7 certs will be written\n"
 #ifndef DISABLE_PTHREADS
 	"  -t <count>        Number of threads to start for multi-threaded test (default=1)\n"
 #endif
 	"  -i <count>        Number of enrollments to perform per thread (default=1)\n"
-        "  -f                Runs EST Client in FIPS MODE = ON\n"
-	"  -u                Specify user name for HTTP authentication.\n"
-	"  -h                Specify password for HTTP authentication.\n"
+	"  -w <count>        Timeout in seconds to wait for server response (default=10)\n" //EST_SSL_READ_TIMEOUT_DEF
+	"  -f                Runs EST Client in FIPS MODE = ON\n"
+	"  -u <string>       Specify user name for HTTP authentication.\n"
+	"  -h <string>       Specify password for HTTP authentication.\n"
+	"  -?                Print this help message and exit.\n"
         "\n");
     exit(255);
 }
@@ -149,6 +154,10 @@ static unsigned char * generate_private_key (int *key_len)
 
 static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
 {
+    if (openssl_cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
+        return 1; // accepted
+    }    
+
     BIO *bio_err;
     bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
     int approve = 0; 
@@ -169,13 +178,51 @@ static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
      */
     X509_signature_print(bio_err, cur_cert->sig_alg, cur_cert->signature);
 
-    if (openssl_cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
-        approve = 1;
-    }    
-
     BIO_free(bio_err);
     
     return approve;
+}
+
+
+/*! @brief read_csr() is a helper function that reads a PEM encoded
+ *  CSR from a file and converts its contents to an OpenSSL X509_REQ*.
+ 
+    @param csr_file The name of the file containing the PEM encoded CSR.
+
+    This function reads the given file and converts its PEM encoded contents to
+    the OpenSSL X509_REQ structure.  This function will return NULL if the PEM/DER
+    data is corrupted or unable to be parsed by the OpenSSL library.
+    This function will allocate memory for the X509_REQ data.  You must free the
+    memory in your application when it's no longer needed by calling X509_REQ_free().
+    See also the more general est_read_x509_request function.
+ 
+    @return X509_REQ*
+ */
+static X509_REQ *read_csr(char *csr_file)
+{
+    BIO *csrin;
+    X509_REQ *csr;
+    
+    /* 
+     * Read in the csr
+     */
+    csrin = BIO_new(BIO_s_file_internal());
+    if (BIO_read_filename(csrin, csr_file) <= 0) {
+	printf("\nUnable to read CSR file %s\n", csr_file);
+	return(NULL);
+    }
+    /*
+     * This reads in the csr file, which is expected to be PEM encoded
+     */
+    csr = PEM_read_bio_X509_REQ(csrin, NULL, NULL, NULL);
+    if (csr == NULL) {
+	printf("\nError while reading PEM encoded CSR file %s\n", csr_file);
+	ERR_print_errors_fp(stderr);
+	return(NULL);
+    }
+    BIO_free(csrin);
+
+    return (csr);
 }
 
 static int simple_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
@@ -184,7 +231,7 @@ static int simple_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
     int rv;
     char file_name[MAX_FILENAME_LEN];
     unsigned char *new_client_cert;
-    
+    X509_REQ *csr = NULL;
 
     if (force_pop) {
         rv =  est_client_force_pop(ectx);
@@ -193,7 +240,21 @@ static int simple_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
         }
     }
 
-    rv = est_client_enroll(ectx, "127.0.0.1", &pkcs7_len, new_priv_key);
+    if (csr_file[0]) {
+	X509_REQ *csr = read_csr(csr_file);
+        if (csr == NULL){
+            rv = EST_ERR_PEM_READ;
+        }                    
+	else {
+	    rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, NULL);
+	}
+    }
+    else {
+        rv = est_client_enroll(ectx, "127.0.0.1", &pkcs7_len, priv_key);
+    }
+    if (csr) {
+      X509_REQ_free(csr);
+    }
     if (verbose) printf("\nenrollment rv = %d (%s) with pkcs7 length = %d\n",
                         rv, EST_ERR_NUM_TO_STR(rv), pkcs7_len);
     if (rv == EST_ERR_NONE) {
@@ -220,7 +281,7 @@ static int simple_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
         write_binary_file(file_name, new_client_cert, pkcs7_len);
         free(new_client_cert);
     }
-    
+
     return (rv);
 }
 
@@ -319,7 +380,6 @@ static int regular_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
     unsigned char *der_ptr = NULL;
     int attr_len, der_len, nid;
     X509_REQ *csr;
-    EVP_PKEY *priv_key;
 
     /*
      * We need to get the CSR attributes first, which allows libest
@@ -332,15 +392,6 @@ static int regular_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
 	return (rv);
     }
     
-    /* Read in the private key file */
-    priv_key = read_private_key(CLIENT_PUBKEY);
-    if (priv_key == NULL) {
-        printf("\nError while reading private key file %s\n",
-               CLIENT_PUBKEY);
-        printf("\nFailed to get private key");
-        return (EST_ERR_NO_KEY);
-    }
-
     /* Generate a CSR */
     csr = X509_REQ_new();
 
@@ -390,7 +441,7 @@ static int regular_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
 		    rv = est_add_attributes_helper(csr, nid, "bubba@notmyemail.com\0", 0);
 		    break;
 		case NID_undef:
-		    printf("\nNID is undefined\n");
+		    printf("\nNID is undefined; skipping it\n");
 		    break;
 		default:
 		    rv = est_add_attributes_helper(csr, nid, "", 0);
@@ -490,8 +541,9 @@ static void worker_thread (void *ptr)
     unsigned char *new_client_cert;
     int retry_delay = 0;
     time_t retry_time = 0;
+    char *operation;
     
-    printf("\nStarting thread %d\n", tctx->thread_id);
+    if (verbose) printf("\nStarting thread %d\n", tctx->thread_id);
 
     for (i = 0; i < iterations; i++) { 
 
@@ -503,6 +555,13 @@ static void worker_thread (void *ptr)
 	    exit(1);
 	}
         
+	rv = est_client_set_read_timeout(ectx, read_timeout);
+        if (rv != EST_ERR_NONE) {
+	    printf("\nUnable to configure read timeout from server.  Aborting!!!\n");
+	    printf("EST error code %d (%s)\n", rv, EST_ERR_NUM_TO_STR(rv));
+	    exit(1);
+	}        
+
         rv = est_client_set_auth(ectx, est_http_uid, est_http_pwd, client_cert, client_priv_key);
         if (rv != EST_ERR_NONE) {
 	    printf("\nUnable to configure client authentication.  Aborting!!!\n");
@@ -513,10 +572,11 @@ static void worker_thread (void *ptr)
 	est_client_set_server(ectx, est_server, est_port);
 
 	if (getcert) {
+	    operation = "Get CA Cert";
 
 	    rv = est_client_get_cacerts(ectx, &pkcs7_len);
 	    if (rv == EST_ERR_NONE) {
-		printf("\nGet CA Cert success\n");
+	        if (verbose) printf("\nGet CA Cert success\n");
 
                 /*
                  * allocate a buffer to retrieve the CA certs
@@ -539,13 +599,11 @@ static void worker_thread (void *ptr)
 
                 free(pkcs7);
                 
-	    } else  {
-		printf("\nGet CA Cert failed with code %d (%s)\n", 
-			rv, EST_ERR_NUM_TO_STR(rv));
 	    }
 	}
 
 	if (enroll && getcsr) {
+	    operation = "Regular enrollment with server-defined attributes";
 
             rv = regular_enroll_attempt(ectx, tctx->thread_id, i);
 
@@ -566,16 +624,12 @@ static void worker_thread (void *ptr)
                  * now that we're back, try to enroll again
                  */
                 rv = regular_enroll_attempt(ectx, tctx->thread_id, i);
-
-                if (rv != EST_ERR_NONE) {
-                    /*
-                     * something went wrong.
-                     */
-                    if (verbose) printf("\nattempt to enroll after a retry period failed rv = %d\n", rv);
-                }
                 
             }       
+
 	} else if (enroll && !getcsr) {
+	    operation = "Simple enrollment without server-defined attributes";
+
             rv = simple_enroll_attempt(ectx, tctx->thread_id, i);
 
 	    if (rv == EST_ERR_CA_ENROLL_RETRY) {
@@ -596,22 +650,19 @@ static void worker_thread (void *ptr)
                  * now that we're back, try to enroll again
                  */
                 rv = simple_enroll_attempt(ectx, tctx->thread_id, i);
-
-                if (rv != EST_ERR_NONE) {
-                    /*
-                     * something went wrong.
-                     */
-                    if (verbose) printf("\nattempt to enroll after a retry period failed rv = %d\n", rv);
-                }
-                
             }       
+
         } else if (!enroll && getcsr) {
-            regular_csr_attempt(ectx, tctx->thread_id, i);
+	    operation = "Get CSR attribues";
+
+            rv = regular_csr_attempt(ectx, tctx->thread_id, i);
 
 	}
 
         /* Split reenroll from enroll to allow both messages to be sent */
 	if (reenroll) {
+	    operation = "Re-enrollment";
+
 	    rv = est_client_reenroll(ectx, client_cert, &pkcs7_len, client_priv_key);
 	    if (verbose) printf("\nreenroll rv = %d (%s) with pkcs7 length = %d\n",
                                 rv, EST_ERR_NUM_TO_STR(rv), pkcs7_len);
@@ -643,9 +694,19 @@ static void worker_thread (void *ptr)
                 free(new_client_cert);
 	    }
 	}
+
+	if (rv != EST_ERR_NONE) {
+	    /*
+	     * something went wrong.
+	     */
+	    printf("\n%s failed with code %d (%s)\n", 
+		   operation, rv, EST_ERR_NUM_TO_STR(rv));
+	}
+
 	est_destroy(ectx);
-    }
-    printf("\nEnding thread %d", tctx->thread_id);
+    } /* for */
+
+    if (verbose) printf("\nEnding thread %d", tctx->thread_id);
     free(tctx);
     ERR_clear_error();
     ERR_remove_thread_state(NULL);
@@ -704,10 +765,13 @@ int main (int argc, char **argv)
     est_http_uid[0] = 0x0;
     est_http_pwd[0] = 0x0;
     
+    memset(csr_file, 0, 1);
+    memset(priv_key_file, 0, 1);
+    memset(client_key_file, 0, 1);
     memset(client_cert_file, 0, 1);
     memset(out_dir, 0, 1);
 
-    while ((c = getopt_long(argc, argv, "zfvagerk:s:p:o:c:t:i:u:h:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "?zfvagerx:y:k:s:p:o:c:t:w:i:u:h:", long_options, &option_index)) != -1) {
         switch (c) {
             case 0:
                 printf("option %s", long_options[option_index].name);
@@ -752,6 +816,12 @@ int main (int argc, char **argv)
             case 's':
 		strncpy(est_server, optarg, MAX_SERVER_LEN);
                 break;
+            case 'x':
+		strncpy(priv_key_file, optarg, MAX_FILENAME_LEN);
+                break;
+            case 'y':
+		strncpy(csr_file, optarg, MAX_FILENAME_LEN);
+                break;
             case 'k':
 		strncpy(client_key_file, optarg, MAX_FILENAME_LEN);
                 break;
@@ -784,6 +854,14 @@ int main (int argc, char **argv)
 		    exit(1);
 		}
                 break;
+            case 'w':
+		read_timeout = atoi(optarg);
+		if (read_timeout > EST_SSL_READ_TIMEOUT_MAX) {
+		    printf("\nMaxium number of seconds to wait is %d, ", EST_SSL_READ_TIMEOUT_MAX);
+		    printf("please use a lower value with the -w option\n");
+		    exit(1);
+		}
+                break;
             case 'i':
 		iterations = atoi(optarg);
 		if (iterations > MAX_ITERATIONS) {
@@ -811,11 +889,30 @@ int main (int argc, char **argv)
 	exit(1);
     }
 
+    if (csr_file[0] && getcsr) {
+ 	printf("\nError: The -a option (CSR attributes) does not make sense with a pre-defined CSR\n");
+	exit(1);
+    }
+    if (csr_file[0] && priv_key_file[0]) {
+	printf("\nError: The -x option (private key for CSR) does not make sense with a pre-defined CSR\n");
+	exit(1);
+    }
+    if (csr_file[0] && force_pop) {
+	printf("\nError: The -z option (PoP) does not make sense with a pre-defined CSR\n");
+	exit(1);
+    }
+    if (reenroll & csr_file[0]) {
+	printf("\nError: The -y option (predefined CSRs) does not make sense for re-enrollment\n");
+	exit(1);
+    }
+
     if (verbose) {
         print_version();
 	printf("\nUsing EST server %s:%d", est_server, est_port);
-	printf("\nUsing identity client cert file %s", client_cert_file);
-	printf("\nUsing identity private key file %s", client_key_file);
+	if (csr_file        [0]) printf("\nUsing CSR file %s"                 , csr_file);
+	if (priv_key_file   [0]) printf("\nUsing identity private key file %s", priv_key_file);
+	if (client_cert_file[0]) printf("\nUsing identity client cert file %s", client_cert_file);
+	if (client_key_file [0]) printf("\nUsing identity private key file %s", client_key_file);
     }
 
     if (enroll && reenroll) {
@@ -909,37 +1006,29 @@ int main (int argc, char **argv)
 	est_init_logger(EST_LOG_LVL_ERR, &test_logger_stdout);
     }
 
-    /*
-     * Create a private key that will be used for all
-     * the enrollments.  Normally, there would be one
-     * key per cert.  But we do this to improve 
-     * performance when simulating multiple clients
-     */
-    new_pkey = generate_private_key(&new_pkey_len);
-    snprintf(file_name, MAX_FILENAME_LEN, "%s/key-x-x.pem", out_dir);
-    write_binary_file(file_name, new_pkey, new_pkey_len);
-    free(new_pkey);
+    if (!priv_key_file[0]) {
+        /*
+	 * Create a private key that will be used for all
+	 * the enrollments.  Normally, there would be one
+	 * key per cert.  But we do this to improve 
+	 * performance when simulating multiple clients
+	 */
+	new_pkey = generate_private_key(&new_pkey_len);
+	snprintf(file_name, MAX_FILENAME_LEN, "%s/key-x-x.pem", out_dir);
+	write_binary_file(file_name, new_pkey, new_pkey_len);
+	free(new_pkey);
     
-    /*
-     * read it back in to an EVP_PKEY struct
-     */
-    keyin = BIO_new(BIO_s_file_internal());
-    if (BIO_read_filename(keyin, file_name) <= 0) {
-        printf("\nUnable to read newly generated client private key file %s\n", file_name);
+	/*
+	 * prepare to read it back in to an EVP_PKEY struct
+	 */
+	strncpy(priv_key_file, file_name, MAX_FILENAME_LEN);
+    }
+
+    /* Read in the private key file */
+    priv_key = read_private_key(priv_key_file);
+    if (priv_key == NULL) {
         exit(1);
     }
-    /*
-     * This reads in the private key file, which is expected to be a PEM
-     * encoded private key.  If using DER encoding, you would invoke
-     * d2i_PrivateKey_bio() instead. 
-     */
-    new_priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
-    if (new_priv_key == NULL) {
-        printf("\nError while reading PEM encoded private key file %s\n", file_name);
-        ERR_print_errors_fp(stderr);
-        exit(1);
-    }
-    BIO_free(keyin);
     
 #ifndef DISABLE_PTHREADS
     /*
