@@ -1039,7 +1039,7 @@ static int parse_http_message (char *buf, int len, struct mg_request_info *ri)
         ri->http_version = skip(&buf, "\r\n");
         parse_http_headers(&buf, ri);
     }
-    printf("\nrequest_len=%d\n", request_length);
+    EST_LOG_INFO("request_len=%d\n", request_length);
     return request_length;
 }
 
@@ -1568,11 +1568,11 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
 		break;
 	    case 1:
 		/* Nothing to do, shutdown worked */
-		EST_LOG_INFO("SSL_shutdown succeeded");
+		EST_LOG_INFO("SSL_shutdown succeeded\n");
 		break;
 	    default:
 		/* Log an error */
-		EST_LOG_WARN("SSL_shutdown failed");
+		EST_LOG_WARN("SSL_shutdown failed\n");
 		break;
 	    }
             SSL_free(conn->ssl);
