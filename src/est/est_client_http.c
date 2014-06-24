@@ -46,7 +46,7 @@
 #include "est_server_http.h"
 #include "est_ossl_util.h"
 
-#define INT_MAX         (  2147483647 )
+//#define INT_MAX         (  2147483647 )  //DvO: must not define this! See limits.h as well as the existence of INT_MIN  
 
 #ifdef RETRY_AFTER_DELAY_TIME_SUPPORT
 
