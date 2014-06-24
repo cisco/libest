@@ -219,7 +219,7 @@ typedef enum {
  * These values are used for both EST Client and Proxy operations.
  */
 #define EST_SSL_READ_TIMEOUT_MIN 1
-#define EST_SSL_READ_TIMEOUT_MAX 3600
+#define EST_SSL_READ_TIMEOUT_MAX 60
 #define EST_SSL_READ_TIMEOUT_DEF 10
 
 /*! @struct EST_HTTP_AUTH_HDR
