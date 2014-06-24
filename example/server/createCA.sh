@@ -54,7 +54,7 @@ function createCA ()
     eval $OPENSSLCMD ecparam -name prime256v1 -out $CREATECA_ECPARAMSFILE
     iferrorlogandexit "Unable to build ECPARAMS file" 1
 
-    eval $OPENSSLCMD req -new -x509 -extensions v3_ca $CREATECA_NEWKEY_PARAM -keyout $CREATECA_CAPRIVKEY -out $CREATECA_CACERT -days 365 -nodes -subj "$CREATECA_CASUBJ" -config $EST_OPENSSL_CACNF
+    eval $OPENSSLCMD req -new -x509 -extensions v3_ca $CREATECA_NEWKEY_PARAM -keyout $CREATECA_CAPRIVKEY -out $CREATECA_CACERT -days 365 -nodes -subj "$CREATECA_CASUBJ" -config $EST_OPENSSL_CACNF -sha256
     iferrorlogandexit "Unable to create \"$CREATECA_CASUBJ\" CA cert" 1
     $OPENSSLCMD x509 -in $CREATECA_CACERT
 }
@@ -96,9 +96,9 @@ echo "#################################################################"
 echo "####(Re)creating an initial peer certificate for our estServer to use"
 echo "#################################################################"
 # re-using the same NEWKEY_PARAM as is used for our CA
-eval $OPENSSLCMD req -new -nodes -out $EST_SERVER_CERTREQ $EST_OPENSSLCMD_CANEWKEY_PARAM -keyout $EST_SERVER_PRIVKEY -subj $EST_SERVER_SUBJ -config $EST_OPENSSL_CACNF
+eval $OPENSSLCMD req -new -nodes -out $EST_SERVER_CERTREQ $EST_OPENSSLCMD_CANEWKEY_PARAM -keyout $EST_SERVER_PRIVKEY -subj $EST_SERVER_SUBJ -config $EST_OPENSSL_CACNF -sha256
 iferrorlogandexit "Unable to create est server CSR" 1
-$OPENSSLCMD ca -out $EST_SERVER_CERT -batch -config $EST_OPENSSL_CACNF -extfile ./ext.cnf -infiles $EST_SERVER_CERTREQ 
+$OPENSSLCMD ca -out $EST_SERVER_CERT -batch -config $EST_OPENSSL_CACNF -extfile ./ext.cnf -infiles $EST_SERVER_CERTREQ -md sha256
 iferrorlogandexit "Unable to create est server certificate" 1
 $OPENSSLCMD x509 -in $EST_SERVER_CERT -text
 # the mongoose https server wants to recieve the server certificate in
