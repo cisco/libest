@@ -35,6 +35,7 @@ typedef enum {
 #define FOREACH_EST_ERROR(E) \
     E(EST_ERR_NO_CTX) \
     E(EST_ERR_NO_CSR) \
+    E(EST_ERR_NO_CERT) \
     E(EST_ERR_NO_KEY) \
     E(EST_ERR_INVALID_PARAMETERS) \
     E(EST_ERR_LOAD_CACERTS) \
@@ -106,6 +107,7 @@ typedef enum {
 \n EST_ERR_NONE  No error occurred.
 \n EST_ERR_NO_CTX  The EST_CTX* was not provided when invoking the function.
 \n EST_ERR_NO_CSR  The PKCS10 CSR was not provided when invoking the function.
+\n EST_ERR_NO_CERT No valid X509 certificate was provided when invoking the function.
 \n EST_ERR_NO_KEY  The EVP_PKEY* was not provided when invoking the function.
 \n EST_ERR_INVALID_PARAMETERS  An invalid argument was provided to the function.
 \n EST_ERR_LOAD_CACERTS  The CA certifictes provided were not loaded.
@@ -217,7 +219,7 @@ typedef enum {
  * These values are used for both EST Client and Proxy operations.
  */
 #define EST_SSL_READ_TIMEOUT_MIN 1
-#define EST_SSL_READ_TIMEOUT_MAX 60
+#define EST_SSL_READ_TIMEOUT_MAX 3600
 #define EST_SSL_READ_TIMEOUT_DEF 10
 
 /*! @struct EST_HTTP_AUTH_HDR
@@ -359,6 +361,7 @@ EST_ERROR est_set_ca_reenroll_cb(EST_CTX *ctx, int (*cb)(unsigned char * pkcs10,
 				 char *user_id, X509 *peer_cert, void *ex_data));
 EST_ERROR est_set_csr_cb(EST_CTX * ctx, unsigned char *(*cb)(int*csr_len, void *ex_data));
 EST_ERROR est_set_http_auth_cb(EST_CTX * ctx, int (*cb)(EST_CTX*, EST_HTTP_AUTH_HDR*, X509*, void*));
+EST_ERROR est_set_http_auth_forced(EST_CTX * ctx, int forced);
 EST_ERROR est_add_attributes_helper(X509_REQ *req, int nid, void *string, unsigned long chtype);
 EST_ERROR est_get_attributes_helper(unsigned char **der_ptr, int *der_len, int *new_nid);
 EST_ERROR est_decode_attributes_helper(char *csrattrs, int csrattrs_len, 
