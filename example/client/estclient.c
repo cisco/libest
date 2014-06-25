@@ -30,6 +30,7 @@
 
 
 #include <est.h>
+#include <est_locl.h>
 #include "../util/utils.h"
 
 #define EST_UT_MAX_CMD_LEN 255
@@ -492,9 +493,11 @@ static void retry_enroll_delay (int retry_delay, time_t retry_time)
 {
 
     if (retry_delay != 0) {                        
-        if (verbose) printf("\nwaiting for retry period specified by server\n");
-        if (verbose) printf("\nduration can be set on estserver with -m <retry-period> (min is 60 seconds)\n");
-            sleep(retry_delay);
+        if (verbose) {
+	    printf("\nWaiting for %d seconds. Retry period is specified by EST server.", retry_delay);
+            printf("\nDuration can be set on estserver with -m <retry-period> or -M <retry-period> (min is %d seconds).\n", EST_RETRY_PERIOD_MIN);
+	}
+	sleep(retry_delay);
     } else {
         /*
          * received a time_t value instead.  Calculate the amount of time to wait.
