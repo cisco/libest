@@ -13,6 +13,8 @@
  **------------------------------------------------------------------
  */
 #include <stdio.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <pthread.h>
 #include <stdint.h>
 #ifndef DISABLE_TSEARCH
@@ -31,6 +33,8 @@
 #include "../util/simple_server.h"
 
 #define MAX_FILENAME_LEN 255
+#define TEMP_CSR_FILE   "csr.p10"
+#define TEMP_CERT_FILE "cert.cer"
 
 /*
  * The OpenSSL CA needs this BIO to send errors too
@@ -46,14 +50,15 @@ static int crl = 0;
 static int pop = 0;
 static int v6 = 0;
 #ifndef DISABLE_TSEARCH
-static int manual_enroll = 0;
+static int simulate_manual_enroll = 0;
 #endif
+static int manual_enroll = 0;
 static int tcp_port = 8085;
 static int http_digest_auth = 0;
-static int http_auth_disable = 0;
+static int disable_forced_http_auth = 0;
 static int set_fips_return = 0;
 static unsigned long set_fips_error = 0;
-static int test_app_data = 0xDEADBEEF;
+static int test_app_data = 0xDEADBEEF;  // TODO: remove
 
 char certfile[EST_MAX_FILE_LEN];
 char keyfile[EST_MAX_FILE_LEN];
@@ -129,17 +134,18 @@ static void print_version (FILE *fp)
 
 static void show_usage_and_exit (void)
 {
-    fprintf(stderr, "\nAvailable estserver options\n"
+    fprintf(stderr, "\nAvailable EST server options\n"
             "  -v           Verbose operation\n"
             "  -c <file>    PEM file to use for server cert\n"
             "  -k <file>    PEM file to use for server key\n"
             "  -r <value>   HTTP realm to present to clients\n"
             "  -l           Enable CRL checks\n"
-            "  -t           Enable PoP check of TLS UID\n"
+            "  -t           Enable check for binding the PoP with the PoI of the client via the TLS UID\n"
 #ifndef DISABLE_TSEARCH
             "  -m <seconds> Simulate manual CA enrollment\n"
 #endif
-            "  -n           Disable HTTP authentication\n"
+            "  -M <seconds> Manual CA enrollment: delete and await new '" TEMP_CERT_FILE "' file for manual CA enrollment, implies -w\n"
+            "  -n           Do not force HTTP authentication\n"
             "  -h           Use HTTP Digest auth instead of Basic auth\n"
 	    "  -p <num>     TCP port number to listen on\n"
 #ifndef DISABLE_PTHREADS
@@ -147,7 +153,8 @@ static void show_usage_and_exit (void)
 #endif
 	    "  -f           Runs EST Server in FIPS MODE = ON\n"
 	    "  -6           Enable IPv6\n"
-            "  -w           Allow for attribute capture on server\n"
+            "  -w           Dump the CSR to '" TEMP_CSR_FILE "' allowing for manual attribute capture and manual CA enrollment on server\n"
+	    "  -?           Print this help message and exit\n"
             "\n");
     exit(255);
 }
@@ -157,7 +164,7 @@ static void show_usage_and_exit (void)
 /*
  * The functions in this section implement a simple lookup table
  * to correlate incoming cert requests after a retry operation.
- * We use this to simulate the manual-enrollment mode on the CA.
+ * We use this for (simulation of) manual-enrollment mode on the CA.
  *
  * FIXME: we need a cleanup routine to clear the tree when this
  *        server shuts down.  Currently any remaining entries
@@ -186,17 +193,17 @@ int compare (const void *pa, const void *pb)
 }
 
 /*
- * We use a simple lookup table to simulate manual enrollment
+ * We use a simple lookup table for (simulation of) manual enrollment
  * of certs by the CA.  This is the case where an operator
  * needs to review each cert request and approve it (e.g.
  * auto-enrollment is off).  
  *
- * Return 1 if a match was found and the enrollment operation
- * should proceed.  Return 0 if no match was found, in which
+ * Return 1 if a match was found, and optionally delete the entry.
+ * Return 0 if no match was found, in which
  * case we'll add the public key from the cert request into
  * our lookup table so it can be correlated later.
  */
-int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
+int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len, int delete_on_match)
 {
     X509_REQ *req = NULL;
     BIO *in = NULL;
@@ -245,19 +252,29 @@ int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
     memcpy(n->data, bptr->data, n->length);
     l = tfind(n, (void **)&lookup_root, compare);
     if (l) {
-	/* We have a match, allow the enrollment */
+	/* We have a match */
 	rv = 1;	
-	tdelete(n, (void **)&lookup_root, compare);
-	printf("\nRemoving key from lookup table:\n");
-	dumpbin((unsigned char*)n->data, n->length);
-	free(n->data);
-	free(n);
+	if (verbose && !delete_on_match) {
+	    printf("\nFound key in lookup table:");
+	    dumpbin((unsigned char*)n->data, n->length);
+	}
+	if (delete_on_match) {
+	    if (verbose) {
+	 	printf("\nRemoving key from lookup table:");
+		dumpbin((unsigned char*)n->data, n->length);
+	    }
+	    tdelete(n, (void **)&lookup_root, compare);
+	    free(n->data);
+	    free(n);
+	}
     } else {
 	/* Not a match, add it to the list and return */
 	l = tsearch(n, (void **)&lookup_root, compare);
 	rv = 0;
-	printf("\nAdding key to lookup table:\n");
-	dumpbin((unsigned char*)n->data, n->length);
+	if (verbose) {
+	    printf("\nAdding key to lookup table:");
+	    dumpbin((unsigned char*)n->data, n->length);
+	}
     }
 DONE:
     if (out) BIO_free_all(out);
@@ -295,9 +312,36 @@ static void extract_sub_name(X509 *cert, char *name, int len)
     BIO_free(out);
 }
 
+int file_exists(char *fileName)
+{
+   struct stat buf;
+   return (0 == stat(fileName, &buf));
+}
+
+void wait_for_file(char *file) {
+	printf("\nWaiting for file '%s' to appear..", file);
+	fflush(stdout);
+	while(!file_exists(file)) {
+	    sleep(3);
+	    printf(".");
+	    fflush(stdout);
+	}
+	printf(" got it!\n");
+	fflush(stdout);
+}
+
+/*
+ * Dump out pkcs10 to a file, this will contain a list of the OIDs in the CSR.
+*/
+void write_csr_file(unsigned char * pkcs10, int p10_len) {
+    char file_name[MAX_FILENAME_LEN];
+
+    snprintf(file_name, MAX_FILENAME_LEN, TEMP_CSR_FILE);
+    write_binary_file(file_name, pkcs10, p10_len);        
+}
 
 /****************************************************************************************
- * The following funcitons are the callbacks used by libest to bind
+ * The following functions are the callbacks used by libest to bind
  * the EST stack to the HTTP/SSL layer and the CA server.
  ***************************************************************************************/
 pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
@@ -329,23 +373,25 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
     char *buf;
     int rc;
     char sn[64];
-    char file_name[MAX_FILENAME_LEN];
 
-    /*
-     * Informational only
-     */
-    if (user_id) {
-	printf("\n%s - User ID is %s\n", __FUNCTION__, user_id);
-    }
-    if (peer_cert) {
-	memset(sn, 0, 64);
-        extract_sub_name(peer_cert, sn, 64);
-        printf("\n%s - Peer cert CN is %s\n", __FUNCTION__, sn);
-    }
-    if (app_data) {
-	printf("ex_data value is %x\n", *((unsigned int *)app_data));
+    if (verbose) {
+	/*
+	 * Informational only
+	 */
+	if (user_id) {
+	    printf("\n%s - User ID is %s\n", __FUNCTION__, user_id);
+	}
+	if (peer_cert) {
+	    memset(sn, 0, 64);
+	    extract_sub_name(peer_cert, sn, 64);
+	    printf("\n%s - Peer cert CN is %s\n", __FUNCTION__, sn);
+	}
+	if (app_data) {
+	    printf("ex_data value is %x\n", *((unsigned int *)app_data)); // TODO: generalize or remove
+	}
     }
 
+#ifndef DISABLE_TSEARCH
     /*
      * If we're simulating manual certificate enrollment, 
      * the CA will not automatically sign the cert request.
@@ -358,9 +404,8 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
      * forcing the client to request twice, and we'll automatically
      * enroll on the second request.
      */
-#ifndef DISABLE_TSEARCH
-    if (manual_enroll) {
-	if (lookup_pkcs10_request(pkcs10, p10_len)) {
+    if (simulate_manual_enroll) {
+	if (lookup_pkcs10_request(pkcs10, p10_len, 1)) {
 	    /*
 	     * We've seen this cert request in the past.  
 	     * Remove it from the lookup table and allow
@@ -379,25 +424,62 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
     }
 #endif
 
-    rc = pthread_mutex_lock(&m);
-    if (rc) {
-        printf("\nmutex lock failed rc=%d", rc);
-        exit(1);
-    }
+    if (manual_enroll) {
+	/*
+	 * If we're doing manual certificate enrollment, we write out the CSR to a temp file
+	 * and wait for the CA to sign the cert request and put the cert in another temp file.
+	 */
+#ifndef DISABLE_TSEARCH
+	if (lookup_pkcs10_request(pkcs10, p10_len, 0)) {
+	    /*
+	     * We've seen this cert request in the past.  
+	     * Check if the cert file has become available. 
+	     * If so, remove the request from the lookup table,
+	     * read the cert file and the enrollment to continue. 
+ 	     * Otherwise, keep waiting, sending the retry response.
+	     */
+	    if (file_exists(TEMP_CERT_FILE)) {
+		remove(TEMP_CSR_FILE);
+		lookup_pkcs10_request(pkcs10, p10_len, 1); // delete entry
+		result = read_cert_pkcs7(TEMP_CERT_FILE);
+	    }
+	    else {
+		return (EST_ERR_CA_ENROLL_RETRY);
+	    }
+	} else {
+	    /* 
+	     * Couldn't find this request, so it's the first time
+	     * we've seen it. Therefore, prepare to wait for cert
+	     * file to (re-)appear and send the retry response.
+	     */
+	    remove(TEMP_CERT_FILE);
+	    write_csr_file(pkcs10, p10_len);        
+	    return (EST_ERR_CA_ENROLL_RETRY);
+	}
+#else
+	remove(TEMP_CERT_FILE);
+	write_csr_file(pkcs10, p10_len);        
+	wait_for_file(TEMP_CERT_FILE);
+	remove(TEMP_CSR_FILE);
+	result = read_cert_pkcs7(TEMP_CERT_FILE);
+#endif
+    } else {
+	rc = pthread_mutex_lock(&m);
+	if (rc) {
+	    printf("\nmutex lock failed rc=%d", rc);
+	    exit(1);
+	}
 
-    if (write_csr) {
-        /*
-         * Dump out pkcs10 to a file, this will contain a list of the OIDs in the CSR.
-         */
-        snprintf(file_name, MAX_FILENAME_LEN, "/tmp/test4_US1010.csr.pkcs10");
-        write_binary_file(file_name, pkcs10, p10_len);        
-    }    
-    
-    result = ossl_simple_enroll(pkcs10, p10_len);
-    rc = pthread_mutex_unlock(&m);
-    if (rc) {
-        printf("\nmutex unlock failed rc=%d", rc);
-        exit(1);
+	if (write_csr) {
+	    write_csr_file(pkcs10, p10_len);        
+	}    
+	result = ossl_simple_enroll(pkcs10, p10_len);
+	
+	rc = pthread_mutex_unlock(&m);
+	if (rc) {
+	    printf("\nmutex unlock failed rc=%d", rc);
+	    exit(1);
+	}
     }
 
     /*
@@ -442,7 +524,7 @@ static char digest_user[3][32] =
     {
 	"estuser", 
 	"estrealm", 
-	"36807fa200741bb0e8fb04fcf08e2de6" //This is the HA1 precaculated value
+	"36807fa200741bb0e8fb04fcf08e2de6" //This is the SHA1 pre-calculated value
     };
 /*
  * This callback is invoked by libest when performing
@@ -585,10 +667,14 @@ int main (int argc, char **argv)
         show_usage_and_exit();
     }
 
-    while ((c = getopt(argc, argv, "fhwnvr:c:k:m:p:d:lt6")) != -1) {
+    while ((c = getopt(argc, argv, "?fhwnvr:c:k:m:M:p:d:lt6")) != -1) {
         switch (c) {
 #ifndef DISABLE_TSEARCH
         case 'm':
+            simulate_manual_enroll = 1;
+            retry_period = atoi(optarg);            
+            break;
+        case 'M':
             manual_enroll = 1;
 	    retry_period = atoi(optarg);            
             break;
@@ -600,7 +686,7 @@ int main (int argc, char **argv)
             write_csr = 1;
             break;
         case 'n':
-            http_auth_disable = 1;
+            disable_forced_http_auth = 1;
             break;
         case 'v':
             verbose = 1;
@@ -738,9 +824,11 @@ int main (int argc, char **argv)
         exit(1);
     }
 
-    est_init_logger(EST_LOG_LVL_INFO, NULL);
     if (verbose) {
+	est_init_logger(EST_LOG_LVL_INFO, NULL);
 	est_enable_backtrace(1);
+    } else {
+	est_init_logger(EST_LOG_LVL_ERR, NULL);
     }
     ectx = est_server_init(trustcerts, trustcerts_len,
 	    cacerts_raw, cacerts_len,  
@@ -749,20 +837,20 @@ int main (int argc, char **argv)
         printf("\nUnable to initialize EST context.  Aborting!!!\n");
         exit(1);
     }
-    est_set_ex_data(ectx, &test_app_data);
+    est_set_ex_data(ectx, &test_app_data); // TODO: remove
 
     /*
      * Change the retry-after period.  This is not
      * necessary, it's only shown here as an example.
      */
-    printf("\nRetry period being set to: %d \n", retry_period);
+    if (verbose) printf("\nRetry period being set to: %d \n", retry_period);
     est_server_set_retry_period(ectx, retry_period);
 
     if (crl) {
 	est_enable_crl(ectx);
     }
     if (!pop) {
-	printf("\nDisabling PoP check");
+	if (verbose) printf("\nDisabling PoP check");
 	est_server_disable_pop(ectx);
     }
 
@@ -784,12 +872,17 @@ int main (int argc, char **argv)
         printf("\nUnable to set EST CSR Attributes callback.  Aborting!!!\n");
         exit(1);
     }
-    if (!http_auth_disable) {
-	if (est_set_http_auth_cb(ectx, &process_http_auth)) {
-	    printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");
-	    exit(1);
-	}    
+    if (est_set_http_auth_cb(ectx, &process_http_auth)) {
+        printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");
+	exit(1);
+    }    
+    if (disable_forced_http_auth) {
+	if (verbose) printf("\nDisabling forced HTTP authentication");
     }
+    if (est_set_http_auth_forced(ectx, !disable_forced_http_auth)) {
+        printf("\nUnable to set EST HTTP AUTH enforcement policy.  Aborting!!!\n");
+	exit(1);
+    }    
 
     if (http_digest_auth) {
 	rv = est_server_set_auth_mode(ectx, AUTH_DIGEST);
