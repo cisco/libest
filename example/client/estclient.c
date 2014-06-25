@@ -610,13 +610,13 @@ static void worker_thread (void *ptr)
 
             rv = regular_enroll_attempt(ectx, tctx->thread_id, i);
 
-	    if (rv == EST_ERR_CA_ENROLL_RETRY) {
+	    while (rv == EST_ERR_CA_ENROLL_RETRY) {
 
                 /*
                  * go get the retry period
                  */
                 rv = est_client_copy_retry_after(ectx, &retry_delay, &retry_time);
-                if (verbose) printf("\nretry after period copy rv = %d "
+                if (verbose) printf("retry after period copy rv = %d "
                                     "Retry-After delay seconds = %d "
                                     "Retry-After delay time = %s\n",
                                     rv, retry_delay, ctime(&retry_time) );
@@ -635,15 +635,15 @@ static void worker_thread (void *ptr)
 
             rv = simple_enroll_attempt(ectx, tctx->thread_id, i);
 
-	    if (rv == EST_ERR_CA_ENROLL_RETRY) {
+	    while (rv == EST_ERR_CA_ENROLL_RETRY) {
 
                 /*
                  * go get the retry period
                  */
                 rv = est_client_copy_retry_after(ectx, &retry_delay, &retry_time);
-                if (verbose) printf("\nretry after period copy rv = %d "
+                if (verbose) printf("Retry after period copy rv = %d "
                                     "Retry-After delay seconds = %d "
-                                    "Retry-After delay time = %s\n",
+                                    "Retry-After delay time = %s",
                                     rv, retry_delay, ctime(&retry_time) );
                 if (rv == EST_ERR_NONE) {
 		    retry_enroll_delay(retry_delay, retry_time);
