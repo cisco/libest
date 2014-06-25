@@ -953,7 +953,7 @@ static void us893_test10 (void)
 	                US893_PKCS10_RSA2048, 
 	                US893_UIDPWD_GOOD, US893_CACERTS, CURLAUTH_BASIC, 
 			NULL, NULL, NULL);
-    CU_ASSERT(rv == 400);
+    CU_ASSERT(rv == 401);
 
     /*
      * Stop the proxy server

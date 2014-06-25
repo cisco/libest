@@ -895,8 +895,8 @@ char * est_get_tls_uid (SSL *ssl, int is_client)
      * is used, the server sends the first finished message.
      * Normally the client sends the first finished messaged.
      */
-    if (is_client && !SSL_session_reused(ssl) ||
-        !is_client && SSL_session_reused(ssl)) {
+    if ((is_client && !SSL_session_reused(ssl)) ||
+        (!is_client && SSL_session_reused(ssl))) {
         len = SSL_get_finished(ssl, finished, MAX_FINISHED);
     } else {
         len = SSL_get_peer_finished(ssl, finished, MAX_FINISHED);

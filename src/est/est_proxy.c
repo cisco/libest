@@ -229,8 +229,6 @@ void proxy_cleanup (EST_CTX *p_ctx)
  */
 static EST_ERROR est_proxy_propagate_retry (EST_CTX *ctx, void *http_ctx)
 {
-    char http_hdr[EST_HTTP_HDR_MAX];
-
     /*
      * The CA did not sign the request and has asked the
      * client to retry in the future.  This may occur if
@@ -241,16 +239,7 @@ static EST_ERROR est_proxy_propagate_retry (EST_CTX *ctx, void *http_ctx)
      */
     EST_LOG_INFO("CA server requests retry, propagate this to the client (%d)", 
         ctx->retry_after_delay);
-    snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s%s: %d%s%s", 
-        EST_HTTP_HDR_202,
-        EST_HTTP_HDR_EOL, 
-        EST_HTTP_HDR_STAT_202, 
-        EST_HTTP_HDR_EOL,
-        EST_HTTP_HDR_RETRY_AFTER, 
-        ctx->retry_after_delay,  
-        EST_HTTP_HDR_EOL, 
-        EST_HTTP_HDR_EOL);
-    if (!mg_write(http_ctx, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
+    if (EST_ERR_NONE != est_server_send_http_retry_after(ctx, http_ctx, ctx->retry_after_delay)) {
         EST_LOG_ERR("HTTP write error while propagating retry-after");
         return (EST_ERR_HTTP_WRITE);
     }
@@ -440,6 +429,7 @@ static EST_ERROR est_proxy_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
      */
     switch (est_enroll_auth(ctx, http_ctx, ssl, reenroll)) {
     case EST_HTTP_AUTH:
+    case EST_SRP_AUTH:
     case EST_CERT_AUTH:
         break;
     case EST_HTTP_AUTH_PENDING:
@@ -696,7 +686,7 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
     /*
      * See if this is a simple enrollment request
      */
-    if (strncmp(uri, EST_SIMPLE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_SIMPLE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strcmp(method, "POST")) {
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
@@ -733,7 +723,7 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
     /*
      * See if this is a re-enrollment request
      */
-    if (strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strcmp(method, "POST")) {
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
@@ -756,7 +746,13 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
 
         rc = est_proxy_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, 1);
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
-            est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
+            EST_LOG_WARN("Reenroll failed with rc=%d (%s)\n", 
+		         rc, EST_ERR_NUM_TO_STR(rc));
+	    if (rc == EST_ERR_AUTH_FAIL) {
+		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
+	    } else {
+		est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
+	    }
             return (EST_ERR_BAD_PKCS10);
         }
     }
@@ -766,7 +762,7 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
      * See if this is a keygen request
      * FIXME: this is currently not implemented
      */
-    if (strncmp(uri, EST_KEYGEN_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_KEYGEN_URI, EST_URI_MAX_LEN) == 0) {
 
         /* Only POST is allowed */
         if (strcmp(method, "POST")) {
@@ -787,7 +783,7 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
     /*
      * See if this is a CSR attributes request
      */
-    if (strncmp(uri, EST_CSR_ATTRS_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_CSR_ATTRS_URI, EST_URI_MAX_LEN) == 0) {
         /* Only GET is allowed */
         if (strcmp(method, "GET")) {
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
@@ -798,6 +794,13 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
             est_send_http_error(ctx, http_ctx, rc); 
             return (rc);
         }
+    }
+
+    /*
+     * Send a 404 error if the URI didn't match 
+     */
+    else {
+        est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NOT_FOUND);
     }
 
     return (EST_ERR_NONE);
@@ -981,6 +984,7 @@ EST_CTX * est_proxy_init (unsigned char *ca_chain, int ca_chain_len,
     ctx->est_mode = EST_PROXY;
     ctx->retry_period = EST_RETRY_PERIOD_DEF;
     ctx->server_enable_pop = 1;
+    ctx->require_http_auth = HTTP_AUTH_REQUIRED;
 
     if (est_client_set_uid_pw(ctx, uid, pwd) != EST_ERR_NONE) {
         EST_LOG_ERR("Failed to store the userid and password during proxy initialization");

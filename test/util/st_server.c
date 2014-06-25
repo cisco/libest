@@ -41,6 +41,7 @@ volatile int stop_flag = 0;
 unsigned char *cacerts_raw = NULL;
 int cacerts_len = 0;
 EST_CTX *ectx;
+SRP_VBASE *srp_db = NULL;
 unsigned char *trustcerts = NULL;
 int trustcerts_len = 0;
 static char conf_file[255];
@@ -365,6 +366,50 @@ static int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah,
     return user_valid;
 }
 
+/*
+ * This callback is issued during the TLS-SRP handshake.  
+ * We can use this to get the userid from the TLS-SRP handshake.
+ * If a verifier file as provided, we must pull the SRP verifier 
+ * parameters and invoke SSL_set_srp_server_param() with these
+ * values to allow the TLS handshake to succeed.  If the application
+ * layer wants to use their own verifier store, they would
+ * hook into it here.  They would lookup the verifier parameters
+ * based on the userid and return those parameters by invoking
+ * SSL_set_srp_server_param().
+ */
+static int ssl_srp_server_param_cb (SSL *s, int *ad, void *arg) {
+
+    char *login = SSL_get_srp_username(s);
+    SRP_user_pwd *user;
+
+    if (!login) return (-1);
+
+    printf("SRP username = %s\n", login);
+
+    user = SRP_VBASE_get_by_user(srp_db, login); 
+
+    if (user == NULL) {
+	printf("User %s doesn't exist in SRP database\n", login);
+	return SSL3_AL_FATAL;
+    }
+
+    /*
+     * Get the SRP parameters for the user from the verifier database.
+     * Provide these parameters to TLS to complete the handshake
+     */
+    if (SSL_set_srp_server_param(s, user->N, user->g, user->s, user->v, user->info) < 0) {
+	*ad = SSL_AD_INTERNAL_ERROR;
+	return SSL3_AL_FATAL;
+    }
+		
+    printf("SRP parameters set: username = \"%s\" info=\"%s\" \n", login, user->info);
+
+    user = NULL;
+    login = NULL;
+    fflush(stdout);
+    return SSL_ERROR_NONE;
+}
+
 static void cleanup() 
 {
     est_server_stop(ectx);
@@ -380,6 +425,11 @@ static void cleanup()
     if (lookup_root) {
         tdestroy((void *)lookup_root, free_lookup);
 	lookup_root = NULL;
+    }
+
+    if (srp_db) {
+	SRP_VBASE_free(srp_db);
+	srp_db = NULL;
     }
 
     //We don't shutdown here because there
@@ -461,7 +511,6 @@ void st_stop ()
  * until st_stop() is invoked.
  *
  * Parameters:
- *  listen_port:    Port number to listen on
  *  certfile:	    PEM encoded certificate used for server's identity
  *  keyfile:	    Private key associated with the certfile
  *  realm:	    HTTP realm to present to the client
@@ -477,23 +526,26 @@ void st_stop ()
  *  ec_nid:         Openssl NID value for ECDHE curve to use during
  *                  TLS handshake.  Take values from <openssl/obj_mac.h>
  */
-int st_start (int listen_port,
-	      char *certfile,
-	      char *keyfile,
-	      char *realm,
-	      char *ca_chain_file,
-	      char *trusted_certs_file,
-	      char *ossl_conf_file,
-              int simulate_manual_enroll,
-	      int enable_pop,
-	      int ec_nid)
+static int st_start_internal (
+    int listen_port,
+    char *certfile,
+    char *keyfile,
+    char *realm,
+    char *ca_chain_file,
+    char *trusted_certs_file,
+    char *ossl_conf_file,
+    int simulate_manual_enroll,
+    int enable_pop,
+    int ec_nid,
+    int enable_srp,
+    char *srp_vfile)
 {
     X509 *x;
     EVP_PKEY *priv_key;
     BIO *certin, *keyin;
     DH *dh;
-    pthread_t thread;
     EST_ERROR rv;
+    pthread_t thread;
 
     manual_enroll = simulate_manual_enroll;
 
@@ -620,6 +672,26 @@ int st_start (int listen_port,
     }
     DH_free(dh);
 
+    /*
+     * Do we need to enable SRP?
+     */
+    if (enable_srp) {
+	srp_db = SRP_VBASE_new(NULL);
+	if (!srp_db) {
+	    printf("\nUnable allocate SRP verifier database.  Aborting!!!\n");
+	    return(-1); 
+	}
+	if (SRP_VBASE_init(srp_db, srp_vfile) != SRP_NO_ERROR) {
+	    printf("\nUnable initialize SRP verifier database %s.  Aborting!!!\n", srp_vfile);
+	    return(-1); 
+	}
+	
+	if (est_server_enable_srp(ectx, &ssl_srp_server_param_cb)) { 
+	    printf("\nUnable to enable SRP.  Aborting!!!\n");
+	    return(-1);
+	}
+    }
+
     printf("\nLaunching EST server...\n");
 
     rv = est_server_start(ectx);
@@ -632,13 +704,105 @@ int st_start (int listen_port,
     tcp_port = listen_port;
     pthread_create(&thread, NULL, master_thread, NULL);
 
-    /* Clean up */
+    sleep(2);
+    /*
+     * clean up
+     */
     EVP_PKEY_free(priv_key);
     X509_free(x);
-    sleep(2);
+
     return 0;
 }
 
+/*
+ * Call this to start a simple EST server.  This server will not
+ * be thread safe.  It can only handle a single EST request on
+ * the listening socket at any given time.  This server will run
+ * until st_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  ossl_conf_file: Configuration file that specifies the OpenSSL
+ *                  CA to use.
+ *  simulate_manual_enroll: Pass in a non-zero value to have the EST
+ *                  simulate manual approval at the CA level.  This
+ *                  is used to test the retry-after logic.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_start (int listen_port,
+	      char *certfile,
+	      char *keyfile,
+	      char *realm,
+	      char *ca_chain_file,
+	      char *trusted_certs_file,
+	      char *ossl_conf_file,
+              int simulate_manual_enroll,
+	      int enable_pop,
+	      int ec_nid)
+{
+    int rv;
+
+    rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+	      trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
+	      enable_pop, ec_nid, 0, NULL);
+
+    return (rv);
+}
+
+/*
+ * Call this to start a simple EST server with SRP.  This server will not
+ * be thread safe.  It can only handle a single EST request on
+ * the listening socket at any given time.  This server will run
+ * until st_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  ossl_conf_file: Configuration file that specifies the OpenSSL
+ *                  CA to use.
+ *  enable_pop:     Set to non-zero value to require Proof-of-possession check.
+ *  vfile:          Full path name of OpenSSL SRP verifier file
+ */
+int st_start_srp (int listen_port,
+	          char *certfile,
+	          char *keyfile,
+	          char *realm,
+	          char *ca_chain_file,
+	          char *trusted_certs_file,
+	          char *ossl_conf_file,
+	          int enable_pop,
+		  char *vfile)
+{
+    int rv;
+
+    rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+	      trusted_certs_file, ossl_conf_file, 0, enable_pop, 0, 1, vfile);
+
+    return (rv);
+}
+
+/*
+ * Note: Many of the following functions are not following
+ *       EST API guidelines.  Specifically, some of these calls
+ *       into the API should not occur on a running server.
+ *       DO NOT follow this code as an example for production
+ *       code.  This is here for testing only, supporting negative
+ *       test cases in some scenarios.
+ */
 void st_disable_csr_cb ()
 {
     est_set_csr_cb(ectx, NULL);
@@ -652,6 +816,11 @@ void st_set_csrattrs (char *value)
 void st_disable_http_auth ()
 {
     est_set_http_auth_cb(ectx, NULL);
+}
+
+void st_enable_http_auth ()
+{
+    est_set_http_auth_cb(ectx, &process_http_auth);
 }
 
 void st_enable_http_digest_auth ()
@@ -672,4 +841,14 @@ void st_enable_pop ()
 void st_disable_pop ()
 {
     est_server_disable_pop(ectx);
+}
+
+void st_set_http_auth_optional ()
+{
+    est_set_http_auth_required(ectx, HTTP_AUTH_NOT_REQUIRED);
+}
+
+void st_set_http_auth_required ()
+{
+    est_set_http_auth_required(ectx, HTTP_AUTH_REQUIRED);
 }

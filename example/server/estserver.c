@@ -49,6 +49,7 @@ static int write_csr = 0;
 static int crl = 0;
 static int pop = 0;
 static int v6 = 0;
+static int srp = 0;
 #ifndef DISABLE_TSEARCH
 static int simulate_manual_enroll = 0;
 #endif
@@ -67,6 +68,8 @@ unsigned char *cacerts_raw = NULL;
 int cacerts_len = 0;
 unsigned char *trustcerts = NULL;
 int trustcerts_len = 0;
+
+SRP_VBASE *srp_db = NULL;
 
 /*
  * This is the single EST context we need for operating
@@ -140,12 +143,12 @@ static void show_usage_and_exit (void)
             "  -k <file>    PEM file to use for server key\n"
             "  -r <value>   HTTP realm to present to clients\n"
             "  -l           Enable CRL checks\n"
-            "  -t           Enable check for binding the PoP with the PoI of the client via the TLS UID\n"
+            "  -t           Enable check for binding client PoP to the TLS UID\n"
 #ifndef DISABLE_TSEARCH
             "  -m <seconds> Simulate manual CA enrollment\n"
 #endif
             "  -M <seconds> Manual CA enrollment: delete and await new '" TEMP_CERT_FILE "' file for manual CA enrollment, implies -w\n"
-            "  -n           Do not force HTTP authentication\n"
+            "  -n           Do not require HTTP authentication when TLS client auth succeeds\n"
             "  -h           Use HTTP Digest auth instead of Basic auth\n"
 	    "  -p <num>     TCP port number to listen on\n"
 #ifndef DISABLE_PTHREADS
@@ -154,6 +157,7 @@ static void show_usage_and_exit (void)
 	    "  -f           Runs EST Server in FIPS MODE = ON\n"
 	    "  -6           Enable IPv6\n"
             "  -w           Dump the CSR to '" TEMP_CSR_FILE "' allowing for manual attribute capture and manual CA enrollment on server\n"
+	    "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
 	    "  -?           Print this help message and exit\n"
             "\n");
     exit(255);
@@ -387,7 +391,7 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
 	    printf("\n%s - Peer cert CN is %s\n", __FUNCTION__, sn);
 	}
 	if (app_data) {
-	    printf("ex_data value is %x\n", *((unsigned int *)app_data)); // TODO: generalize or remove
+	    printf("ex_data value is %x\n", *((unsigned int *)app_data));
 	}
     }
 
@@ -588,6 +592,49 @@ int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
     return user_valid;
 }
 
+/*
+ * This callback is issued during the TLS-SRP handshake.  
+ * We can use this to get the userid from the TLS-SRP handshake.
+ * If a verifier file as provided, we must pull the SRP verifier 
+ * parameters and invoke SSL_set_srp_server_param() with these
+ * values to allow the TLS handshake to succeed.  If the application
+ * layer wants to use their own verifier store, they would
+ * hook into it here.  They would lookup the verifier parameters
+ * based on the userid and return those parameters by invoking
+ * SSL_set_srp_server_param().
+ */
+static int process_ssl_srp_auth (SSL *s, int *ad, void *arg) {
+
+    char *login = SSL_get_srp_username(s);
+    SRP_user_pwd *user;
+
+    if (!login) return (-1);
+
+    printf("SRP username = %s\n", login);
+
+    user = SRP_VBASE_get_by_user(srp_db, login); 
+
+    if (user == NULL) {
+	printf("User %s doesn't exist in SRP database\n", login);
+	return SSL3_AL_FATAL;
+    }
+
+    /*
+     * Get the SRP parameters for the user from the verifier database.
+     * Provide these parameters to TLS to complete the handshake
+     */
+    if (SSL_set_srp_server_param(s, user->N, user->g, user->s, user->v, user->info) < 0) {
+	*ad = SSL_AD_INTERNAL_ERROR;
+	return SSL3_AL_FATAL;
+    }
+		
+    printf("SRP parameters set: username = \"%s\" info=\"%s\" \n", login, user->info);
+
+    user = NULL;
+    login = NULL;
+    fflush(stdout);
+    return SSL_ERROR_NONE;
+}
 
 
 /*
@@ -621,6 +668,10 @@ void cleanup (void)
 
     est_server_stop(ectx);
     est_destroy(ectx);
+
+    if (srp_db) {
+	SRP_VBASE_free(srp_db);
+    }
 
     /*
      * Tear down the mutexes used by OpenSSL
@@ -660,6 +711,12 @@ int main (int argc, char **argv)
     EST_ERROR rv;
     int sleep_delay = 0;
     int retry_period = 300;
+    char vfile[255];
+    int option_index = 0;
+    static struct option long_options[] = {
+        {"srp", 1, NULL, 0},
+        {NULL, 0, NULL, 0}
+    };
     
     /* Show usage if -h or --help options are specified */
     if ((argc == 1) ||
@@ -667,8 +724,21 @@ int main (int argc, char **argv)
         show_usage_and_exit();
     }
 
-    while ((c = getopt(argc, argv, "?fhwnvr:c:k:m:M:p:d:lt6")) != -1) {
+    while ((c = getopt_long(argc, argv, "?fhwnvr:c:k:m:M:p:d:lt6", long_options, &option_index)) != -1) {
         switch (c) {
+	case 0:
+#if 0
+            printf("option %s", long_options[option_index].name);
+            if (optarg) {
+                printf (" with arg %s", optarg);
+	    }
+            printf ("\n");
+#endif
+            if (!strncmp(long_options[option_index].name,"srp", strlen("srp"))) {
+		srp = 1;
+                strncpy(vfile, optarg, 255);
+            }
+	    break;
 #ifndef DISABLE_TSEARCH
         case 'm':
             simulate_manual_enroll = 1;
@@ -686,6 +756,9 @@ int main (int argc, char **argv)
             write_csr = 1;
             break;
         case 'n':
+            disable_forced_http_auth = 1;
+            break;
+        case 'o':
             disable_forced_http_auth = 1;
             break;
         case 'v':
@@ -854,6 +927,23 @@ int main (int argc, char **argv)
 	est_server_disable_pop(ectx);
     }
 
+    if (srp) {
+	srp_db = SRP_VBASE_new(NULL);
+	if (!srp_db) {
+	    printf("\nUnable allocate SRP verifier database.  Aborting!!!\n");
+	    exit(1); 
+	}
+	if (SRP_VBASE_init(srp_db, vfile) != SRP_NO_ERROR) {
+	    printf("\nUnable initialize SRP verifier database.  Aborting!!!\n");
+	    exit(1); 
+	}
+	
+	if (est_server_enable_srp(ectx, &process_ssl_srp_auth)) { 
+	    printf("\nUnable to enable SRP.  Aborting!!!\n");
+	    exit(1);
+	}
+    }
+
     if (est_set_ca_enroll_cb(ectx, &process_pkcs10_enrollment)) {
         printf("\nUnable to set EST pkcs10 enrollment callback.  Aborting!!!\n");
         exit(1);
@@ -879,10 +969,13 @@ int main (int argc, char **argv)
     if (disable_forced_http_auth) {
 	if (verbose) printf("\nDisabling forced HTTP authentication");
     }
-    if (est_set_http_auth_forced(ectx, !disable_forced_http_auth)) {
-        printf("\nUnable to set EST HTTP AUTH enforcement policy.  Aborting!!!\n");
-	exit(1);
-    }    
+    if (disable_forced_http_auth) {
+	if (verbose) printf("\nNot requiring HTTP authentication when TLS client auth succeeds\n");
+	if (est_set_http_auth_required(ectx, HTTP_AUTH_NOT_REQUIRED)) {
+	    printf("\nUnable to disable required HTTP auth.  Aborting!!!\n");
+	    exit(1);
+	}    
+    }
 
     if (http_digest_auth) {
 	rv = est_server_set_auth_mode(ectx, AUTH_DIGEST);

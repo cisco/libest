@@ -78,6 +78,111 @@ long curl_http_get (char *url, char *cacert, void *writefunc)
  *	    for HTTP authentication.  Use a colin to delimit the
  *	    two fields.
  * cacert:  char array with the path name of the CA certs file
+ *	    on the local file system.  This is optional.  Pass NULL
+ *	    to disable TLS verification of the peer's certificate,
+ *	    which may be valid for some TLS-SRP use cases.
+ * authmode:  Libcurl authentication mode to use.  Should be
+ *            CURLAUTH_DIGEST or CURLAUTH_BASIC
+ * cipher_suite: char array containing list of TLS cipher suites to enable
+ *               in the TLS stack.  The naming convention follows
+ *               OpenSSL.  This parameter is optional.  Pass in NULL
+ *               to use the default cipher list.
+ * srp_user: User name to use for TLS-SRP authentication
+ * srp_pwd: Password to use for TLS-SRP authentication
+ * writefunc: Function pointer to handle writing the data
+ *            from the HTTP body received from the server.
+ * hdrfunc: Function pointer to handle writing the data
+ *          from the HTTP header received from the server.
+ *
+ * Return value is the HTTP status value from the server
+ *	    (e.g. 200 for HTTP OK)
+ */
+long curl_http_post_srp (char *url, char *ct, char *data, 
+	                 char *uidpwd, char *cacert, long authmode,
+		         char *cipher_suite,
+			 char *srp_user, char *srp_pwd,
+		         void *writefunc,
+		         void *hdrfunc)
+{
+  long http_code = 0;
+  CURL *hnd;
+  struct curl_slist *slist1;
+
+
+  /*
+   * Set the Content-Type header in the HTTP request 
+   */
+  slist1 = NULL;
+  slist1 = curl_slist_append(slist1, ct);
+
+  /*
+   * Setup all the other fields that CURL requires
+   */
+  hnd = curl_easy_init();
+  curl_easy_setopt(hnd, CURLOPT_URL, url);
+  curl_easy_setopt(hnd, CURLOPT_NOPROGRESS, 1L);
+  curl_easy_setopt(hnd, CURLOPT_USERPWD, uidpwd);
+  curl_easy_setopt(hnd, CURLOPT_POSTFIELDS, data);
+  curl_easy_setopt(hnd, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)strlen(data));
+  curl_easy_setopt(hnd, CURLOPT_USERAGENT, "curl/7.27.0");
+  curl_easy_setopt(hnd, CURLOPT_HTTPHEADER, slist1);
+  curl_easy_setopt(hnd, CURLOPT_MAXREDIRS, 50L);
+  curl_easy_setopt(hnd, CURLOPT_HTTPAUTH, authmode);
+  curl_easy_setopt(hnd, CURLOPT_TLSAUTH_USERNAME, srp_user);
+  curl_easy_setopt(hnd, CURLOPT_TLSAUTH_PASSWORD, srp_pwd);
+  if (cacert) {
+    curl_easy_setopt(hnd, CURLOPT_CAINFO, cacert);
+    curl_easy_setopt(hnd, CURLOPT_SSL_VERIFYPEER, 1L);
+  } else {
+    curl_easy_setopt(hnd, CURLOPT_SSL_VERIFYPEER, 0L);
+  }
+  curl_easy_setopt(hnd, CURLOPT_VERBOSE, 1L);
+  curl_easy_setopt(hnd, CURLOPT_TCP_KEEPALIVE, 1L);
+  curl_easy_setopt(hnd, CURLOPT_FORBID_REUSE, 1L);
+  if (cipher_suite) {
+    curl_easy_setopt(hnd, CURLOPT_SSL_CIPHER_LIST, cipher_suite);
+  }
+
+  /*
+   * If the caller wants the HTTP data from the server
+   * set the callback function
+   */
+  if (writefunc) {
+    curl_easy_setopt(hnd, CURLOPT_WRITEFUNCTION, writefunc);
+  }
+  if (hdrfunc) {
+    curl_easy_setopt(hnd, CURLOPT_HEADERFUNCTION, hdrfunc);
+  }
+
+  /*
+   * Issue the HTTP request
+   */
+  curl_easy_perform(hnd);
+
+  /*
+   * Get the HTTP reponse status code from the server
+   */
+  curl_easy_getinfo (hnd, CURLINFO_RESPONSE_CODE, &http_code);
+
+  curl_easy_cleanup(hnd);
+  hnd = NULL;
+  curl_slist_free_all(slist1);
+  slist1 = NULL;
+
+  return (http_code);
+}
+
+/*
+ * This function uses libcurl to send an HTTP POST request to
+ * a given URL.  The parameters are:
+ *
+ * url:	    char array containing the full server name and path
+ * ct:	    char array specifying the HTTP Content Type header to use
+ * data:    binary data to post to the server
+ * uidpwd:  char array containing the User ID and Password to be used
+ *	    for HTTP authentication.  Use a colin to delimit the
+ *	    two fields.
+ * cacert:  char array with the path name of the CA certs file
  *	    on the local file system.
  * authmode:  Libcurl authentication mode to use.  Should be
  *            CURLAUTH_DIGEST or CURLAUTH_BASIC

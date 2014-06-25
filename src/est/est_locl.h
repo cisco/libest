@@ -10,13 +10,14 @@
 
 #ifndef HEADER_EST_LOCL_H
 #define HEADER_EST_LOCL_H
+#include <openssl/srp.h>
 
 #include "est_config.h"
 /*
  * Version identifiers.  These should be updated appropriately
  * for each release.
  */
-#define EST_API_LEVEL       1  //Update this whenever there's a change to the public API
+#define EST_API_LEVEL       3  //Update this whenever there's a change to the public API
 #define EST_VER_STRING      PACKAGE_STRING
 
 #define EST_URI_MAX_LEN     32
@@ -35,18 +36,37 @@
  * Cipher suite filter for OpenSSL
  */
 #define EST_CIPHER_LIST             "ALL:!aNULL:!eNULL:!SSLv2:!EXPORT"
+#define EST_CIPHER_LIST_SRP_SERVER  "ALL:!eNULL:!SSLv2:!EXPORT:SRP"
+#define EST_CIPHER_LIST_SRP_ONLY    "SRP:!aRSA:!aDSS"
+#define EST_CIPHER_LIST_SRP_AUTH    "SRP"
+/*
+ * SRP
+ */
+#define EST_SRP_STRENGTH_MIN	    SRP_MINIMAL_N  /* from OpenSSL */
+/*
+ * HTTP
+ */
+#define EST_HTTP_STAT_202	    202 
+#define EST_HTTP_STAT_204	    204 
+#define EST_HTTP_STAT_400	    400 
+#define EST_HTTP_STAT_401	    401
+#define EST_HTTP_STAT_404	    404
 
+#define EST_HTTP_STAT_202_TXT	    "Accepted" 
+#define EST_HTTP_STAT_204_TXT	    "No Content" 
+#define EST_HTTP_STAT_400_TXT	    "Bad Request" 
+#define EST_HTTP_STAT_401_TXT	    "Unauthorized" 
+#define EST_HTTP_STAT_404_TXT	    "Not Found" 
 
 #define EST_HTTP_HDR_MAX            1024 
 #define EST_HTTP_HDR_200            "HTTP/1.1 200 OK"
 #define EST_HTTP_HDR_STAT_200       "Status: 200 OK"
-#define EST_HTTP_HDR_202            "HTTP/1.1 202 Accepted"
-#define EST_HTTP_HDR_STAT_202       "Status: 202 Accepted"
-#define EST_HTTP_HDR_204            "HTTP/1.1 204 No Content"
-#define EST_HTTP_HDR_STAT_204       "Status: 204 No Content"
-#define EST_HTTP_HDR_400            "HTTP/1.1 400 Bad Request"
-#define EST_HTTP_HDR_401            "HTTP/1.1 401 Unauthorized"
-#define EST_HTTP_HDR_404            "HTTP/1.1 404 Not Found"
+#define EST_HTTP_HDR_202            "HTTP/1.1 202 " EST_HTTP_STAT_202_TXT
+#define EST_HTTP_HDR_STAT_202       "Status: 202 "  EST_HTTP_STAT_202_TXT
+#define EST_HTTP_HDR_204            "HTTP/1.1 204 " EST_HTTP_STAT_204_TXT
+#define EST_HTTP_HDR_400            "HTTP/1.1 400 " EST_HTTP_STAT_400_TXT
+#define EST_HTTP_HDR_401            "HTTP/1.1 401 " EST_HTTP_STAT_401_TXT
+#define EST_HTTP_HDR_404            "HTTP/1.1 404 " EST_HTTP_STAT_404_TXT
 #define EST_HTTP_HDR_CT             "Content-Type"
 #define EST_HTTP_HDR_CE             "Content-Transfer-Encoding"
 #define EST_HTTP_HDR_CL             "Content-Length"
@@ -71,27 +91,11 @@
 /*
  * HTTP error responses
  */
-#define EST_HDR_BAD_URI         "HTTP/1.1 400 Bad Request\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
-#define EST_BODY_BAD_URI        "Invalid URI.  Valid URI may be one of: \n" \
-    "/cacerts, /simpleenroll and /simplereenroll\n"
-#define EST_HDR_BAD_PKCS10      "HTTP/1.1 400 Bad Request\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
 #define EST_BODY_BAD_PKCS10     "Invalid or corrupted pkcs10 request.\n"
-#define EST_HDR_UNAUTHORIZED    "HTTP/1.1 401 Unauthorized\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
 #define EST_BODY_UNAUTHORIZED   "The server was unable to authorize the request.\n"
-#define EST_HDR_BAD_METH        "HTTP/1.1 400 Bad Request\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
 #define EST_BODY_BAD_METH       "Invalid HTTP method used.  Either GET or POST required depending on the request type.\n"
-#define EST_HDR_BAD_SSL         "HTTP/1.1 400 TLS error\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
 #define EST_BODY_BAD_SSL        "An unknown TLS error has occured.\n"
-#define EST_HDR_UNKNOWN_ERR     "HTTP/1.1 400 error\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
 #define EST_BODY_UNKNOWN_ERR    "An unknown error has occured.\n"
-#define EST_HDR_NOT_FOUND       "HTTP/1.1 404 Not Found\r\n" \
-    "Content-Type: text/plain\r\n\r\n"
 #define EST_BODY_NOT_FOUND      "Requested content is currently not available on the server.\n"
 
 
@@ -116,6 +120,7 @@ typedef enum {
     EST_HTTP_AUTH,
     EST_HTTP_AUTH_PENDING,
     EST_CERT_AUTH,
+    EST_SRP_AUTH,
 } EST_AUTH_STATE;
 
 
@@ -209,7 +214,9 @@ struct est_ctx {
     EVP_PKEY *server_priv_key;
     int server_enable_pop; /* enable proof-of-possession check */
     int client_force_pop;  /* force proof-of-possession gen at the client */
-    int force_http_auth;  /* force http authentication at the client */
+    EST_HTTP_AUTH_REQUIRED require_http_auth;  
+			   /* require http authentication of the client
+			      even when TLS auth was performed */
     int csr_pop_present;  /* proof-of-possession already in csr attributes */
     int csr_pop_required; /* proof-of-possession required in enroll */
     SSL_CTX         *ssl_ctx_proxy;
@@ -223,6 +230,8 @@ struct est_ctx {
     CLIENT_CTX_LU_NODE_T *client_ctx_array;
     void *ex_data; /* Optional application specific data
                       for use by the callback functions */
+    int enable_srp;
+    int (*est_srp_username_cb)(SSL *s, int *ad, void *arg);
 };
 
 /*

@@ -1553,7 +1553,7 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
 
 /*  est_client_enroll_pkcs10() This function implements the Simple Enroll
  *  flow. It signs the CSR that was provided and then sends the CSR
- *   to the EST server and retrieves the pkcs7 response.
+ *  to the EST server and retrieves the pkcs7 response.
  *
  *  Parameters:
  *    ctx    EST context
@@ -1642,7 +1642,7 @@ static EST_ERROR est_client_enroll_cn (EST_CTX *ctx, SSL *ssl, char *cn,
     char        *tls_uid;
 
     if (!ctx) {
-        return (EST_ERR_NO_SSL_CTX);
+        return (EST_ERR_NO_CTX);
     }
 
     /*
@@ -2098,6 +2098,9 @@ static EST_ERROR est_client_check_fqdn (EST_CTX *ctx, SSL *ssl)
 	er = est_client_verifyhost(ctx->est_server, cert);
 	X509_free(cert);
 	return (er);
+    } else if (!cert && ctx->enable_srp) {
+	EST_LOG_INFO("No peer certificate, skipping FQDN check since SRP is enabled.");
+	return EST_ERR_NONE;
     } else {
 	EST_LOG_WARN("Unable to perform FQDN check, no peer certificate.");
 	return EST_ERR_FQDN_MISMATCH;
@@ -2513,10 +2516,10 @@ EST_ERROR est_client_enroll_csr (EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EV
         return EST_ERR_CLIENT_NOT_INITIALIZED;
     }
 
-    /*
-     * Do a sanity check on the CSR
-    */
     if (priv_key) {
+	/*
+	 * Do a sanity check on the CSR
+	*/
 	rv = est_client_check_csr(csr); 
 	if (EST_ERR_NONE != rv) {
 	    return (rv);
@@ -2987,7 +2990,7 @@ EST_ERROR est_client_copy_enrolled_cert (EST_CTX *ctx, unsigned char *pkcs7)
 {
 
     if (!ctx) {
-        return (EST_ERR_NO_SSL_CTX);
+        return (EST_ERR_NO_CTX);
     }
 
     if (!ctx->est_client_initialized) {
@@ -3044,7 +3047,7 @@ EST_ERROR est_client_get_cacerts (EST_CTX *ctx, int *ca_certs_len)
     SSL *ssl = NULL;
 
     if (!ctx) {
-        return (EST_ERR_NO_SSL_CTX);
+        return (EST_ERR_NO_CTX);
     }
 
     if (!ctx->est_client_initialized) {
@@ -3099,7 +3102,7 @@ EST_ERROR est_client_copy_cacerts (EST_CTX *ctx, unsigned char *ca_certs)
 {
 
     if (!ctx) {
-        return (EST_ERR_NO_SSL_CTX);
+        return (EST_ERR_NO_CTX);
     }
 
     if (!ctx->est_client_initialized) {
@@ -3233,6 +3236,105 @@ EST_ERROR est_client_get_csrattrs (EST_CTX *ctx, unsigned char **csr_data, int *
     ctx->csr_pop_required = pop_required;
     
     return (rv);
+}
+
+/*! @brief est_client_enable_srp() is used by an application to enable
+    TLS-SRP as the transport, which is used in place of traditional
+    TLS.  TLS-SRP allows for secure transport when an X.509 certificate
+    is not available or when a trust anchor is not available.
+ 
+    @param ctx EST context obtained from the est_client_init() call.
+    @param strength Specifies the SRP strength to use.
+    @param uid char buffer containing the user id to be used as the
+    SRP user name. 
+    @param pwd char buffer containing the passowrd to be used as the
+    SRP password.
+
+    This function allows an application to enable TLS-SRP cipher suites,
+    which is another form for TLS.  This could be used when the EST client
+    does not have an X.509 certificate to identify itself to the EST
+    server.  It can also be used by the EST client when a trust anchor
+    is not available to authenticate the EST server identity.  
+    The EST server must support TLS-SRP when using this API. 
+
+    This function must be invoked after est_client_init() and prior to 
+    issuing any EST commands..
+
+    All string parameters are NULL terminated strings.
+    
+    @return EST_ERROR.  If error, NULL.
+*/
+EST_ERROR est_client_enable_srp (EST_CTX *ctx, int strength, char *uid, char *pwd) 
+{
+    X509_STORE *store;
+    int rv;
+
+    if (ctx == NULL) {
+	EST_LOG_ERR("Null context passed");
+        return (EST_ERR_NO_CTX);
+    }    
+
+    if (ctx->ssl_ctx == NULL) {
+	EST_LOG_ERR("SSL context has not been initialized");
+        return (EST_ERR_NO_SSL_CTX);
+    }
+    
+    if (strength < EST_SRP_STRENGTH_MIN) {
+	EST_LOG_ERR("SRP strength must be greater than %d", EST_SRP_STRENGTH_MIN);
+        return (EST_ERR_SRP_STRENGTH_LOW);
+    }
+
+    if (uid == NULL) {
+	EST_LOG_ERR("SRP user ID must be provided");
+	return (EST_ERR_INVALID_PARAMETERS);
+    }
+
+    if (pwd == NULL) {
+	EST_LOG_ERR("SRP password must be provided");
+	return (EST_ERR_INVALID_PARAMETERS);
+    }
+
+    ctx->enable_srp = 1;
+
+    /*
+     * Enable just the SRP cipher suites.  When SRP is enabled,
+     * it's used exclusively.
+     *
+     * Check if we have a trust anchor configured.  We will
+     * enable the DSS and RSA auth cipher suites if we do.
+     */
+    store = SSL_CTX_get_cert_store(ctx->ssl_ctx);
+    if (store && store->objs && sk_X509_OBJECT_num(store->objs) > 0) {
+	EST_LOG_INFO("Enable SSL SRP cipher suites with RSA/DSS\n");
+        rv = SSL_CTX_set_cipher_list(ctx->ssl_ctx, EST_CIPHER_LIST_SRP_AUTH);
+    } else {
+	EST_LOG_INFO("Enable SSL SRP cipher suites w/o RSA/DSS\n");
+        rv = SSL_CTX_set_cipher_list(ctx->ssl_ctx, EST_CIPHER_LIST_SRP_ONLY);
+    }
+    if (!rv) { 
+	EST_LOG_ERR("Failed to set SSL SRP cipher suites\n");
+	ossl_dump_ssl_errors();
+	return EST_ERR_SSL_CIPHER_LIST;
+    }
+	
+    /* 
+     * Set the SRP user name and password.  
+     */
+    if (!SSL_CTX_set_srp_username(ctx->ssl_ctx, uid)) {
+	EST_LOG_ERR("Unable to set SRP username\n");
+	ossl_dump_ssl_errors();
+	return EST_ERR_UNKNOWN; 
+    }
+    if (!SSL_CTX_set_srp_password(ctx->ssl_ctx, pwd)) {
+	EST_LOG_ERR("Unable to set SRP password\n");
+	ossl_dump_ssl_errors();
+	return EST_ERR_UNKNOWN; 
+    }
+    SSL_CTX_set_srp_strength(ctx->ssl_ctx, strength);
+
+    EST_LOG_INFO("TLS-SRP enabled");
+
+    return (EST_ERR_NONE);
 }
 
 
@@ -3607,7 +3709,7 @@ EST_ERROR est_client_copy_retry_after (EST_CTX *ctx, int *retry_delay,
 {
 
     if (!ctx) {
-        return (EST_ERR_NO_SSL_CTX);
+        return (EST_ERR_NO_CTX);
     }
 
     if (!ctx->est_client_initialized) {

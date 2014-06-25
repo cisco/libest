@@ -40,6 +40,7 @@ static int listen_port = PROXY_PORT;
 static int verbose = 0;
 static int pop = 0;
 static int v6 = 0;
+static int srp = 0;
 static int http_auth_disable = 0;
 static int http_digest_auth = 0;
 static int set_fips_return = 0;
@@ -54,6 +55,7 @@ int cacerts_len = 0;
 unsigned char *trustcerts = NULL;
 int trustcerts_len = 0;
 
+SRP_VBASE *srp_db = NULL;
 
 static void print_version (FILE *fp)
 {
@@ -78,6 +80,7 @@ static void show_usage_and_exit (void)
 #endif
 	    "  -f           Runs EST Proxy in FIPS MODE = ON\n"
 	    "  -6           Enable IPv6\n"
+	    "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
             "\n");
     exit(255);
 }
@@ -138,6 +141,50 @@ int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
 }
 
 /*
+ * This callback is issued during the TLS-SRP handshake.  
+ * We can use this to get the userid from the TLS-SRP handshake.
+ * If a verifier file as provided, we must pull the SRP verifier 
+ * parameters and invoke SSL_set_srp_server_param() with these
+ * values to allow the TLS handshake to succeed.  If the application
+ * layer wants to use their own verifier store, they would
+ * hook into it here.  They would lookup the verifier parameters
+ * based on the userid and return those parameters by invoking
+ * SSL_set_srp_server_param().
+ */
+static int process_ssl_srp_auth (SSL *s, int *ad, void *arg) {
+
+    char *login = SSL_get_srp_username(s);
+    SRP_user_pwd *user;
+
+    if (!login) return (-1);
+
+    printf("SRP username = %s\n", login);
+
+    user = SRP_VBASE_get_by_user(srp_db, login); 
+
+    if (user == NULL) {
+	printf("User %s doesn't exist in SRP database\n", login);
+	return SSL3_AL_FATAL;
+    }
+
+    /*
+     * Get the SRP parameters for the user from the verifier database.
+     * Provide these parameters to TLS to complete the handshake
+     */
+    if (SSL_set_srp_server_param(s, user->N, user->g, user->s, user->v, user->info) < 0) {
+	*ad = SSL_AD_INTERNAL_ERROR;
+	return SSL3_AL_FATAL;
+    }
+		
+    printf("SRP parameters set: username = \"%s\" info=\"%s\" \n", login, user->info);
+
+    user = NULL;
+    login = NULL;
+    fflush(stdout);
+    return SSL_ERROR_NONE;
+}
+
+/*
  * We're using OpenSSL, both as the CA and libest
  * requires it.  OpenSSL requires these platform specific
  * locking callbacks to be set when multi-threaded support
@@ -175,6 +222,9 @@ void cleanup (void)
 
     est_proxy_stop(ectx);
     est_destroy(ectx);
+    if (srp_db) {
+	SRP_VBASE_free(srp_db);
+    }
     free(cacerts_raw);
     free(trustcerts);
     est_apps_shutdown();
@@ -189,6 +239,12 @@ int main (int argc, char **argv)
     X509 *x;
     EST_ERROR rv;
     int sleep_delay = 0;
+    char vfile[255];
+    int option_index = 0;
+    static struct option long_options[] = {
+        {"srp", 1, NULL, 0},
+        {NULL, 0, NULL, 0}
+    };
     
     /* Show usage if -h or --help options are specified or if no parameters have
      * been specified.  Upstream server and port are required.
@@ -198,8 +254,14 @@ int main (int argc, char **argv)
         show_usage_and_exit();
     }
 
-    while ((c = getopt(argc, argv, "vt6nhfr:c:k:s:p:l:d:")) != -1) {
+    while ((c = getopt_long(argc, argv, "vt6nhfr:c:k:s:p:l:d:", long_options, &option_index)) != -1) {
         switch (c) {
+	case 0:
+            if (!strncmp(long_options[option_index].name,"srp", strlen("srp"))) {
+		srp = 1;
+                strncpy(vfile, optarg, 255);
+            }
+	    break;
         case 'v':
             verbose = 1;
             break;
@@ -373,6 +435,23 @@ int main (int argc, char **argv)
     }
 
     est_proxy_set_server(ectx, est_server, est_server_port);
+
+    if (srp) {
+	srp_db = SRP_VBASE_new(NULL);
+	if (!srp_db) {
+	    printf("\nUnable allocate SRP verifier database.  Aborting!!!\n");
+	    exit(1); 
+	}
+	if (SRP_VBASE_init(srp_db, vfile) != SRP_NO_ERROR) {
+	    printf("\nUnable initialize SRP verifier database.  Aborting!!!\n");
+	    exit(1); 
+	}
+	
+	if (est_server_enable_srp(ectx, &process_ssl_srp_auth)) { 
+	    printf("\nUnable to enable SRP.  Aborting!!!\n");
+	    exit(1);
+	}
+    }
 
     /*
      * Install thread locking mechanism for OpenSSL

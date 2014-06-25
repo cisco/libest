@@ -25,65 +25,64 @@
 static ASN1_OBJECT *o_cmcRA = NULL;
 
 /*
- * This function sends an HTTP error response.
+ * This function sends EST specific HTTP error responses.
  */
 void est_send_http_error (EST_CTX *ctx, void *http_ctx, int fail_code)
 {
+    struct mg_connection *conn = (struct mg_connection*)http_ctx;
+
     switch (fail_code) {
     case EST_ERR_BAD_PKCS10:
-        if (!mg_write(http_ctx, EST_HDR_BAD_PKCS10, strnlen(EST_HDR_BAD_PKCS10, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
-        if (!mg_write(http_ctx, EST_BODY_BAD_PKCS10, strnlen(EST_BODY_BAD_PKCS10, EST_BODY_MAX_LEN))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_400, EST_HTTP_STAT_400_TXT, EST_BODY_BAD_PKCS10);
         break;
     case EST_ERR_AUTH_FAIL:
-        if (!mg_write(http_ctx, EST_HDR_UNAUTHORIZED, strnlen(EST_HDR_UNAUTHORIZED, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
-        if (!mg_write(http_ctx, EST_BODY_UNAUTHORIZED, strnlen(EST_BODY_UNAUTHORIZED, EST_BODY_MAX_LEN))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_401, EST_HTTP_STAT_401_TXT, EST_BODY_UNAUTHORIZED);
         break;
     case EST_ERR_WRONG_METHOD:
-        if (!mg_write(http_ctx, EST_HDR_BAD_METH, strnlen(EST_HDR_BAD_METH, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
-        if (!mg_write(http_ctx, EST_BODY_BAD_METH, strnlen(EST_BODY_BAD_METH, EST_BODY_MAX_LEN))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_400, EST_HTTP_STAT_400_TXT, EST_BODY_BAD_METH);
         break;
     case EST_ERR_NO_SSL_CTX:
-        if (!mg_write(http_ctx, EST_HDR_BAD_SSL, strnlen(EST_HDR_BAD_SSL, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
-        if (!mg_write(http_ctx, EST_BODY_BAD_SSL, strnlen(EST_BODY_BAD_SSL, EST_BODY_MAX_LEN))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_400, EST_HTTP_STAT_400_TXT, EST_BODY_BAD_SSL);
         break;
     case EST_ERR_HTTP_NOT_FOUND:
-        if (!mg_write(http_ctx, EST_HDR_NOT_FOUND, strnlen(EST_HDR_NOT_FOUND, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
-        if (!mg_write(http_ctx, EST_BODY_NOT_FOUND, strnlen(EST_BODY_NOT_FOUND, EST_BODY_MAX_LEN))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_404, EST_HTTP_STAT_404_TXT, EST_BODY_NOT_FOUND);
         break;
     case EST_ERR_HTTP_NO_CONTENT:
-        if (!mg_write(http_ctx, EST_HTTP_HDR_204, strnlen(EST_HTTP_HDR_204, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_204, EST_HTTP_STAT_204_TXT, "");
         break;
     default:
-        if (!mg_write(http_ctx, EST_HDR_UNKNOWN_ERR, strnlen(EST_HDR_UNKNOWN_ERR, EST_HTTP_HDR_MAX))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
-        if (!mg_write(http_ctx, EST_BODY_UNKNOWN_ERR, strnlen(EST_BODY_UNKNOWN_ERR, EST_BODY_MAX_LEN))) {
-	    EST_LOG_ERR("mg_write failed");
-        }
+	mg_send_http_error(conn, EST_HTTP_STAT_400, EST_HTTP_STAT_400_TXT, EST_BODY_UNKNOWN_ERR);
         break;
     }
+}
+
+/*
+ * This function sends a HTTP 202 Accepted response to the 
+ * client with the retry-after value from the CA. This
+ * notifies the client that it should check back later to
+ * see if the CSR was approved.
+ */
+EST_ERROR est_server_send_http_retry_after (EST_CTX *ctx, void *http_ctx, int delay)
+{
+    char http_hdr[EST_HTTP_HDR_MAX];
+    struct mg_connection *conn = (struct mg_connection*)http_ctx;
+
+    snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s%s: %d%s%s", 
+	EST_HTTP_HDR_202,
+        EST_HTTP_HDR_EOL, 
+	EST_HTTP_HDR_STAT_202, 
+	EST_HTTP_HDR_EOL,
+	EST_HTTP_HDR_RETRY_AFTER, 
+	delay, 
+	EST_HTTP_HDR_EOL, 
+	EST_HTTP_HDR_EOL);
+
+    conn->status_code = EST_HTTP_STAT_202;
+    if (!mg_write(http_ctx, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
+        EST_LOG_ERR("HTTP write error while propagating retry-after");
+        return (EST_ERR_HTTP_WRITE);
+    }
+    return (EST_ERR_NONE);
 }
 
 /*
@@ -283,11 +282,24 @@ EST_AUTH_STATE est_enroll_auth (EST_CTX *ctx, void *http_ctx, SSL *ssl,
     }
 
     /*
-     * If the application layer has enabled HTTP authentication, and
-     * HTTP authentication is forced or certificate-based authentication did not succeed,
-     * then check the user's credentials
+     * See if SRP is being used.  If so, there will be no
+     * certificate.
      */
-    if (ctx->est_http_auth_cb && (rv != EST_CERT_AUTH || ctx->force_http_auth)) {
+    if (rv != EST_CERT_AUTH && SSL_get_srp_username(ssl) != NULL) {
+        EST_LOG_INFO("TLS: no certificate from client, SRP login is %s",
+		SSL_get_srp_username(ssl));
+	rv = EST_SRP_AUTH;
+    }
+
+    /*
+     * If the application layer has enabled HTTP authentication we
+     * will attempt HTTP authentication when TLS client auth fails
+     * or when the require_http_auth flag is set by the application.
+     * All this assumes the application layer has provided the HTTP auth
+     * callback facility.
+     */
+    if (ctx->est_http_auth_cb && 
+	(rv == EST_UNAUTHORIZED || HTTP_AUTH_REQUIRED == ctx->require_http_auth)) {
         /*
          * Try HTTP authentication.
          */
@@ -593,6 +605,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
      */
     switch (est_enroll_auth(ctx, http_ctx, ssl, reenroll)) {
     case EST_HTTP_AUTH:
+    case EST_SRP_AUTH:
     case EST_CERT_AUTH:
 	/*
 	 * this means the user was authorized, either through
@@ -708,18 +721,8 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
          * the CA is not configured for automatic enrollment.
          * Send the HTTP retry response to the client.
          */
-        EST_LOG_INFO("CA server requests retry, likely not setup for auto-enroll");
-        snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s%s: %d%s%s", 
-		EST_HTTP_HDR_202,
-                EST_HTTP_HDR_EOL, 
-		EST_HTTP_HDR_STAT_202, 
-		EST_HTTP_HDR_EOL,
-                EST_HTTP_HDR_RETRY_AFTER, 
-		ctx->retry_period, 
-		EST_HTTP_HDR_EOL, 
-		EST_HTTP_HDR_EOL);
-        hdrlen = strnlen(http_hdr, EST_HTTP_HDR_MAX);
-        if (!mg_write(http_ctx, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
+        EST_LOG_INFO("CA server requests retry, possibly it's not setup for auto-enroll");
+        if (EST_ERR_NONE != est_server_send_http_retry_after(ctx, http_ctx, ctx->retry_period)) { 
 	    X509_REQ_free(csr);
             return (EST_ERR_HTTP_WRITE);
         }
@@ -881,7 +884,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     /*
      * See if this is a simple enrollment request
      */
-    if (strncmp(uri, EST_SIMPLE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_SIMPLE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strncmp(method, "POST", 4)) {
             EST_LOG_WARN("Incoming HTTP request used wrong method\n");
@@ -918,7 +921,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     /*
      * See if this is a re-enrollment request
      */
-    if (strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strncmp(method, "POST", 4)) {
             EST_LOG_WARN("Incoming HTTP request used wrong method\n");
@@ -949,7 +952,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
 	    } else {
 		est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
 	    }
-            return (EST_ERR_BAD_PKCS10);
+            return rc;
         }
     }
 
@@ -958,7 +961,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
      * See if this is a keygen request
      * FIXME: this is currently not implemented
      */
-    if (strncmp(uri, EST_KEYGEN_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_KEYGEN_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strncmp(method, "POST", 4)) {
             EST_LOG_WARN("Incoming HTTP request used wrong method\n");
@@ -979,7 +982,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     /*
      * See if this is a CSR attributes request
      */
-    if (strncmp(uri, EST_CSR_ATTRS_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_CSR_ATTRS_URI, EST_URI_MAX_LEN) == 0) {
         /* Only GET is allowed */
         if (strncmp(method, "GET", 4)) {
             EST_LOG_WARN("Incoming HTTP request used wrong method\n");
@@ -992,6 +995,13 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
             est_send_http_error(ctx, http_ctx, rc); 
             return (rc);
         }
+    }
+
+    /*
+     * Send a 404 error if the URI didn't match 
+     */
+    else {
+        est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NOT_FOUND);
     }
 
     return (EST_ERR_NONE);
@@ -1163,6 +1173,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
     memset(ctx, 0, sizeof(EST_CTX));
     ctx->est_mode = EST_SERVER;
     ctx->retry_period = EST_RETRY_PERIOD_DEF;
+    ctx->require_http_auth = HTTP_AUTH_REQUIRED;
 
     /*
      * Load the CA certificates into local memory and retain
@@ -1385,25 +1396,87 @@ EST_ERROR est_set_http_auth_cb (EST_CTX *ctx,
     return (EST_ERR_NONE);
 }
 
-/*! @brief est_set_http_auth_forced() is used by an application to define whether
-    HTTP authentication should be forced in addition to using client certificates.
+/*! @brief est_set_http_auth_required() is used by an application to define whether
+    HTTP authentication should be required in addition to using client certificates.
  
     @param ctx Pointer to the EST context
-    @param forced Flag indicating that HTTP authentication is forced
+    @param required Flag indicating that HTTP authentication is required. Set 
+    to HTTP_AUTH_REQUIRED value to require HTTP auth.  Set to HTTP_AUTH_NOT_REQUIRED 
+    if HTTP auth should occur only when TLS client authentication fails.
  
     @return EST_ERROR.
+
+    The default mode is HTTP_AUTH_REQUIRED.  This means that HTTP authentication
+    will be attempted even when TLS client authentication succeeds.  If HTTP
+    authentication is only needed when TLS client auth fails, then set this
+    to HTTP_AUTH_NOT_REQUIRED.
  */
-EST_ERROR est_set_http_auth_forced (EST_CTX *ctx, int forced)
+EST_ERROR est_set_http_auth_required (EST_CTX *ctx, EST_HTTP_AUTH_REQUIRED required)
 {
     if (!ctx) {
 	EST_LOG_ERR("Null context");
         return (EST_ERR_NO_CTX);
     }
 
-    ctx->force_http_auth = forced;
+    ctx->require_http_auth = required;
 
     return (EST_ERR_NONE);
 }
+
+
+/*! @brief est_server_enable_srp() is used by an application to enable 
+    the TLS-SRP authentication.  This allows EST clients that provide 
+    SRP credentials at the TLS layer to be authenticated by the EST
+    server.  This function must be invoked to enable server-side
+    SRP support. 
+
+    @param ctx Pointer to the EST context
+    @param cb Function address of the application specific SRP verifier handler
+
+    This function should be invoked prior to starting the EST server.   
+    This is used to specify the handler for SRP authentication at the TLS
+    layer.  When a TLS-SRP cipher suite is negotiated at the TLS layer,
+    the handler will be invoked by CiscoEST to retrieve the SRP parameters
+    for user authentication.  Your application must provide the SRP parameters
+    for the user.  
+    
+    The handler should use the following logic:
+
+    1. Invoke SSL_get_srp_username() to get the SRP user name from the
+       TLS layer.
+    2. Lookup the user's SRP parameters in the application specific
+       user database.  These parameters include the N, g, s, and v 
+       parameters.
+    3. Invoke SSL_set_srp_server_param() to forward the SRP parameters
+       to the TLS layer, allowing the TLS handshake to proceed.
+       
+    CiscoEST includes an example server application that uses this handler
+    for SRP support.  This example uses the OpenSSL SRP verifier file capability
+    to manage SRP parameters for individual users.  Your application could use
+    this approach, or it may utilize another facility for managing user specific
+    SRP parameters.  Please refer to RFC 2945 and RFC 5054 for a full understanding
+    of SRP.
+
+    @return EST_ERROR.
+ */
+EST_ERROR est_server_enable_srp (EST_CTX *ctx, int (*cb)(SSL *s, int *ad, void *arg))
+{
+    if (!ctx) {
+	EST_LOG_ERR("Null context");
+        return (EST_ERR_NO_CTX);
+    }
+
+    if (!cb) {
+	EST_LOG_ERR("Null callback");
+        return (EST_ERR_INVALID_PARAMETERS);
+    }
+
+    ctx->est_srp_username_cb = cb;
+    ctx->enable_srp = 1;
+
+    return (EST_ERR_NONE);
+}
+
 
 /*! @brief est_server_enable_pop() is used by an application to enable 
     the proof-of-possession check on the EST server.  This proves the 

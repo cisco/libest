@@ -33,8 +33,11 @@ static unsigned char *cacerts = NULL;
 static int cacerts_len = 0;
 static char est_http_uid[MAX_UID_LEN];
 static char est_http_pwd[MAX_PWD_LEN];
+static char est_srp_uid[MAX_UID_LEN];
+static char est_srp_pwd[MAX_PWD_LEN];
 static char est_server[MAX_SERVER_LEN];
 static int est_port;
+static int srp = 0;
 
 #define cert_file_name	"cert-b64.pkcs7"
 #define ca_file_name	"newcacerts.pkcs7"
@@ -55,7 +58,10 @@ static void show_usage_and_exit (void)
 	"  -p <port#>        TCP port# for enrollment server\n"
 	"  -u                Specify user name for HTTP authentication.\n"
 	"  -h                Specify password for HTTP authentication.\n"
-        "\n");
+	"  --srp                       Enable TLS-SRP cipher suites.  Use with --srp-user and --srp-password options.\n"
+	"  --srp-user     <string>     Specify the SRP user name.\n"
+	"  --srp-password <string>     Specify the SRP password.\n"
+	"\n");
     exit(255);
 }
 
@@ -168,6 +174,14 @@ static EST_CTX * setup_est_context (void)
         exit(1);
     }        
 
+    if (srp) {
+	rv = est_client_enable_srp(ectx, SRP_MINIMAL_N, est_srp_uid, est_srp_pwd);
+	if (rv != EST_ERR_NONE) {
+	    printf("\nUnable to enable SRP.  Aborting!!!\n");
+	    exit(1);
+	}        
+    }
+
     /*
      * Specify the EST server address and TCP port#
      */
@@ -194,12 +208,30 @@ int main (int argc, char **argv)
     int ca_certs_len;
     unsigned char *new_client_cert;
     unsigned char *new_certs;
+    static struct option long_options[] = {
+        {"srp", 0, 0, 0},
+        {"srp-user", 1, 0, 0},
+        {"srp-password", 1, 0, 0},
+        {NULL, 0, NULL, 0}
+    };
+    int option_index = 0;
 
     est_http_uid[0] = 0x0;
     est_http_pwd[0] = 0x0;
 
-    while ((c = getopt(argc, argv, "s:p:u:h:")) != -1) {
+    while ((c = getopt_long(argc, argv, "s:p:u:h:", long_options, &option_index)) != -1) {
         switch (c) {
+            case 0:
+		if (!strncmp(long_options[option_index].name,"srp", strlen("srp"))) {
+		    srp = 1;
+		}
+		if (!strncmp(long_options[option_index].name,"srp-user", strlen("srp-user"))) {
+		    strncpy(est_srp_uid, optarg, MAX_UID_LEN);
+		}
+		if (!strncmp(long_options[option_index].name,"srp-password", strlen("srp-password"))) {
+		    strncpy(est_srp_pwd, optarg, MAX_PWD_LEN);
+		}
+                break;
             case 'u':
 		strncpy(est_http_uid, optarg, MAX_UID_LEN);
                 break;

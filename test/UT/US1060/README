@@ -1,0 +1,5 @@
+This test suite uses the OpenSSL SRP verifier database feature.  The
+database is the passwd.srpv file.  This file is managed using the
+following OpenSSL command:
+
+openssl srp -srpvfile passwd.srpv -gn 1536 -add srp_user

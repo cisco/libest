@@ -40,6 +40,7 @@ int proxy_cacerts_len = 0;
 EST_CTX *epctx;
 unsigned char *proxy_trustcerts = NULL;
 int proxy_trustcerts_len = 0;
+SRP_VBASE *p_srp_db = NULL;
 
 extern void dumpbin(char *buf, size_t len);
 
@@ -158,12 +159,61 @@ static int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah,
     return user_valid;
 }
 
+/*
+ * This callback is issued during the TLS-SRP handshake.  
+ * We can use this to get the userid from the TLS-SRP handshake.
+ * If a verifier file as provided, we must pull the SRP verifier 
+ * parameters and invoke SSL_set_srp_server_param() with these
+ * values to allow the TLS handshake to succeed.  If the application
+ * layer wants to use their own verifier store, they would
+ * hook into it here.  They would lookup the verifier parameters
+ * based on the userid and return those parameters by invoking
+ * SSL_set_srp_server_param().
+ */
+static int ssl_srp_server_param_cb (SSL *s, int *ad, void *arg) {
+
+    char *login = SSL_get_srp_username(s);
+    SRP_user_pwd *user;
+
+    if (!login) return (-1);
+
+    printf("Proxy SRP username = %s\n", login);
+
+    user = SRP_VBASE_get_by_user(p_srp_db, login); 
+
+    if (user == NULL) {
+	printf("User %s doesn't exist in proxy SRP database\n", login);
+	return SSL3_AL_FATAL;
+    }
+
+    /*
+     * Get the SRP parameters for the user from the verifier database.
+     * Provide these parameters to TLS to complete the handshake
+     */
+    if (SSL_set_srp_server_param(s, user->N, user->g, user->s, user->v, user->info) < 0) {
+	*ad = SSL_AD_INTERNAL_ERROR;
+	return SSL3_AL_FATAL;
+    }
+		
+    printf("Proxy SRP parameters set: username = \"%s\" info=\"%s\" \n", login, user->info);
+
+    user = NULL;
+    login = NULL;
+    fflush(stdout);
+    return SSL_ERROR_NONE;
+}
+
 static void cleanup() 
 {
     est_server_stop(epctx);
     est_destroy(epctx);
     free(proxy_cacerts_raw);
     free(proxy_trustcerts);
+
+    if (p_srp_db) {
+	SRP_VBASE_free(p_srp_db);
+	p_srp_db = NULL;
+    }
 
     //We don't shutdown here because there
     //may be other unit test cases in this process
@@ -236,31 +286,7 @@ void st_proxy_stop ()
     sleep(2);
 }
 
-/*
- * Call this to start a simple EST proxy server.  This server will not
- * be thread safe.  It can only handle a single EST request on
- * the listening socket at any given time.  This server will run
- * until st_proxy_stop() is invoked.
- *
- * Parameters:
- *  listen_port:    Port number to listen on
- *  certfile:	    PEM encoded certificate used for server's identity
- *  keyfile:	    Private key associated with the certfile
- *  realm:	    HTTP realm to present to the client
- *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
- *                  response to the client. 
- *  trusted_certs_file: PEM encoded certificates to use for authenticating
- *                  the EST client at the TLS layer. 
- *  userid          User ID used by proxy to identify itself to the server for
- *                  HTTP authentication.
- *  password        The password associated with userid.
- *  server          Hostname or IP address of the CA EST server that this
- *                  proxy will forward requests too.
- *  server_port     TCP port number used by the CA EST server.
- *  ec_nid:         Openssl NID value for ECDHE curve to use during
- *                  TLS handshake.  Take values from <openssl/obj_mac.h>
- */
-int st_proxy_start (int listen_port,
+static int st_proxy_start_internal (int listen_port,
 	            char *certfile,
 	            char *keyfile,
 	            char *realm,
@@ -271,7 +297,9 @@ int st_proxy_start (int listen_port,
 		    char *server,
 		    int server_port,
 	            int enable_pop,
-	            int ec_nid)
+	            int ec_nid, 
+		    int enable_srp,
+		    char *srp_vfile)
 {
     X509 *x;
     EVP_PKEY *priv_key;
@@ -398,6 +426,26 @@ int st_proxy_start (int listen_port,
 
     est_enable_crl(epctx);
 
+    /*
+     * Do we need to enable SRP?
+     */
+    if (enable_srp) {
+	p_srp_db = SRP_VBASE_new(NULL);
+	if (!p_srp_db) {
+	    printf("\nUnable allocate proxy SRP verifier database.  Aborting!!!\n");
+	    return(-1); 
+	}
+	if (SRP_VBASE_init(p_srp_db, srp_vfile) != SRP_NO_ERROR) {
+	    printf("\nUnable initialize proxy SRP verifier database %s.  Aborting!!!\n", srp_vfile);
+	    return(-1); 
+	}
+	
+	if (est_server_enable_srp(epctx, &ssl_srp_server_param_cb)) { 
+	    printf("\nUnable to enable proxy SRP.  Aborting!!!\n");
+	    return(-1);
+	}
+    }
+
     printf("\nLaunching EST proxy server...\n");
 
     rv = est_proxy_start(epctx);
@@ -415,6 +463,90 @@ int st_proxy_start (int listen_port,
     X509_free(x);
     sleep(2);
     return 0;
+}
+
+/*
+ * Call this to start a simple EST proxy server.  This server will not
+ * be thread safe.  It can only handle a single EST request on
+ * the listening socket at any given time.  This server will run
+ * until st_proxy_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  userid          User ID used by proxy to identify itself to the server for
+ *                  HTTP authentication.
+ *  password        The password associated with userid.
+ *  server          Hostname or IP address of the CA EST server that this
+ *                  proxy will forward requests too.
+ *  server_port     TCP port number used by the CA EST server.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_proxy_start (int listen_port,
+	            char *certfile,
+	            char *keyfile,
+	            char *realm,
+	            char *ca_chain_file,
+	            char *trusted_certs_file,
+		    char *userid,
+		    char *password,
+		    char *server,
+		    int server_port,
+	            int enable_pop,
+	            int ec_nid)
+{
+    return st_proxy_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+	    trusted_certs_file, userid, password, server, server_port, enable_pop, ec_nid,
+	    0, NULL);
+}
+
+/*
+ * Call this to start a simple EST proxy server.  This server will not
+ * be thread safe.  It can only handle a single EST request on
+ * the listening socket at any given time.  This server will run
+ * until st_proxy_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  userid          User ID used by proxy to identify itself to the server for
+ *                  HTTP authentication.
+ *  password        The password associated with userid.
+ *  server          Hostname or IP address of the CA EST server that this
+ *                  proxy will forward requests too.
+ *  server_port     TCP port number used by the CA EST server.
+ *  enable_pop      Enable PoP of the CSR challengePassword.
+ *  vfile:          Name of Openssl compatible SRP verifier file.
+ */
+int st_proxy_start_srp (int listen_port,
+	            char *certfile,
+	            char *keyfile,
+	            char *realm,
+	            char *ca_chain_file,
+	            char *trusted_certs_file,
+		    char *userid,
+		    char *password,
+		    char *server,
+		    int server_port,
+	            int enable_pop,
+		    char *vfile)
+{
+    return st_proxy_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+	    trusted_certs_file, userid, password, server, server_port, enable_pop, 0,
+	    1, vfile);
 }
 
 void st_proxy_enable_pop ()

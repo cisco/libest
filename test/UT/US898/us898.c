@@ -528,7 +528,7 @@ static void us898_test3 (void)
      * re-enroll using a null x509 pointer.
      */
     rv = est_client_reenroll(ectx, NULL, &pkcs7_len, key);
-    CU_ASSERT(rv == EST_ERR_NO_CSR);
+    CU_ASSERT(rv == EST_ERR_NO_CERT);
 
     /*
      * Clean up
