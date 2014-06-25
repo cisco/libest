@@ -14,6 +14,7 @@
 #include <openssl/ssl.h>
 #include <openssl/engine.h>
 #include <openssl/conf.h>
+#include "QNX65_util.h" // DvO: missing declarations in QNX 6.5
 
 #ifdef  __cplusplus
 extern "C" {

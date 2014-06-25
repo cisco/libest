@@ -1039,7 +1039,7 @@ static int parse_http_message (char *buf, int len, struct mg_request_info *ri)
         ri->http_version = skip(&buf, "\r\n");
         parse_http_headers(&buf, ri);
     }
-    EST_LOG_INFO("request_len=%d\n", request_length);
+    EST_LOG_INFO("request_len=%d", request_length);
     return request_length;
 }
 
@@ -1377,6 +1377,7 @@ static void process_new_connection (struct mg_connection *conn)
     // to crule42.
     conn->data_len = 0;
     do {
+        EST_LOG_INFO("\n\nProcessing HTTP request...");
         reset_per_request_attributes(conn);
         conn->request_len = read_request(NULL, conn, conn->buf, conn->buf_size,
                                          &conn->data_len);

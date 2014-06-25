@@ -81,13 +81,13 @@ void dumpbin (unsigned char *buf, size_t len)
 {
     int i;
 
-    fflush(stdout);
+    //fflush(stdout);
     printf("\ndumpbin (%lu bytes):\n", (long unsigned)len);
     for (i = 0; i < len; i++) {
         /*if (buf[i] >= 0xA)*/ printf("%c", buf[i]);
         //if (i%32 == 31) printf("\n");
     }
-    printf("\n");
+    //printf("\n");
     fflush(stdout);
 }
 
