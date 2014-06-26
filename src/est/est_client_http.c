@@ -591,8 +591,8 @@ static int parsedate(const char *date, time_t *output)
  * the response from the server meets the EST draft.
  */
 EST_OP_DEF est_op_map [EST_MAX_OPS] = {
-    { EST_SIMPLE_ENROLL, EST_SIMPLE_ENROLL_URI, EST_HTTP_CT_PKCS7,    sizeof(EST_HTTP_CT_PKCS7)    },
-    { EST_RE_ENROLL,     EST_RE_ENROLL_URI,     EST_HTTP_CT_PKCS7,    sizeof(EST_HTTP_CT_PKCS7)    },
+    { EST_SIMPLE_ENROLL, EST_SIMPLE_ENROLL_URI, EST_HTTP_CT_PKCS7_CO, sizeof(EST_HTTP_CT_PKCS7_CO) },
+    { EST_RE_ENROLL,     EST_RE_ENROLL_URI,     EST_HTTP_CT_PKCS7_CO, sizeof(EST_HTTP_CT_PKCS7_CO) },
     { EST_GET_CACERTS,   EST_CACERTS_URI,       EST_HTTP_CT_PKCS7,    sizeof(EST_HTTP_CT_PKCS7)    },
     { EST_GET_CSRATTRS,  EST_CSR_ATTRS_URI,     EST_HTTP_CT_CSRATTRS, sizeof(EST_HTTP_CT_CSRATTRS) }
 };

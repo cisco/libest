@@ -692,7 +692,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
                  EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
         hdrlen = strnlen(http_hdr, EST_HTTP_HDR_MAX);
         snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
-                 EST_HTTP_CT_PKCS7, EST_HTTP_HDR_EOL);
+                 EST_HTTP_CT_PKCS7_CO, EST_HTTP_HDR_EOL);
         hdrlen = strnlen(http_hdr, EST_HTTP_HDR_MAX);
         snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CE,
                  EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL);

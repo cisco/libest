@@ -75,6 +75,7 @@
 #define EST_HTTP_HDR_EOL            "\r\n"
 
 #define EST_HTTP_CT_PKCS7           "application/pkcs7-mime"
+#define EST_HTTP_CT_PKCS7_CO        "application/pkcs7-mime; smime-type=certs-only"
 #define EST_HTTP_CT_CSRATTRS        "application/csrattrs"
 #define EST_HTTP_CE_BASE64          "base64"
 #define EST_CSRATTRS_POP            "MAsGCSqGSIb3DQEJBw=="
