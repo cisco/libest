@@ -9,6 +9,9 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-06-25 extended logging of server main activity
+
 #include <stdio.h>
 #include <unistd.h>
 #ifndef DISABLE_PTHREADS

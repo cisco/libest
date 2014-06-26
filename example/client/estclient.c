@@ -10,6 +10,12 @@
  * All rights reserved.
  *------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-06-26 improved identity cert & key handling
+// 2014-06-25 enabled indefinite retries of enrollment
+// 2014-06-24 improved usage hints; improved logging
+// 2014-04-23 added -x option for using existing private key
+// 2014-04-23 added -y option for using existing CSR
 
 /* Main routine */
 #include "stdio.h"
@@ -72,7 +78,7 @@ static unsigned char *c_key = NULL;
 static int c_cert_len = 0;
 static int c_key_len = 0;
 
-EVP_PKEY *client_priv_key;
+EVP_PKEY *client_key;
 X509 *client_cert;
 
 EVP_PKEY *priv_key;
@@ -108,7 +114,7 @@ static void show_usage_and_exit (void)
 	"  -a                Get CSR attributes from EST server\n"
 	"  -z                Force binding the PoP to the TLS UID by including the challengePassword in the CSR\n"
 	"  -r                Re-enroll with EST server and request a cert, must use -c option\n"
-	"  -c <certfile>     Identity certificate to use for the TLS session\n"
+	"  -c <certfile>     Identity certificate to use for the TLS session; use with -k option\n"
 	"  -k <keyfile>      Use with -c option to specify private key for the identity cert\n"
 	"  -x <keyfile>      Use existing private key in the given file for signing the CSR\n"
 	"  -y <csrfile>      Use existing CSR in the given file\n"
@@ -235,7 +241,7 @@ static int simple_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
     int pkcs7_len = 0;
     int rv;
     char file_name[MAX_FILENAME_LEN];
-    unsigned char *new_client_cert;
+    unsigned char *new_cert;
     X509_REQ *csr = NULL;
 
     if (force_pop) {
@@ -267,24 +273,24 @@ static int simple_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
          * client library has obtained the new client certificate.
          * now retrieve it from the library
          */
-        new_client_cert = malloc(pkcs7_len);
-        if (new_client_cert == NULL){
+        new_cert = malloc(pkcs7_len);
+        if (new_cert == NULL){
             if (verbose) printf("\nmalloc of destination buffer for enrollment cert failed\n");
             return (EST_ERR_MALLOC);
         }                    
         
-        rv = est_client_copy_enrolled_cert(ectx, new_client_cert);
+        rv = est_client_copy_enrolled_cert(ectx, new_cert);
         if (verbose) printf("\nenrollment copy rv = %d\n", rv);
         if (rv == EST_ERR_NONE) {
             /*
              * Enrollment copy worked, dump the pkcs7 cert to stdout
              */
-            if (verbose) dumpbin(new_client_cert, pkcs7_len);
+            if (verbose) dumpbin(new_cert, pkcs7_len);
         }
 
         snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d.pkcs7", out_dir, thread_id, i);
-        write_binary_file(file_name, new_client_cert, pkcs7_len);
-        free(new_client_cert);
+        write_binary_file(file_name, new_cert, pkcs7_len);
+        free(new_cert);
     }
 
     return (rv);
@@ -380,7 +386,7 @@ static int regular_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
     int pkcs7_len = 0;
     int rv;
     char file_name[MAX_FILENAME_LEN];
-    unsigned char *new_client_cert;
+    unsigned char *new_cert;
     unsigned char *attr_data = NULL;
     unsigned char *der_ptr = NULL;
     int attr_len, der_len, nid;
@@ -469,24 +475,24 @@ static int regular_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
          * client library has obtained the new client certificate.
          * now retrieve it from the library
          */
-        new_client_cert = malloc(pkcs7_len);
-        if (new_client_cert == NULL){
+        new_cert = malloc(pkcs7_len);
+        if (new_cert == NULL){
             if (verbose) printf("\nmalloc of destination buffer for enrollment cert failed\n");
             return (EST_ERR_MALLOC);
         }                    
         
-        rv = est_client_copy_enrolled_cert(ectx, new_client_cert);
+        rv = est_client_copy_enrolled_cert(ectx, new_cert);
         if (verbose) printf("\nenrollment copy rv = %d\n", rv);
         if (rv == EST_ERR_NONE) {
             /*
              * Enrollment copy worked, dump the pkcs7 cert to stdout
              */
-            if (verbose) dumpbin(new_client_cert, pkcs7_len);
+            if (verbose) dumpbin(new_cert, pkcs7_len);
         }
 
         snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d.pkcs7", out_dir, thread_id, i);
-        write_binary_file(file_name, new_client_cert, pkcs7_len);
-        free(new_client_cert);
+        write_binary_file(file_name, new_cert, pkcs7_len);
+        free(new_cert);
     }
     
     return (rv);
@@ -545,7 +551,7 @@ static void worker_thread (void *ptr)
     int i, rv;
     THREAD_CTX *tctx = (THREAD_CTX *)ptr;
     char file_name[MAX_FILENAME_LEN];
-    unsigned char *new_client_cert;
+    unsigned char *new_cert;
     int retry_delay = 0;
     time_t retry_time = 0;
     char *operation;
@@ -569,7 +575,7 @@ static void worker_thread (void *ptr)
 	    exit(1);
 	}        
 
-        rv = est_client_set_auth(ectx, est_http_uid, est_http_pwd, client_cert, client_priv_key);
+        rv = est_client_set_auth(ectx, est_http_uid, est_http_pwd, client_cert, client_key);
         if (rv != EST_ERR_NONE) {
 	    printf("\nUnable to configure client authentication.  Aborting!!!\n");
 	    printf("EST error code %d (%s)\n", rv, EST_ERR_NUM_TO_STR(rv));
@@ -679,7 +685,7 @@ static void worker_thread (void *ptr)
 	if (reenroll) {
 	    operation = "Re-enrollment";
 
-	    rv = est_client_reenroll(ectx, client_cert, &pkcs7_len, client_priv_key);
+	    rv = est_client_reenroll(ectx, client_cert, &pkcs7_len, client_key);
 	    if (verbose) printf("\nreenroll rv = %d (%s) with pkcs7 length = %d\n",
                                 rv, EST_ERR_NUM_TO_STR(rv), pkcs7_len);
 	    if (rv == EST_ERR_NONE) {
@@ -687,18 +693,18 @@ static void worker_thread (void *ptr)
                  * client library has obtained the new client certificate.
                  * now retrieve it from the library
                  */
-                new_client_cert = malloc(pkcs7_len);
-                if (new_client_cert == NULL){
+                new_cert = malloc(pkcs7_len);
+                if (new_cert == NULL){
                     if (verbose) printf("\nmalloc of destination buffer for reenroll cert failed\n");
                 }                    
                 
-                rv = est_client_copy_enrolled_cert(ectx, new_client_cert);
+                rv = est_client_copy_enrolled_cert(ectx, new_cert);
                 if (verbose) printf("\nreenroll copy rv = %d\n", rv);
                 if (rv == EST_ERR_NONE) {
                     /*
                      * Enrollment copy worked, dump the pkcs7 cert to stdout
                      */
-                    if (verbose) dumpbin(new_client_cert, pkcs7_len);
+                    if (verbose) dumpbin(new_cert, pkcs7_len);
                 }
 
 		/*
@@ -706,8 +712,8 @@ static void worker_thread (void *ptr)
 		 * and iteration number.
 		 */
 		snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d.pkcs7", out_dir, tctx->thread_id, i);
-		write_binary_file(file_name, new_client_cert, pkcs7_len);
-                free(new_client_cert);
+		write_binary_file(file_name, new_cert, pkcs7_len);
+                free(new_cert);
 	    }
 	}
 
@@ -932,6 +938,11 @@ int main (int argc, char **argv)
 	exit(1);
     }
 
+    if (( client_cert_file[0] && !client_key_file[0]) ||
+        (!client_cert_file[0] &&  client_key_file[0])) {
+	printf("\nError: The -c option and the -k option must be used together\n");
+	exit(1);
+    }
     if (verbose) {
         print_version();
 	printf("\nUsing EST server %s:%d", est_server, est_port);
@@ -942,12 +953,12 @@ int main (int argc, char **argv)
     }
 
     if (enroll && reenroll) {
-	printf("\nThe enroll and reenroll operations can not be used together\n");
+	printf("\nError: The enroll and reenroll operations can not be used together\n");
 	exit(1);
     }
 
     if (!out_dir[0]) {
-	printf("\nOutput directory must be specified with -o option\n");
+	printf("\nError: Output directory must be specified with -o option\n");
 	exit(1);
     }
 
@@ -1008,8 +1019,8 @@ int main (int argc, char **argv)
          * encoded private key.  If using DER encoding, you would invoke
          * d2i_PrivateKey_bio() instead. 
          */
-        client_priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
-        if (client_priv_key == NULL) {
+        client_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
+        if (client_key == NULL) {
             printf("\nError while reading PEM encoded private key file %s\n", client_key_file);
             ERR_print_errors_fp(stderr);
             exit(1);

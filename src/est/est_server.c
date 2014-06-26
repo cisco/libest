@@ -13,6 +13,11 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 added est_set_http_auth_required to prevent forcing http auth
+// 2014-04-23 improved error return codes; minor spell corrections
+// 2014-04-23 corrected documentation of callback functions
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -721,7 +726,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
          * the CA is not configured for automatic enrollment.
          * Send the HTTP retry response to the client.
          */
-        EST_LOG_INFO("CA server requests retry, possibly it's not setup for auto-enroll");
+        EST_LOG_INFO("CA server requests retry, possibly it's not set up for auto-enroll");
         if (EST_ERR_NONE != est_server_send_http_retry_after(ctx, http_ctx, ctx->retry_period)) { 
 	    X509_REQ_free(csr);
             return (EST_ERR_HTTP_WRITE);

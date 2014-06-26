@@ -13,6 +13,10 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 est_client_enroll_csr: priv_key can be NULL if CSR is signed
+// 2014-04-23 added EST_ERR_NO_CERT; slightly improved logging and spelling
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -3367,7 +3371,7 @@ EST_ERROR est_client_enable_srp (EST_CTX *ctx, int strength, char *uid, char *pw
     @return EST_ERROR.  If error, NULL.
 */
 EST_ERROR est_client_set_auth (EST_CTX *ctx, const char *uid, const char *pwd,
-                               X509 *client_cert, EVP_PKEY *private_key)
+                               X509 *client_cert, EVP_PKEY *client_key)
 {
     EST_ERROR rv = EST_ERR_NONE;
     
@@ -3387,7 +3391,7 @@ EST_ERROR est_client_set_auth (EST_CTX *ctx, const char *uid, const char *pwd,
      * cache away the client cert and the associated private key, then
      * get them loaded into the SSL context so that they'll be used.
      */
-    ctx->client_key = private_key;
+    ctx->client_key = client_key;
     ctx->client_cert = client_cert;
     
     /*

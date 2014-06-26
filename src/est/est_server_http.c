@@ -16,6 +16,9 @@
  * All rights reserved.
  ***------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-06-25 improved logging of server main activity
+
 // Copyright (c) 2004-2012 Sergey Lyubka
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy

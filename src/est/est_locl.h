@@ -7,6 +7,8 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 extended documentation of callback functions
 
 #ifndef HEADER_EST_LOCL_H
 #define HEADER_EST_LOCL_H
@@ -28,7 +30,7 @@
 
 /* The retry-after values below are in seconds */
 #define EST_RETRY_PERIOD_DEF	3600 
-#define EST_RETRY_PERIOD_MIN	60 
+#define EST_RETRY_PERIOD_MIN	6 
 #define EST_RETRY_PERIOD_MAX	3600*48 
 
 #define EST_TLS_VERIFY_DEPTH	    7

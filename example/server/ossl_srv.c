@@ -16,6 +16,9 @@
  * All rights reserved.
  *------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 added read_cert_pkcs7; improved logging; minor spell corrections
+
 /* Copyright (C) 1995-1998 Eric Young (eay@cryptsoft.com)
  * All rights reserved.
  *

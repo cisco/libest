@@ -1,3 +1,15 @@
+/*------------------------------------------------------------------
+ * README for EST client
+ *
+ * March, 2014
+ *
+ * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * All rights reserved.
+ *------------------------------------------------------------------
+ */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 minor enhancements and extensions reflecting new options
+
 This directory contains a sample EST client application.  It utilizes
 OpenSSL for the SSL stack to be used for HTTP requests, libest for 
 the EST stack, and OpenSSL 1.0.1 for certificate and crypto operations. 
@@ -25,14 +37,10 @@ To run the example:
     ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp 
 
     Note: The new private key is stored at /tmp/key-x-x.pem .
-    To check the cert response, use this command:
-
-    openssl base64 -d -in /tmp/cert-0-0.pkcs7 | \
-        openssl pkcs7 -inform DER -noout -text -print_certs
 
     Instead of producing a new key along with a (re-)enrollment request,
-    you may use an existing key stored in a PEM file
-    or generate a fresh one yourself, using for instance the following command:
+    you may use an existing key stored in a PEM file or generate 
+    a fresh one yourself, using for instance the following command:
 
     openssl ecparam -name prime256v1 -genkey -out privkey.pem
 
@@ -43,6 +51,11 @@ To run the example:
     You may also use an existing CSR for entrollment, supplied using the -y option:
 
     ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -y req.p10 -o /tmp
+
+    To check the cert response, use this command:
+
+    openssl base64 -d -in /tmp/cert-0-0.pkcs7 | \
+        openssl pkcs7 -inform DER -noout -text -print_certs
 
 4.  Optionally you can request attributes as a single request 
     or as part of the enroll. For a simple attributes request
@@ -63,12 +76,12 @@ To run the example:
     to the server instead of specifying the HTTP user name/password.  
     Now that you've enrolled a certificate in step #3
     above, you can use that certificate to enroll again. Note, your
-    EST server should be configured not to force HTTP authentication. 
+    EST server should be configured not to require HTTP authentication. 
 
     First, convert the pkcs7 cert from step 3 to a PEM cert:
 
     openssl base64 -d -in /tmp/cert-0-0.pkcs7 | \
-        openssl pkcs7 -inform DER  -print_certs -out /tmp/cert-0-0.pem
+        openssl pkcs7 -inform DER -print_certs -out /tmp/cert-0-0.pem
 
     Next, save the private key:
 

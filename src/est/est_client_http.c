@@ -7,6 +7,9 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 removed stray re-definition of INT_MAX
+
 /* Portions of this code (as indicated) are derived from the Internet Draft
 ** draft-ietf-http-authentication-03 and are covered by the following
 ** copyright:

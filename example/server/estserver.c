@@ -12,6 +12,12 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-06-26 improved -e option; enhanced code for -m and -o options
+// 2014-04-23 added -e option for enrollment by an external CA
+// 2014-04-23 added -o option for not requring HTTP authentication
+// 2014-04-23 improved usage hints; corrected and extended logging
+
 #include <stdio.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -53,10 +59,11 @@ static int srp = 0;
 #ifndef DISABLE_TSEARCH
 static int simulate_manual_enroll = 0;
 #endif
-static int manual_enroll = 0;
+static int external_enroll = 0;
 static int tcp_port = 8085;
 static int http_digest_auth = 0;
-static int disable_forced_http_auth = 0;
+static int disable_http_auth = 0;
+static int require_http_auth = 1;
 static int set_fips_return = 0;
 static unsigned long set_fips_error = 0;
 static int test_app_data = 0xDEADBEEF;  // TODO: remove
@@ -145,20 +152,29 @@ static void show_usage_and_exit (void)
             "  -l           Enable CRL checks\n"
             "  -t           Enable check for binding client PoP to the TLS UID\n"
 #ifndef DISABLE_TSEARCH
-            "  -m <seconds> Simulate manual CA enrollment\n"
+            "  -m <seconds> Simulate manual CA enrollment after the given number of seconds\n"
+            "  -e <seconds> "
+#else
+            "  -e           "
 #endif
-            "  -M <seconds> Manual CA enrollment: delete and await new '" TEMP_CERT_FILE "' file for manual CA enrollment, implies -w\n"
-            "  -n           Do not require HTTP authentication when TLS client auth succeeds\n"
+                           "External CA enrollment: delete and await new '" TEMP_CERT_FILE "' file for manual CA enrollment, implies -w\n"
+#ifndef DISABLE_TSEARCH
+            "               The client shall wait for the given number of seconds before re-trying the request\n"
+#else
+            "               The server postpones its response until the cert file appears\n"
+#endif
+            "  -n           Disable HTTP authentication (TLS client auth required)\n"
+            "  -o           Do not require HTTP authentication when TLS client auth succeeds\n"
             "  -h           Use HTTP Digest auth instead of Basic auth\n"
-	    "  -p <num>     TCP port number to listen on\n"
+            "  -p <num>     TCP port number to listen on\n"
 #ifndef DISABLE_PTHREADS
-	    "  -d <seconds> Sleep timer to auto-shut the server\n"
+            "  -d <seconds> Sleep timer to auto-shut the server\n"
 #endif
-	    "  -f           Runs EST Server in FIPS MODE = ON\n"
-	    "  -6           Enable IPv6\n"
-            "  -w           Dump the CSR to '" TEMP_CSR_FILE "' allowing for manual attribute capture and manual CA enrollment on server\n"
-	    "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
-	    "  -?           Print this help message and exit\n"
+            "  -f           Runs EST Server in FIPS MODE = ON\n"
+            "  -6           Enable IPv6\n"
+            "  -w           Dump the CSR to '" TEMP_CSR_FILE "' allowing for manual attribute capture and external CA enrollment on server\n"
+            "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
+            "  -?           Print this help message and exit\n"
             "\n");
     exit(255);
 }
@@ -428,7 +444,7 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
     }
 #endif
 
-    if (manual_enroll) {
+    if (external_enroll) {
 	/*
 	 * If we're doing manual certificate enrollment, we write out the CSR to a temp file
 	 * and wait for the CA to sign the cert request and put the cert in another temp file.
@@ -724,7 +740,13 @@ int main (int argc, char **argv)
         show_usage_and_exit();
     }
 
-    while ((c = getopt_long(argc, argv, "?fhwnvr:c:k:m:M:p:d:lt6", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "?fhwnovr:c:k:m:e"
+#ifndef DISABLE_TSEARCH
+":"
+#else
+""
+#endif
+                                        "p:d:lt6", long_options, &option_index)) != -1) {
         switch (c) {
 	case 0:
 #if 0
@@ -744,11 +766,13 @@ int main (int argc, char **argv)
             simulate_manual_enroll = 1;
             retry_period = atoi(optarg);            
             break;
-        case 'M':
-            manual_enroll = 1;
-	    retry_period = atoi(optarg);            
-            break;
 #endif
+        case 'e':
+            external_enroll = 1;
+#ifndef DISABLE_TSEARCH
+	    retry_period = atoi(optarg);            
+#endif
+            break;
         case 'h':
             http_digest_auth = 1;
             break;
@@ -756,10 +780,10 @@ int main (int argc, char **argv)
             write_csr = 1;
             break;
         case 'n':
-            disable_forced_http_auth = 1;
+            disable_http_auth = 1;
             break;
         case 'o':
-            disable_forced_http_auth = 1;
+            require_http_auth = 0;
             break;
         case 'v':
             verbose = 1;
@@ -962,15 +986,20 @@ int main (int argc, char **argv)
         printf("\nUnable to set EST CSR Attributes callback.  Aborting!!!\n");
         exit(1);
     }
-    if (est_set_http_auth_cb(ectx, &process_http_auth)) {
-        printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");
-	exit(1);
-    }    
-    if (disable_forced_http_auth) {
-	if (verbose) printf("\nDisabling forced HTTP authentication");
+    if (disable_http_auth) {
+        if (verbose) {
+	    printf("\nDisabling HTTP authentication\n");
+	}
+    } else {
+        if (est_set_http_auth_cb(ectx, &process_http_auth)) {
+            printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");
+	    exit(1);
+	}
     }
-    if (disable_forced_http_auth) {
-	if (verbose) printf("\nNot requiring HTTP authentication when TLS client auth succeeds\n");
+    if (!require_http_auth) {
+        if (verbose) {
+	    printf("\nNot requiring HTTP authentication when TLS client auth succeeds\n");
+	}
 	if (est_set_http_auth_required(ectx, HTTP_AUTH_NOT_REQUIRED)) {
 	    printf("\nUnable to disable required HTTP auth.  Aborting!!!\n");
 	    exit(1);

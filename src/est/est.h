@@ -8,6 +8,9 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 added EST_ERR_NO_CERT
+
 #ifndef HEADER_EST_H
 #define HEADER_EST_H
 

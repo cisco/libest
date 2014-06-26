@@ -13,6 +13,9 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 just spelling correction
+
 #include <string.h>
 #include <stdlib.h>
 #ifndef DISABLE_PTHREADS

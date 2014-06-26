@@ -8,6 +8,9 @@
  * All rights reserved.
  *------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 added read_cert_pkcs7
+
 #ifndef HEADER_OSSL_SRV_H 
 #define HEADER_OSSL_SRV_H 
 

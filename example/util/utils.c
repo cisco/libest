@@ -7,6 +7,8 @@
  * All rights reserved.
  *------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-06-25 improved logging of server main activity
 
 #include <stdio.h>
 #include <stdlib.h>
