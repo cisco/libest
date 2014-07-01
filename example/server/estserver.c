@@ -1038,7 +1038,7 @@ int main (int argc, char **argv)
     CRYPTO_set_locking_callback(&ssl_locking_callback);
     CRYPTO_set_id_callback(&ssl_id_callback);
 
-    printf("\nLaunching EST server...\n");
+    printf("\nLaunching EST server...");
 
     rv = est_server_start(ectx);
     if (rv != EST_ERR_NONE) {

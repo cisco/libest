@@ -16,6 +16,7 @@
 // Copyright (c) Siemens AG, 2014
 // 2014-04-23 est_client_enroll_csr: priv_key can be NULL if CSR is signed
 // 2014-04-23 added EST_ERR_NO_CERT; slightly improved logging and spelling
+// 2014-06-30 further minor improvements of logging: retry-after is no error
 
 #include <string.h>
 #include <stdlib.h>
@@ -1346,8 +1347,11 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
         case EST_ERR_AUTH_FAIL:
             EST_LOG_WARN("HTTP auth failure");
             break;
+        case EST_ERR_CA_ENROLL_RETRY:
+            EST_LOG_INFO("EST request failed with a RETRY AFTER resp");
+            break;
         default:
-            EST_LOG_ERR("EST request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
+	    EST_LOG_ERR("EST request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
             break;
         }
         free(enroll_buf);
@@ -1541,10 +1545,12 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
         EST_LOG_INFO("HTTP Authorization failed. Requested auth mode = %d", ctx->auth_mode);
         break;
 
+    case EST_ERR_CA_ENROLL_RETRY:
+        EST_LOG_INFO("EST enrollment failed with a RETRY AFTER resp");
+        break;
+
     default:
-        
-        EST_LOG_ERR("EST enrollment failed, error code is %d (%s)", rv,
-                    EST_ERR_NUM_TO_STR(rv));
+        EST_LOG_ERR("EST enrollment failed, error code is %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
         break;
     }
 
@@ -2407,10 +2413,10 @@ static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
             EST_LOG_ERR("HTTP auth failure");
             break;
         case EST_ERR_CA_ENROLL_RETRY:
-            EST_LOG_INFO("HTTP request failed with a RETRY AFTER resp");
+            EST_LOG_INFO("EST CACerts request failed with a RETRY AFTER resp");
             break;
         default:
-            EST_LOG_ERR("EST request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
+            EST_LOG_ERR("EST CACerts request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
             break;
         }
     }
@@ -2657,7 +2663,7 @@ EST_ERROR est_client_enroll (EST_CTX *ctx, char *cn, int *pkcs7_len,
             goto err;
         }
         rv = est_client_enroll_cn(ctx, ssl, cn, pkcs7_len, new_public_key);
-        if (rv != EST_ERR_NONE) {
+        if (rv != EST_ERR_NONE && rv != EST_ERR_CA_ENROLL_RETRY) {
             EST_LOG_ERR("Enroll failed on second attempt during basic/digest authentication");
         }
         est_client_disconnect(ctx, &ssl);

@@ -9,6 +9,7 @@
  */
 // Copyright (c) Siemens AG, 2014
 // 2014-04-23 extended documentation of callback functions
+// 2014-06-26 reduced value of EST_RETRY_PERIOD_MIN
 
 #ifndef HEADER_EST_LOCL_H
 #define HEADER_EST_LOCL_H
