@@ -27,7 +27,7 @@ serial         = $dir/serial           # serial no file (aka EST_OPENSSL_CASERIA
 private_key    = $dir/private/cakey.pem# CA private key (aka EST_OPENSSL_CAPRIVATE)
 RANDFILE       = $dir/private/.rnd     # random number file
 
-default_days   = 365                   # how long to certify for
+default_days   = 4365                   # how long to certify for
 default_crl_days= 30                   # how long before next CRL
 default_md     =  sha1                 # md to use
 

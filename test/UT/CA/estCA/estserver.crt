@@ -1,12 +1,12 @@
 Certificate:
     Data:
         Version: 3 (0x2)
-        Serial Number: 1 (0x1)
+        Serial Number: 745 (0x2e9)
     Signature Algorithm: ecdsa-with-SHA1
         Issuer: CN=estExampleCA
         Validity
-            Not Before: Jul  2 17:10:06 2013 GMT
-            Not After : Jul  2 17:10:06 2014 GMT
+            Not Before: Jul  2 20:25:14 2014 GMT
+            Not After : Jun 14 20:25:14 2026 GMT
         Subject: CN=127.0.0.1
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
@@ -27,17 +27,17 @@ Certificate:
                 keyid:66:E5:56:CA:93:2B:02:0B:57:A4:D4:E2:ED:5F:CA:A4:EE:7D:83:F9
 
     Signature Algorithm: ecdsa-with-SHA1
-         30:45:02:20:50:a3:06:87:af:4b:eb:d2:a4:6e:bd:ed:00:84:
-         ea:00:08:5f:81:7e:fa:0d:ef:cb:0b:da:d3:37:47:24:d2:bb:
-         02:21:00:a1:71:97:b0:d5:db:43:a0:ae:0e:0b:1e:26:ba:a1:
-         91:da:89:c2:66:ea:b2:36:8e:cb:86:28:cc:61:49:0a:cc
+         30:44:02:20:17:3c:df:39:b0:04:73:32:de:75:2c:03:c9:e7:
+         38:d7:87:60:ba:e6:b1:64:af:76:b8:79:82:91:87:b4:d8:a8:
+         02:20:59:4b:42:9b:64:d0:d9:10:2c:b9:76:a2:2f:b4:bb:bc:
+         af:db:8d:01:11:1b:ac:9b:1f:64:ec:fa:88:bc:ec:5c
 -----BEGIN CERTIFICATE-----
-MIIBZTCCAQygAwIBAgIBATAJBgcqhkjOPQQBMBcxFTATBgNVBAMTDGVzdEV4YW1w
-bGVDQTAeFw0xMzA3MDIxNzEwMDZaFw0xNDA3MDIxNzEwMDZaMBQxEjAQBgNVBAMT
-CTEyNy4wLjAuMTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABMOSus/7i73uv49r
-RTSuzxkHSDnptFzhDVHlwL60Z1QizuM11GRHX8ZSSiTKq06C2p8z1Fdgu2XEToOz
-FRm7kISjTTBLMAkGA1UdEwQCMAAwHQYDVR0OBBYEFFLd2T/9h9lQBkVRY55JoXlG
-/QS+MB8GA1UdIwQYMBaAFGblVsqTKwILV6TU4u1fyqTufYP5MAkGByqGSM49BAED
-SAAwRQIgUKMGh69L69Kkbr3tAITqAAhfgX76De/LC9rTN0ck0rsCIQChcZew1dtD
-oK4OCx4muqGR2onCZuqyNo7LhijMYUkKzA==
+MIIBZTCCAQ2gAwIBAgICAukwCQYHKoZIzj0EATAXMRUwEwYDVQQDEwxlc3RFeGFt
+cGxlQ0EwHhcNMTQwNzAyMjAyNTE0WhcNMjYwNjE0MjAyNTE0WjAUMRIwEAYDVQQD
+EwkxMjcuMC4wLjEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATDkrrP+4u97r+P
+a0U0rs8ZB0g56bRc4Q1R5cC+tGdUIs7jNdRkR1/GUkokyqtOgtqfM9RXYLtlxE6D
+sxUZu5CEo00wSzAJBgNVHRMEAjAAMB0GA1UdDgQWBBRS3dk//YfZUAZFUWOeSaF5
+Rv0EvjAfBgNVHSMEGDAWgBRm5VbKkysCC1ek1OLtX8qk7n2D+TAJBgcqhkjOPQQB
+A0cAMEQCIBc83zmwBHMy3nUsA8nnONeHYLrmsWSvdrh5gpGHtNioAiBZS0KbZNDZ
+ECy5dqIvtLu8r9uNAREbrJsfZOz6iLzsXA==
 -----END CERTIFICATE-----

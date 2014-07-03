@@ -54,7 +54,7 @@ function createCA ()
     eval $OPENSSLCMD ecparam -name prime256v1 -out $CREATECA_ECPARAMSFILE
     iferrorlogandexit "Unable to build ECPARAMS file" 1
 
-    eval $OPENSSLCMD req -new -x509 -extensions v3_ca $CREATECA_NEWKEY_PARAM -keyout $CREATECA_CAPRIVKEY -out $CREATECA_CACERT -days 365 -nodes -subj "$CREATECA_CASUBJ" -config $EST_OPENSSL_CACNF
+    eval $OPENSSLCMD req -new -x509 -extensions v3_ca $CREATECA_NEWKEY_PARAM -keyout $CREATECA_CAPRIVKEY -out $CREATECA_CACERT -days 4365 -nodes -subj "$CREATECA_CASUBJ" -config $EST_OPENSSL_CACNF
     iferrorlogandexit "Unable to create \"$CREATECA_CASUBJ\" CA cert" 1
     $OPENSSLCMD x509 -in $CREATECA_CACERT
 }
