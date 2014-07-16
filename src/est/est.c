@@ -26,14 +26,6 @@
 static char hex_chpw[] = {0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 
 			  0xF7, 0x0D, 0x01, 0x09, 0x07};
 
-/*
- * Unfortunately, OpenSSL does not include this in 
- * a header file.  We can't use the OPENSSL_VERSION_TEXT
- * value in opensslv.h since that would give us the
- * compile time value.
- */
-extern const char *SSL_version_str;
-
 const char *EST_ERR_STRINGS[] = {
     "EST_ERR_NONE",
     FOREACH_EST_ERROR(GENERATE_STRING)
@@ -164,7 +156,7 @@ void est_log_version (void)
     EST_LOG_INFO("Source repository revision# %d", SOURCE_REVISION);
 #endif
     EST_LOG_INFO("Compiled against %s", OPENSSL_VERSION_TEXT);
-    EST_LOG_INFO("Linking to %s", OPENSSL_VERSION_TEXT);
+    EST_LOG_INFO("Linking to %s", SSLeay_version(SSLEAY_VERSION));
 }
 
 
