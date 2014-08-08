@@ -86,6 +86,13 @@ static int est_client_X509_REQ_sign (X509_REQ *x, EVP_PKEY *pkey, const EVP_MD *
         return 0;
     }
 
+    /*
+     * We have to set the modified flag on the X509_REQ because
+     * OpenSSL keeps a cached copy of the DER encoded data in some
+     * cases.  Setting this flag tells OpenSSL to run the ASN
+     * encoding again rather than using the cached copy.
+     */
+    x->req_info->enc.modified = 1; 
     rv = X509_REQ_sign_ctx(x, &mctx);
 
     EVP_MD_CTX_cleanup(&mctx);
@@ -1476,12 +1483,7 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
 
     /*
      * Encode using DER (ASN.1) 
-     *
-     * We have to set the modified flag on the X509_REQ because
-     * OpenSSL keeps a cached copy of the DER encoded data in some
-     * cases.  Setting this flag tells OpenSSL to run the ASN
-     * encoding again rather than using the cached copy.
-     * */
+     */
     req->req_info->enc.modified = 1; 
     i2d_X509_REQ_bio(p10out, req);
     (void)BIO_flush(p10out);
