@@ -35,7 +35,7 @@
 /*
  * Cipher suite filter for OpenSSL
  */
-#define EST_CIPHER_LIST             "ALL:!aNULL:!eNULL:!SSLv2:!EXPORT"
+#define EST_CIPHER_LIST             "ALL:!aNULL:!eNULL:!SSLv2:!EXPORT:!SRP"
 #define EST_CIPHER_LIST_SRP_SERVER  "ALL:!eNULL:!SSLv2:!EXPORT:SRP"
 #define EST_CIPHER_LIST_SRP_ONLY    "SRP:!aRSA:!aDSS"
 #define EST_CIPHER_LIST_SRP_AUTH    "SRP"
