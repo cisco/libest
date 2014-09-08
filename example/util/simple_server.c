@@ -9,6 +9,9 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-06-25 extended logging of server main activity
+
 #include <stdio.h>
 #include <unistd.h>
 #ifndef DISABLE_PTHREADS
@@ -84,6 +87,7 @@ static void * worker_thread (void* data)
 	 * to libest
 	 */
         est_server_handle_request(ctx, sock);
+	printf("\n\nAwaiting new connection on socket %d...", sock); fflush(stdout);
         close(sock);
     }
 
@@ -188,6 +192,7 @@ static void * master_thread (void *data)
         exit(1);
     }
 
+    printf("\n\nAwaiting new connection on socket %d...", sock); fflush(stdout);
     while (stop_flag == 0) {
         len = sizeof(struct sockaddr);
         new = accept(sock, (struct sockaddr*)addr, &len);

@@ -8,6 +8,10 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 added EST_ERR_NO_CERT
+// 2014-04-26 extended EST_SSL_READ_TIMEOUT_MAX
+
 #ifndef HEADER_EST_H
 #define HEADER_EST_H
 

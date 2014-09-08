@@ -7,6 +7,9 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 extended documentation of callback functions
+// 2014-06-26 reduced value of EST_RETRY_PERIOD_MIN
 
 #ifndef HEADER_EST_LOCL_H
 #define HEADER_EST_LOCL_H
@@ -28,7 +31,7 @@
 
 /* The retry-after values below are in seconds */
 #define EST_RETRY_PERIOD_DEF	3600 
-#define EST_RETRY_PERIOD_MIN	60 
+#define EST_RETRY_PERIOD_MIN	6 
 #define EST_RETRY_PERIOD_MAX	3600*48 
 
 #define EST_TLS_VERIFY_DEPTH	    7
@@ -229,7 +232,8 @@ struct est_ctx {
     unsigned char *ca_chain_raw;
     int   ca_chain_raw_len;
     CLIENT_CTX_LU_NODE_T *client_ctx_array;
-    void *ex_data;
+    void *ex_data; /* Optional application specific data
+                      for use by the callback functions */
     int enable_srp;
     int (*est_srp_username_cb)(SSL *s, int *ad, void *arg);
 };

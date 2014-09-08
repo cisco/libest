@@ -7,6 +7,9 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 removed stray re-definition of INT_MAX
+
 /* Portions of this code (as indicated) are derived from the Internet Draft
 ** draft-ietf-http-authentication-03 and are covered by the following
 ** copyright:
@@ -46,7 +49,7 @@
 #include "est_server_http.h"
 #include "est_ossl_util.h"
 
-#define INT_MAX         (  2147483647 )
+//#define INT_MAX         (  2147483647 )  //DvO: must not define this! See limits.h as well as the existence of INT_MIN  
 
 #ifdef RETRY_AFTER_DELAY_TIME_SUPPORT
 

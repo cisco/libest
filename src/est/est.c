@@ -5,7 +5,7 @@
  *	       Assumptions:  - Web server using this module utilizes
  *	                       OpenSSL for HTTPS services.
  *	                     - OpenSSL is linked along with this
- *	                       modulue.
+ *	                       module.
  *
  * November, 2012
  *
@@ -13,6 +13,9 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-06-25 limited warning for already set ex_data; spelling correction
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -622,7 +625,7 @@ EST_ERROR est_set_ex_data (EST_CTX *ctx, void *ex_data)
     if (!ctx) {
         return (EST_ERR_NO_CTX);
     }
-    if (ctx->ex_data) {
+    if (ctx->ex_data && ex_data) {
 	EST_LOG_WARN("ex_data was already set, possible memory leak");
     }
     ctx->ex_data = ex_data;
