@@ -6,8 +6,8 @@ local host and listening to port 8085.
 
 To run the example:
 
-1.  Set LD_LIBRARY_PATH to include the directories where libest.so
-    and libcrypto.so are installed. 
+1.  Set LD_LIBRARY_PATH to include the directories where libest.so,
+    libcrypto.so, and libssl.so are installed. 
 
     export LD_LIBRARY_PATH=/usr/local/ssl/lib:/usr/local/est/lib
 
@@ -22,13 +22,12 @@ To run the example:
     and request a new certificate.  The example EST server uses the user ID and
     password estuser/estpwd: 
 
-    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp 
+    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp --pem-output 
 
-    Note: The new private key is stored at /tmp/key-x-x.pem.
+    Note: The new private key is stored at /tmp/newkey.pem.
     To check the cert response, use this command:
 
-    openssl base64 -d -in /tmp/cert-0-0.pkcs7 | \
-        openssl pkcs7 -inform DER -text -print_certs
+    openssl x509 -text -in /tmp/newcert.pem 
 
     Instead of producing a new key along with a (re-)enrollment request,
     you may use an existing key stored in a PEM file
@@ -38,11 +37,11 @@ To run the example:
 
     To use an existing private key for the CSR, supply it using the -x option:
 
-    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -x privkey.pem -o /tmp
+    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -x privkey.pem -o /tmp --pem-output
 
-    You may also use an existing CSR for entrollment, supplied using the -y option:
+    You may also use an existing CSR for enrollment, supplied using the -y option:
 
-    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -y req.p10 -o /tmp
+    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -y req.p10 -o /tmp --pem-output
 
 4.  Optionally you can request attributes as a single request or as
     part of the enroll. For a simple attributes request use the
@@ -52,29 +51,33 @@ To run the example:
 
     To view the list attributes obtained this way, you may use:
 
-    openssl base64 -d -A -in /tmp/csr-0-0.base64 | \
-        openssl asn1parse -inform DER
+    openssl base64 -d -A -in /tmp/csr.base64 | openssl asn1parse -inform DER
  
     Then you can perform the enroll using this command:
  
-    ./estclient -e -a -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp
+    ./estclient -e -a -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp --pem-output
  
-5.  Optionally, you can use a certificate to identify the EST client
+5.  You can use an existing certificate to identify the EST client
     to the server instead of specifying the HTTP user name/password.  
     Now that you've enrolled a certificate in step #3
-    above, you can use that certificate to enroll again. Note, your
-    EST server should be configured not to force HTTP authentication. 
+    above, you can re-enroll that certificate prior to expiration.  
 
-    First, convert the pkcs7 cert from step 3 to a PEM cert:
+    Save the new certificate and key from step 3: 
 
-    openssl base64 -d -in /tmp/cert-0-0.pkcs7 | \
-        openssl pkcs7 -inform DER  -print_certs -out /tmp/cert-0-0.pem
-
-    Next, save the private key:
-
-	cp /tmp/key-x-x.pem /tmp/savekey.pem
+	cp /tmp/newcert.pem /tmp/savecert.pem
+	cp /tmp/newkey.pem /tmp/savekey.pem
 
     Next, use this cert as identity to do another enroll operation:
 
-    ./estclient -e -s 127.0.0.1 -p 8085 -c /tmp/cert-0-0.pem \
-        -k /tmp/savekey.pem -o /tmp
+    ./estclient -r -s 127.0.0.1 -p 8085 -c /tmp/savecert.pem -k /tmp/savekey.pem -o /tmp --pem-output
+
+
+Note:  RFC 7030 requires the certificate to be encoded as base64 PKCS7.  This encoding isn't
+       very useful for most applications.  The estclient includes the --pem-output option as
+       a convenience to convert the newly enrolled certificate to PEM format.  When not using
+       the --pem-output option, the following OpenSSL command can be used to convert
+       base64 PKCS7 to PEM:
+
+       openssl base64 -d -in /tmp/newcert.pkcs7 | \
+           openssl pkcs7 -inform DER -print_certs -out /tmp/savecert.pem
+
