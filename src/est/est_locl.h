@@ -244,27 +244,27 @@ void est_log (EST_LOG_LEVEL lvl, char *format, ...);
 void est_log_backtrace (void);
 
 #ifndef EST_LOG_INFO
-#define EST_LOG_INFO(format, args ...) do { \
+#define EST_LOG_INFO(...) do { \
         est_log(EST_LOG_LVL_INFO, "\n***EST [INFO][%s:%d]--> ", \
-                __func__, __LINE__); \
-        est_log(EST_LOG_LVL_INFO, format, ## args); \
+                __FUNCTION__, __LINE__); \
+        est_log(EST_LOG_LVL_INFO, __VA_ARGS__); \
 } while (0)
 #endif
 
 #ifndef EST_LOG_WARN
-#define EST_LOG_WARN(format, args ...) do { \
+#define EST_LOG_WARN(...) do { \
         est_log(EST_LOG_LVL_WARN, "\n***EST [WARNING][%s:%d]--> ", \
-                __func__, __LINE__); \
-        est_log(EST_LOG_LVL_WARN, format, ## args); \
+                __FUNCTION__, __LINE__); \
+        est_log(EST_LOG_LVL_WARN, __VA_ARGS__); \
         est_log_backtrace(); \
 } while (0)
 #endif
 
 #ifndef EST_LOG_ERR
-#define EST_LOG_ERR(format, args ...) do { \
+#define EST_LOG_ERR(...) do { \
         est_log(EST_LOG_LVL_ERR, "\n***EST [ERROR][%s:%d]--> ", \
-                __func__, __LINE__); \
-        est_log(EST_LOG_LVL_ERR, format, ## args); \
+                __FUNCTION__, __LINE__); \
+        est_log(EST_LOG_LVL_ERR, __VA_ARGS__); \
         est_log_backtrace(); \
 } while (0)
 #endif
