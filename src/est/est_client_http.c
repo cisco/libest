@@ -1001,7 +1001,7 @@ static EST_ERROR est_io_parse_http_retry_after_resp (EST_CTX *ctx,
                 if (rc) {
                     temp_ll = atoll(hdrs[i].value);
                     if (temp_ll <= INT_MAX) {
-                        ctx->retry_after_delay = temp_ll;
+                        ctx->retry_after_delay = (int) temp_ll;
                         rv = EST_ERR_CA_ENROLL_RETRY;
                     } else {
                         EST_LOG_ERR("Retry-After value too large");

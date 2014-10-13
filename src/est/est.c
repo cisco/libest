@@ -543,7 +543,7 @@ EST_ERROR est_load_ca_certs (EST_CTX *ctx, unsigned char *raw, int size)
         return (EST_ERR_LOAD_CACERTS);
     }
 
-    ctx->ca_certs_len = BIO_get_mem_data(cacerts, (char**)&retval);
+    ctx->ca_certs_len = (int) BIO_get_mem_data(cacerts, (char**)&retval);
     if (ctx->ca_certs_len <= 0) {
         EST_LOG_ERR("Failed to copy PKCS7 data");
         BIO_free_all(cacerts);
@@ -889,9 +889,9 @@ char * est_get_tls_uid (SSL *ssl, int is_client)
      */
     if ((is_client && !SSL_session_reused(ssl)) ||
         (!is_client && SSL_session_reused(ssl))) {
-        len = SSL_get_finished(ssl, finished, MAX_FINISHED);
+        len = (int) SSL_get_finished(ssl, finished, MAX_FINISHED);
     } else {
-        len = SSL_get_peer_finished(ssl, finished, MAX_FINISHED);
+        len = (int) SSL_get_peer_finished(ssl, finished, MAX_FINISHED);
     }
 
     b64 = BIO_new(BIO_f_base64());
@@ -1059,7 +1059,7 @@ EST_ERROR est_is_challengePassword_present (const char *base64_ptr, int b64_len,
  *
  * return EST_ERROR and the presence of challengePassword
  */
-EST_ERROR est_asn1_parse_attributes (const char *p, long len, int *pop_present)
+EST_ERROR est_asn1_parse_attributes (const char *p, int len, int *pop_present)
 {
     unsigned char *der_ptr;
     int der_len, rv;
@@ -1134,7 +1134,7 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
     }
 
     len = (char *)der_ptr - orig_ptr;
-    new_len = der_len - len + sizeof(hex_chpw);
+    new_len = der_len - (int)len + sizeof(hex_chpw);
 	    
     /* remove leading sequence and length and copy to new buffer */
     /* if >= 256 need 4 byte Seq header */
@@ -1187,7 +1187,7 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
  		       new_len, (char *)csrattrs);
 
     *new_csr = csrattrs;
-    *pop_len = strlen(csrattrs);
+    *pop_len = (int) strlen(csrattrs);
     EST_LOG_INFO("CSR reconstituted attributes are(%d/%d): %s", b64_len, *pop_len, csrattrs);
 
     if (new_der) {
@@ -1212,7 +1212,7 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
     This function is used to add a CSR attribute to a CSR request by the
     EST client.
  */
-EST_ERROR est_add_attributes_helper (X509_REQ *req, int nid, void *string, unsigned long chtype)
+EST_ERROR est_add_attributes_helper (X509_REQ *req, int nid, void *string, int chtype)
 {
     
     if (req == NULL) {
@@ -1313,7 +1313,7 @@ EST_ERROR est_decode_attributes_helper (char *csrattrs, int csrattrs_len,
 EST_ERROR est_get_attributes_helper (unsigned char **der_ptr, int *der_len, int *new_nid)
 {
     int tag, xclass, j, nid = 0;
-    long out_len_save;
+    int out_len_save;
     long out_len;
     long len;
     const unsigned char *string;
@@ -1351,7 +1351,7 @@ EST_ERROR est_get_attributes_helper (unsigned char **der_ptr, int *der_len, int 
 	        nid = OBJ_obj2nid(a_object);
 		EST_LOG_INFO("NID=%d", nid);
 		*new_nid = nid;
-		*der_len = (out_len_save - (string - ostring));
+		*der_len = (out_len_save - (int) (string - ostring));
 		*der_ptr = (unsigned char *)string;
 	        ASN1_OBJECT_free(a_object);
 		return (EST_ERR_NONE);

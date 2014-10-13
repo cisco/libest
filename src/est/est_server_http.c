@@ -150,7 +150,7 @@ static void sockaddr_to_string (char *buf, size_t len,
 #if defined(USE_IPV6)
     inet_ntop(usa->sa.sa_family, usa->sa.sa_family == AF_INET ?
               (void*)&usa->sin.sin_addr :
-              (void*)&usa->sin6.sin6_addr, buf, len);
+              (void*)&usa->sin6.sin6_addr, buf, (socklen_t) len);
 #elif defined(_WIN32)
     // Only Windoze Vista (and newer) have inet_ntop()
     strncpy(buf, inet_ntoa(usa->sin.sin_addr), len);
@@ -517,7 +517,7 @@ static int64_t push (FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
                 n = -1;
             }
         } else {
-            n = send(sock, buf + sent, (size_t)k, MSG_NOSIGNAL);
+            n = (int) send(sock, buf + sent, (size_t)k, MSG_NOSIGNAL);
         }
 
         if (n < 0) {
@@ -567,7 +567,7 @@ static int pull (FILE *fp, struct mg_connection *conn, char *buf, int len)
         // Use read() instead of fread(), because if we're reading from the CGI
         // pipe, fread() may block until IO buffer is filled up. We cannot afford
         // to block and must pass all read bytes immediately to the client.
-        nread = read(fileno(fp), buf, (size_t)len);
+        nread = (int) read(fileno(fp), buf, (size_t)len);
     } else if (!conn->must_close && !wait_until_socket_is_readable(conn)) {
         nread = -1;
     } else if (conn->ssl != NULL) {
@@ -600,7 +600,7 @@ static int pull (FILE *fp, struct mg_connection *conn, char *buf, int len)
 	    break;
 	}
     } else {
-        nread = recv(conn->client.sock, buf, (size_t)len, 0);
+        nread = (int) recv(conn->client.sock, buf, (size_t)len, 0);
     }
 
     return conn->ctx->stop_flag ? -1 : nread;

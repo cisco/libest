@@ -357,7 +357,7 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
     /*
      * Now convert the BIO to char*
      */
-    pem_len = BIO_get_mem_data(out, (char**)&pem_data);
+    pem_len = (int) BIO_get_mem_data(out, (char**)&pem_data);
     if (pem_len <= 0) {
         EST_LOG_ERR("BIO_get_mem_data failed");
 	PKCS7_free(p7);

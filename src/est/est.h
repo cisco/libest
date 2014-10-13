@@ -376,7 +376,7 @@ EST_ERROR est_set_ca_reenroll_cb(EST_CTX *ctx, int (*cb)(unsigned char * pkcs10,
 EST_ERROR est_set_csr_cb(EST_CTX * ctx, unsigned char *(*cb)(int*csr_len, void *ex_data));
 EST_ERROR est_set_http_auth_cb(EST_CTX * ctx, int (*cb)(EST_CTX*, EST_HTTP_AUTH_HDR*, X509*, void*));
 EST_ERROR est_set_http_auth_required(EST_CTX * ctx, EST_HTTP_AUTH_REQUIRED required);
-EST_ERROR est_add_attributes_helper(X509_REQ *req, int nid, void *string, unsigned long chtype);
+EST_ERROR est_add_attributes_helper(X509_REQ *req, int nid, void *string, int chtype);
 EST_ERROR est_get_attributes_helper(unsigned char **der_ptr, int *der_len, int *new_nid);
 EST_ERROR est_decode_attributes_helper(char *csrattrs, int csrattrs_len, 
   				       unsigned char **der_ptr, int *der_len);

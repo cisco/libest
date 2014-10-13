@@ -334,7 +334,7 @@ static EST_ERROR est_client_remove_crls (EST_CTX *ctx, unsigned char *cacerts,
          * BIO_get_mem_data just returns the pointer and length to the data
          * contained in the mem BIO.  Nothing is allocated and passed back
          */
-        new_cacerts_len = BIO_get_mem_data(p7bio_out, (char**)&new_cacerts_buf);
+        new_cacerts_len = (int) BIO_get_mem_data(p7bio_out, (char**)&new_cacerts_buf);
         if (new_cacerts_len <= 0) {
             EST_LOG_ERR("Failed to copy PKCS7 data");
             ossl_dump_ssl_errors();
@@ -975,7 +975,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
     char both[MAX_UIDPWD*2+2]; /* both UID and PWD + ":" + /0 */
     char both_b64[2*2*MAX_UIDPWD];
 
-    hdr_len = strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
+    hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
         EST_LOG_WARN("Authentication header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
@@ -1049,7 +1049,7 @@ static int est_client_build_cacerts_header (EST_CTX *ctx, char *hdr)
             EST_CACERTS_URI,
             EST_HTTP_HDR_EST_CLIENT,
             ctx->est_server, ctx->est_port_num);
-    hdr_len = strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
+    hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
         EST_LOG_WARN("CA Certs header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
@@ -1079,7 +1079,7 @@ static int est_client_build_csr_header (EST_CTX *ctx, char *hdr)
             EST_HTTP_HDR_EST_CLIENT,
             ctx->est_server, ctx->est_port_num);
     est_client_add_auth_hdr(ctx, hdr, EST_SIMPLE_ENROLL_URI);
-    hdr_len = strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
+    hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
         EST_LOG_WARN("CSR attributes request header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
@@ -1203,7 +1203,7 @@ static int est_client_build_enroll_header (EST_CTX *ctx, char *hdr, int pkcs10_l
             EST_HTTP_HDR_EST_CLIENT,
             ctx->est_server, ctx->est_port_num, pkcs10_len);
     est_client_add_auth_hdr(ctx, hdr, EST_SIMPLE_ENROLL_URI);
-    hdr_len = strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
+    hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
         EST_LOG_WARN("Client enroll request header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
@@ -1236,7 +1236,7 @@ static int est_client_build_reenroll_header (EST_CTX *ctx, char *hdr, int pkcs10
             EST_HTTP_HDR_EST_CLIENT,
             ctx->est_server, ctx->est_port_num, pkcs10_len);
     est_client_add_auth_hdr(ctx, hdr, EST_SIMPLE_ENROLL_URI);
-    hdr_len = strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
+    hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
         EST_LOG_WARN("Client reenroll request header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
@@ -1293,10 +1293,10 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
 
     if (!reenroll) {
 	/* Perform a /simpleenroll */
-        hdr_len = est_client_build_enroll_header(ctx, http_data, bptr->length);
+        hdr_len = est_client_build_enroll_header(ctx, http_data, (int) bptr->length);
     } else {
 	/* Perform a /simplereenroll */
-        hdr_len = est_client_build_reenroll_header(ctx, http_data, bptr->length);
+        hdr_len = est_client_build_reenroll_header(ctx, http_data, (int) bptr->length);
     }
 
     if (hdr_len == 0) {
@@ -3503,7 +3503,7 @@ EST_CTX *est_client_init (unsigned char *ca_chain, int ca_chain_len,
      * null terminated.
      */
     if (ca_chain) {    
-        len = strnlen((char *)ca_chain, EST_CA_MAX);
+        len = (int) strnlen((char *)ca_chain, EST_CA_MAX);
         if (len != ca_chain_len) {
             EST_LOG_ERR("Length of ca_chain doesn't match passed ca_chain_len");
             return NULL;

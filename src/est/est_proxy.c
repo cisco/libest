@@ -174,7 +174,7 @@ static EST_CTX *get_client_ctx (EST_CTX *p_ctx)
                                                           sizeof(CLIENT_CTX_LU_NODE_T),
                                                           bsearch_compare);
         }
-        empty_index = (empty_node - p_ctx->client_ctx_array);
+        empty_index = (int) (empty_node - p_ctx->client_ctx_array);
 
         /*
          * add to the array and sort it into its proper place
@@ -956,13 +956,13 @@ EST_CTX * est_proxy_init (unsigned char *ca_chain, int ca_chain_len,
     /*
      * Verify the lengths of the cert chains 
      */
-    len = strnlen((char *)ca_chain, EST_CA_MAX);
+    len = (int) strnlen((char *)ca_chain, EST_CA_MAX);
     if (len != ca_chain_len) {
 	EST_LOG_ERR("Length of ca_chain doesn't match ca_chain_len");
         return NULL;
     }
     if (cacerts_resp_chain) {    
-        len = strnlen((char *)cacerts_resp_chain, EST_CA_MAX);
+        len = (int) strnlen((char *)cacerts_resp_chain, EST_CA_MAX);
         if (len != cacerts_resp_chain_len) {
             EST_LOG_ERR("Length of cacerts_resp_chain doesn't match cacerts_resp_chain_len");
             return NULL;

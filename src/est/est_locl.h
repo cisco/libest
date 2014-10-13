@@ -305,7 +305,7 @@ EST_ERROR est_proxy_http_request(EST_CTX *ctx, void *http_ctx,
                            char *method, char *uri,
                            char *body, int body_len, const char *ct);
 void proxy_cleanup(EST_CTX *p_ctx);
-EST_ERROR est_asn1_parse_attributes(const char *p, long len, int *offset);
+EST_ERROR est_asn1_parse_attributes(const char *p, int len, int *offset);
 EST_ERROR est_is_challengePassword_present(const char *base64_ptr, int b64_len, int *offset);
 EST_ERROR est_add_challengePassword(const char *base64_ptr, int b64_len, char **new_csr, int *pop_len);
 EST_ERROR est_proxy_retrieve_cacerts (EST_CTX *ctx, unsigned char **cacerts_rtn,

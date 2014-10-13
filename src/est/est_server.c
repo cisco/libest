@@ -260,7 +260,7 @@ EST_AUTH_STATE est_enroll_auth (EST_CTX *ctx, void *http_ctx, SSL *ssl,
      */
     if ((peer = SSL_get_peer_certificate(ssl)) != NULL) {
         // check TLS based client authorization (is client cert authorized)
-        v_result = SSL_get_verify_result(ssl);
+        v_result = (int) SSL_get_verify_result(ssl);
         if (X509_V_OK == v_result) {
             EST_LOG_INFO("TLS: client certificate is valid");
 	    rv = EST_CERT_AUTH;
@@ -1141,12 +1141,12 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
      * string length in safelib is 4096, which isn't
      * enough to hold all the CA certs 
      */
-    len = strnlen((char *)ca_chain, EST_CA_MAX);
+    len = (int) strnlen((char *)ca_chain, EST_CA_MAX);
     if (len != ca_chain_len) {
 	EST_LOG_ERR("Length of ca_chain doesn't match ca_chain_len");
         return NULL;
     }
-    len = strnlen((char *)cacerts_resp_chain, EST_CA_MAX);
+    len = (int) strnlen((char *)cacerts_resp_chain, EST_CA_MAX);
     if (len != cacerts_resp_chain_len) {
 	EST_LOG_ERR("Length of cacerts_resp_chain doesn't match cacerts_resp_chain_len");
         return NULL;
