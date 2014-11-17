@@ -168,7 +168,7 @@ public class PKCS10CertificateRequest {
 	 * Everything below is the JNI layer definitions and mgmt
 	 */
 	static {
-		System.loadLibrary("ciscojest");
+		System.loadLibrary("jest");
 	}
 
 	private static native int create_csr(byte[] keypair,

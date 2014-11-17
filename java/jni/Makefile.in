@@ -123,22 +123,21 @@ am__uninstall_files_from_dir = { \
 am__installdirs = "$(DESTDIR)$(libdir)" \
 	"$(DESTDIR)$(library_includedir)"
 LTLIBRARIES = $(lib_LTLIBRARIES)
-@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@libciscojest_la_DEPENDENCIES =  \
+@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@libjest_la_DEPENDENCIES =  \
 @ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@	../../src/est/libest.la
-am__libciscojest_la_SOURCES_DIST = client.c
-@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@am_libciscojest_la_OBJECTS =  \
+am__libjest_la_SOURCES_DIST = client.c
+@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@am_libjest_la_OBJECTS =  \
 @ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@	client.lo
-libciscojest_la_OBJECTS = $(am_libciscojest_la_OBJECTS)
+libjest_la_OBJECTS = $(am_libjest_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
-libciscojest_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
-	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
-	$(AM_CFLAGS) $(CFLAGS) $(libciscojest_la_LDFLAGS) $(LDFLAGS) \
-	-o $@
-@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@am_libciscojest_la_rpath =  \
-@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@	-rpath $(libdir)
+libjest_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
+	$(libjest_la_LDFLAGS) $(LDFLAGS) -o $@
+@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@am_libjest_la_rpath = -rpath \
+@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@	$(libdir)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -173,8 +172,8 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(libciscojest_la_SOURCES)
-DIST_SOURCES = $(am__libciscojest_la_SOURCES_DIST)
+SOURCES = $(libjest_la_SOURCES)
+DIST_SOURCES = $(am__libjest_la_SOURCES_DIST)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -316,11 +315,11 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@lib_LTLIBRARIES = libciscojest.la
+@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@lib_LTLIBRARIES = libjest.la
 @ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@AM_CFLAGS = -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/linux -I$(SSL_CFLAGS) -I../.. -I$(srcdir)/../../src 
-@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@libciscojest_la_LDFLAGS = -release $(PACKAGE_VERSION) 
-@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@libciscojest_la_SOURCES = client.c
-@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@libciscojest_la_LIBADD = ../../src/est/libest.la 
+@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@libjest_la_LDFLAGS = -release $(PACKAGE_VERSION) 
+@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@libjest_la_SOURCES = client.c
+@ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@libjest_la_LIBADD = ../../src/est/libest.la 
 @ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@library_includedir = $(includedir)/est
 @ENABLE_JNI_TRUE@@JAVA_HOME_SET_TRUE@library_include_HEADERS = jest.h
 all: all-am
@@ -393,8 +392,8 @@ clean-libLTLIBRARIES:
 	  rm -f $${locs}; \
 	}
 
-libciscojest.la: $(libciscojest_la_OBJECTS) $(libciscojest_la_DEPENDENCIES) $(EXTRA_libciscojest_la_DEPENDENCIES) 
-	$(AM_V_CCLD)$(libciscojest_la_LINK) $(am_libciscojest_la_rpath) $(libciscojest_la_OBJECTS) $(libciscojest_la_LIBADD) $(LIBS)
+libjest.la: $(libjest_la_OBJECTS) $(libjest_la_DEPENDENCIES) $(EXTRA_libjest_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(libjest_la_LINK) $(am_libjest_la_rpath) $(libjest_la_OBJECTS) $(libjest_la_LIBADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)

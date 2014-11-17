@@ -716,7 +716,7 @@ public class ESTClient {
 	 * Everything below is the JNI layer definitions and mgmt
 	 */
 	static {
-		System.loadLibrary("ciscojest");
+		System.loadLibrary("jest");
 		/*
 		 * Get the maximum allowed certificate length from the JNI layer and
 		 * cache it locally.  This is needed later when allocating the byte

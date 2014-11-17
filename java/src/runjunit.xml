@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project default="UT" name="CiscoJEST Unit Test">
+<project default="UT" name="JEST Unit Test">
 	<target name="UT">
 		<junit fork="yes" printsummary="on">
 		    <sysproperty key="java.library.path" value="/usr/local/est/lib"/>
@@ -13,7 +13,7 @@
 				</pathelement>
 				<pathelement location="../lib/org.hamcrest.core_1.1.0.jar">
 				</pathelement>
-				<pathelement location="bin/ciscojest.jar">
+				<pathelement location="bin/jest.jar">
 				</pathelement>
 				<pathelement location="bin">
 				</pathelement>
