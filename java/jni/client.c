@@ -14,7 +14,6 @@
 #include <est/est.h>
 #include <openssl/x509v3.h>
 #include <openssl/bio.h>
-#include "safe_mem_lib.h"
 
 #define EST_CLASS_ENROLL_EXCEPTION 			"com/cisco/c3m/est/EnrollException"
 #define EST_CLASS_BUFSIZ_EXCEPTION 			"com/cisco/c3m/est/BufferSizeException"
@@ -376,7 +375,7 @@ JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_PKCS10CertificateRequest_create_1c
 	BIO_flush(out);
 	BIO_get_mem_ptr(out, &bptr);
 	if (bptr->length > 0 && bptr->length < max_buffer_length) {
-		memcpy_s(l_new_csr, max_buffer_length, bptr->data, bptr->length);
+		memcpy(l_new_csr, bptr->data, max_buffer_length);
 		rv = bptr->length;
 	} else {
 		if (bptr->length >= max_buffer_length) {
@@ -735,7 +734,7 @@ static jint send_enroll_request (
 			&new_cert_pem);
 
 	if (new_cert_len > 0 && new_cert_len < max_buffer_length) {
-		memcpy_s(l_new_cert, max_buffer_length, new_cert_pem, new_cert_len);
+		memcpy(l_new_cert, new_cert_pem, max_buffer_length);
 		ret_val = new_cert_len;
 	} else {
 		if (new_cert_len >= max_buffer_length) {
@@ -1176,7 +1175,7 @@ JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_ESTClient_send_1cacerts_1request(
 	ca_certs_len = est_convert_p7b64_to_pem(new_ca_certs, pkcs7_len, &new_certs_pem);
 
 	if (ca_certs_len > 0 && ca_certs_len < max_buffer_length) {
-		memcpy_s(l_new_certs, max_buffer_length, new_certs_pem, ca_certs_len);
+		memcpy(l_new_certs, new_certs_pem, max_buffer_length);
 		ret_val = ca_certs_len;
 	} else {
 		if (ca_certs_len >= max_buffer_length) {
