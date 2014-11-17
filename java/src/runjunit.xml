@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project default="UT" name="CiscoJEST Unit Test" xmlns:jacoco="antlib:org.jacoco.ant">
+    <property environment="env"/>
+    <property name="src.dir" location="."/>
+    <property name="result.dir" location="./codecov"/>
+    <property name="result.classes.dir" location="./bin"/>
+    <property name="result.report.dir" location="${result.dir}/site/jacoco"/>    
+    <property name="result.exec.file" location="${result.dir}/jacoco.exec"/>
+    <taskdef uri="antlib:org.jacoco.ant" resource="org/jacoco/ant/antlib.xml">
+	<classpath path="../lib/jacoco/jacocoant.jar"/>
+    </taskdef>
+	<target name="UT">
+	    <jacoco:coverage destfile="${result.exec.file}">
+		<junit fork="yes" printsummary="on">
+			<sysproperty key="java.library.path" value="${env.LD_LIBRARY_PATH}"/>
+			<formatter type="xml"></formatter>
+			<classpath>
+				<pathelement location="../lib/bcpkix-jdk15on-151.jar">
+				</pathelement>
+				<pathelement location="../lib/bcprov-ext-jdk15on-151.jar">
+				</pathelement>
+				<pathelement location="../lib/junit.jar">
+				</pathelement>
+				<pathelement location="../lib/org.hamcrest.core_1.1.0.jar">
+				</pathelement>
+				<pathelement location="bin/ciscojest.jar">
+				</pathelement>
+				<pathelement location="bin">
+				</pathelement>
+				
+			</classpath>
+			<test name="com.cisco.c3m.est.test.UT.PKCS10CertificateRequestTest" todir="results"></test>
+			<test name="com.cisco.c3m.est.test.UT.CACertsTest" todir="results"></test>
+			<test name="com.cisco.c3m.est.test.UT.ESTClientTest" todir="results"></test>
+		</junit>
+	    </jacoco:coverage>
+	</target>
+	<target name="UT-FIPS">
+		<junit fork="yes" printsummary="on">
+			<sysproperty key="java.library.path" value="${env.LD_LIBRARY_PATH}"/>
+			<formatter type="xml"></formatter>
+			<classpath>
+				<pathelement location="../lib/junit.jar">
+				</pathelement>
+				<pathelement location="../lib/org.hamcrest.core_1.1.0.jar">
+				</pathelement>
+				<pathelement location="bin/ciscojest.jar">
+				</pathelement>
+				<pathelement location="bin">
+				</pathelement>
+				
+			</classpath>
+			<test name="com.cisco.c3m.est.test.UT.FIPSTest" todir="results"></test>
+		</junit>
+	</target>
+
+	<target name="codecov" depends="UT, UT-FIPS">
+	    <!-- Step 3: Create coverage report -->
+	    <jacoco:report>
+		<!-- This task needs the collected execution data and ... -->
+		<executiondata>
+		    <file file="${result.exec.file}"/>
+		</executiondata>
+		<!-- the class files and optional source files ... -->
+		<structure name="Jacoco results">
+		    <classfiles>
+			<fileset dir="${result.classes.dir}"/>
+		    </classfiles>
+		    <sourcefiles encoding="UTF-8">
+			<fileset dir="${src.dir}"/>
+		    </sourcefiles>
+		</structure>
+		<!-- to produce reports in different formats. -->
+		<html destdir="${result.report.dir}"/>
+		<csv destfile="${result.report.dir}/report.csv"/>
+		<xml destfile="${result.report.dir}/report.xml"/>
+	    </jacoco:report>
+	</target>
+</project>
+
+

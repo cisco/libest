@@ -1,0 +1,26 @@
+<?xml version="1.0" ?>
+<!-- Configuration of the Ant build system to generate a Jar file --> 
+<project name="TestMain" default="CreateJar">
+  <property environment="env"/>
+  <condition property="rmajor" value="${env.EST_VER_MAJOR}" else="0">
+    <isset property="env.EST_VER_MAJOR" />
+  </condition>
+  <condition property="rminor" value="${env.EST_VER_MINOR}" else="0">
+    <isset property="env.EST_VER_MINOR" />
+  </condition>
+  <condition property="rmicro" value="${env.EST_VER_MICRO}" else="0">
+    <isset property="env.EST_VER_MICRO" />
+  </condition>
+  <condition property="svnr" value="${env.SVN_REVISION}" else="0">
+    <isset property="env.SVN_REVISION" />
+  </condition>
+  <target name="CreateJar" description="Create Jar file">
+    <manifest file="bin/MANIFEST.MF">
+              <attribute name="Version-Major" value="${rmajor}" />
+              <attribute name="Version-Minor" value="${rminor}" />
+              <attribute name="Version-Micro" value="${rmicro}" />
+              <attribute name="SVN-Revision" value="${svnr}" />
+    </manifest>
+    <jar jarfile="bin/ciscojest.jar" manifest="bin/MANIFEST.MF" basedir="./bin" includes="com/cisco/c3m/est/*.class" />
+  </target>
+</project>
