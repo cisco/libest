@@ -46,6 +46,7 @@ static int crl = 0;
 static int pop = 0;
 static int v6 = 0;
 static int srp = 0;
+static int enforce_csr = 0;
 #ifndef DISABLE_TSEARCH
 static int manual_enroll = 0;
 #endif
@@ -155,6 +156,7 @@ static void show_usage_and_exit (void)
             "  -w           Dump the CSR to '/tmp/csr.p10' allowing for manual attribute capture on server\n"
 	    "  -?           Print this help message and exit\n"
 	    "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
+	    "  --enforce-csr  Enable CSR attributes enforcement. The client must provide all the attributes in the CSR.\n"
             "\n");
     exit(255);
 }
@@ -638,6 +640,7 @@ int main (int argc, char **argv)
     int option_index = 0;
     static struct option long_options[] = {
         {"srp", 1, NULL, 0},
+        {"enforce-csr", 0, NULL, 0},
         {NULL, 0, NULL, 0}
     };
     
@@ -660,6 +663,9 @@ int main (int argc, char **argv)
             if (!strncmp(long_options[option_index].name,"srp", strlen("srp"))) {
 		srp = 1;
                 strncpy(vfile, optarg, 255);
+            }
+            if (!strncmp(long_options[option_index].name,"enforce-csr", strlen("enforce-csr"))) {
+		enforce_csr = 1;
             }
 	    break;
 #ifndef DISABLE_TSEARCH
@@ -830,6 +836,10 @@ int main (int argc, char **argv)
         exit(1);
     }
     est_set_ex_data(ectx, &test_app_data);
+
+    if (enforce_csr) {
+	est_server_enforce_csrattr(ectx);
+    }
 
     /*
      * Change the retry-after period.  This is not

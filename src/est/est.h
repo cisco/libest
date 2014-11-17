@@ -86,6 +86,7 @@ typedef enum {
     E(EST_ERR_FQDN_MISMATCH) \
     E(EST_ERR_SYSCALL) \
     E(EST_ERR_CSR_ALREADY_SIGNED) \
+    E(EST_ERR_CSR_ATTR_MISSING) \
     E(EST_ERR_INVALID_DIGEST) \
     E(EST_ERR_CACERT_VERIFICATION) \
     E(EST_ERR_INVALID_TOKEN) \
@@ -96,6 +97,7 @@ typedef enum {
     E(EST_ERR_SRP_STRENGTH_LOW) \
     E(EST_ERR_SRP_USERID_BAD) \
     E(EST_ERR_SRP_PWD_BAD) \
+    E(EST_ERR_CB_FAILED) \
     E(EST_ERR_UNKNOWN)
 
 #define GENERATE_ENUM(ENUM) ENUM,
@@ -161,6 +163,7 @@ typedef enum {
 \n EST_ERR_FQDN_MISMATCH  The EST server name did not match the fully qualified domain name in the server's X509 certificate.
 \n EST_ERR_SYSCALL  The OpenSSL library reported a system call error when attempting to establish the TLS session.
 \n EST_ERR_CSR_ALREADY_SIGNED  The PKCS10 CSR provided to libest already contained a signature.  libest requires the CSR to not be signed since libest is responsible for signing the CSR.
+\n EST_ERR_CSR_ATTR_MISSING  The PKCS10 CSR received from the EST client does not contain all the required CSR attributes.
 \n EST_ERR_INVALID_DIGEST  An invalid digest type was requested.   
 \n EST_ERR_CACERT_VERIFICATION  Validation of the CA certificate chain received from the EST server has failed.
 \n EST_ERR_INVALID_TOKEN  An invalid authorization token was received.
@@ -171,6 +174,7 @@ typedef enum {
 \n EST_ERR_SRP_STRENGTH_LOW  The SRP strength requested by the application was too small.
 \n EST_ERR_SRP_USERID_BAD  The SRP user ID was not accepted.
 \n EST_ERR_SRP_PWD_BAD  The SRP password was not accepted.
+\n EST_ERR_CB_FAILED  The application layer call-back facility failed.
 \n EST_ERR_LAST  Last error in the enum definition. Should never be used.
 */
 typedef enum {
@@ -323,7 +327,7 @@ EST_ERROR est_server_set_dh_parms(EST_CTX *ctx, DH *dh);
 EST_ERROR est_server_init_csrattrs(EST_CTX *ctx, char *csrattrs, int crsattrs_len);
 EST_ERROR est_server_set_retry_period(EST_CTX *ctx, int seconds);
 EST_ERROR est_server_set_ecdhe_curve(EST_CTX *ctx, int nid);
-
+EST_ERROR est_server_enforce_csrattr(EST_CTX *ctx);
 /*
  * EST proxy specific functions
  */

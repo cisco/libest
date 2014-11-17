@@ -1,0 +1,41 @@
+asn1 = SEQUENCE:seq_section
+[seq_section]
+# request mac address be included in the response
+field1 = OID:1.3.6.1.1.1.1.22
+# send arbitrary attribute data to the client
+field2 = SEQUENCE:seq_attribute1
+# send more arbitrary data to the client
+field3 = SEQUENCE:seq_attribute2
+#request secp384r1 be used in the request
+field4 = OID:1.3.132.0.34
+#request commonName
+field5 = OID:commonName
+#request serialNumber
+field6 = OID:serialNumber
+#request ecdsa-with-SHA256
+field6 = OID:ecdsa-with-SHA256
+
+[seq_attribute1]
+# From RFC2986, an attribute type is defined as 
+# (a unique object identifier)...
+# "2.999" is an example OID similar to "example.com"  
+field1 = OID:2.999.1
+# and an associated set of attribute values (any ASN.1 type)
+field2 = SET:attribute1set
+
+[attribute1set]
+field1 = PRINTABLESTRING:Parse SET as 2.999.1 data
+
+[seq_attribute2]
+# From RFC2986, an attribute type is defined as 
+# (a unique object identifier)...
+# "2.999" is an example OID similar to "example.com"  
+field1 = OID:2.999.2
+# and an associated set of attribute values (any ASN.1 type)
+field2 = SET:attribute2set
+
+[attribute2set]
+field1 = PRINTABLESTRING:Parse SET as 2.999.2 data
+field2 = OID:2.999.3
+field3 = OID:2.999.4
+

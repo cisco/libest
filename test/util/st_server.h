@@ -40,5 +40,6 @@ void st_disable_csr_cb();
 void st_set_csrattrs(char *value);
 void st_set_http_auth_optional();
 void st_set_http_auth_required();
+void st_enable_csrattr_enforce();
 #endif
 

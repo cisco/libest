@@ -232,7 +232,18 @@ struct est_ctx {
     void *ex_data;
     int enable_srp;
     int (*est_srp_username_cb)(SSL *s, int *ad, void *arg);
+    int enforce_csrattrs; /* Used to force the client to provide the CSR attrs in the CSR */
 };
+
+#define EST_MAX_ATTR_LEN    128 
+/*
+ * This is used to build a linked list of the attributes
+ * present in the client's CSR.
+ */
+typedef struct est_oid_list {
+    char		    oid[EST_MAX_ATTR_LEN];
+    struct est_oid_list    *next;
+} EST_OID_LIST;
 
 /*
  * Index used to link the EST Ctx into the SSL structures

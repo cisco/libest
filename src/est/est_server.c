@@ -20,6 +20,7 @@
 #include "est_server_http.h"
 #include "est_locl.h"
 #include "est_ossl_util.h"
+#include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
 static ASN1_OBJECT *o_cmcRA = NULL;
@@ -565,6 +566,410 @@ int est_server_check_csr (X509_REQ *req)
     }
 }
 
+
+/*
+ * Frees the linked-list containing the attributes in
+ * the client CSR.
+ */
+static void est_server_free_csr_oid_list (EST_OID_LIST *head)
+{
+    EST_OID_LIST *next_entry;
+
+    if (!head) {
+	return;
+    }
+
+    next_entry = head->next;
+    while (next_entry) {
+	free(head);
+	head = next_entry;
+	next_entry = head->next;
+    }
+    free(head);
+}
+
+/*
+ * Adds a new entry to the tail of the list of attributes
+ * in the client CSR.
+ */
+static void est_server_add_oid_to_list (EST_OID_LIST **list, EST_OID_LIST *new_entry) 
+{
+    EST_OID_LIST *head = *list;
+
+    /*
+     * If the list doesn't have a head yet, the new entry
+     * simply becomes the head
+     */
+    if (head == NULL) { 
+	*list = new_entry;
+    } else {
+	/*
+	 * Walk the list to find the tail, add the new entry to the end
+	 */
+	while (head->next) {
+	    head = head->next;
+	}
+	head->next = new_entry;
+    }
+}
+
+/*
+ * This is a recursive routine that walks through an ASN.1 blob
+ * looking for ASN.1 object definitions.  For any that are
+ * found, the OID for the object is added to the EST_OID_LIST (first argument).
+ * The end result of this routine is **list will contain all the OID
+ * values for every ASN.1 object in the blob.
+ * This code was shamelessly taken from OpenSSL ans1_parse2(), which
+ * explains some of the poorly chosen variable names.
+ */
+static int est_server_csr_asn1_parse (EST_OID_LIST **list, const unsigned char **blob, long length, int offset)
+{
+    EST_OID_LIST *new_entry;
+    const unsigned char *ptr, *ep, *tot, *op, *opp;
+    long len;
+    int tag, xclass;
+    int hl, j, r;
+    ASN1_OBJECT *a_object = NULL;
+
+    ptr = *blob;
+    tot = ptr + length;
+    op = ptr - 1;
+    while ((ptr < tot) && (op < ptr)) {
+	op = ptr;
+	j = ASN1_get_object(&ptr, &len, &tag, &xclass, length);
+	if (j & 0x80) {
+	    EST_LOG_ERR("Error in encoding"); 
+	    *blob = ptr;
+	    return (0);
+	}
+	hl = ptr - op;
+	length -= hl;
+
+	if (j & V_ASN1_CONSTRUCTED) {
+	    ep = ptr + len;
+	    if (len > length) {
+		EST_LOG_ERR("length is greater than %ld",length);
+		*blob = ptr;
+		return (0);
+	    }
+	    if ((j == 0x21) && (len == 0)) {
+		r = est_server_csr_asn1_parse(list, &ptr, (long)(tot-ptr), offset+(ptr - *blob));
+		if (r == 0) { 
+		    *blob = ptr;
+		    return (0);
+		}
+		if ((r == 2) || (ptr >= tot)) break;
+	    } else {
+		while (ptr < ep) {
+		    r = est_server_csr_asn1_parse(list, &ptr, (long)len, offset+(ptr - *blob));
+		    if (r == 0) { 
+			*blob = ptr;
+			return (0);
+		    }
+		}
+	    }
+	} else if (xclass != 0) {
+	    ptr += len;
+	} else {
+	    if (tag == V_ASN1_OBJECT) {
+		opp = op;
+		if (d2i_ASN1_OBJECT(&a_object, &opp, len+hl) != NULL) {
+		    new_entry = malloc(sizeof(EST_OID_LIST));
+		    if (!new_entry) {
+			EST_LOG_ERR("malloc failure");
+			est_server_free_csr_oid_list(*list);
+			if (a_object != NULL) { ASN1_OBJECT_free(a_object); }
+			*blob = ptr;
+			return (0);
+		    }
+		    memset(new_entry, 0x0, sizeof(EST_OID_LIST));
+		    i2t_ASN1_OBJECT(new_entry->oid, EST_MAX_ATTR_LEN, a_object);
+		    EST_LOG_INFO("Build CSR OID list: %s", new_entry->oid);
+		    est_server_add_oid_to_list(list, new_entry);
+		    if (a_object != NULL) {
+			ASN1_OBJECT_free(a_object);
+			a_object = NULL;
+		    }
+		} else {
+		    EST_LOG_ERR("Bad ASN.1 object");
+		    if (a_object != NULL) { ASN1_OBJECT_free(a_object); }
+		    *blob = ptr;
+		    return (0);
+		}
+	    } 
+	    ptr += len;
+	    if ((tag == V_ASN1_EOC) && (xclass == 0)) {
+		*blob = ptr;
+		return (2);
+	    }
+	}
+	length -= len;
+    }
+    *blob = ptr;
+    return (1);
+}
+
+/*
+ * Utility function that populates a linked-list containing
+ * the OID (or name) of the attributes present in the
+ * client CSR.
+ */
+static EST_ERROR est_server_build_csr_oid_list (EST_OID_LIST **list, char *body, int body_len)
+{
+    unsigned char *der_data, *der_ptr;
+    int der_len;
+    int rv;
+
+    /*
+     * grab some space to hold the decoded CSR data
+     */
+    der_ptr = der_data = malloc(body_len*2);
+    if (!der_data) {
+	EST_LOG_ERR("malloc failed");
+        return (EST_ERR_MALLOC);
+    }
+
+    /*
+     * Decode the CSR data
+     */
+    der_len = est_base64_decode((char *)body, (char *)der_data, body_len*2);
+    if (der_len <= 0) {
+        EST_LOG_ERR("Invalid base64 encoded data");
+	free(der_data);
+        return (EST_ERR_BAD_BASE64);
+    }
+
+    rv = est_server_csr_asn1_parse(list, (const unsigned char **)&der_data, der_len, 0);
+    if (!rv) {
+	EST_LOG_ERR("Failed to build OID list from client provided CSR");
+	est_server_free_csr_oid_list(*list);
+	free(der_ptr);
+	return (EST_ERR_UNKNOWN);
+    }
+    free(der_ptr);
+    return (EST_ERR_NONE);
+}
+
+/*
+ * This function checks the locally configured CSR attributes
+ * against the attributes in the CSR.  If any attributes are
+ * missing from the CSR, then an error is returned.
+ */
+static EST_ERROR est_server_all_csrattrs_present(EST_CTX *ctx, char *body, int body_len) 
+{
+    int tag, xclass, j, found_match, nid;
+    long len;
+    unsigned char *der_ptr, *save_ptr;
+    ASN1_OBJECT *a_object;
+    int max_len = MAX_CSRATTRS;
+    char *csr_data;
+    int csr_len;
+    long out_len_save;
+    unsigned char *der_data;
+    int der_len, out_len;
+    int a_len;
+    char tbuf[EST_MAX_ATTR_LEN];
+    EST_OID_LIST *csr_attr_oids = NULL; 
+    EST_OID_LIST *oid_entry;
+    EST_ERROR rv;
+
+    EST_LOG_INFO("CSR attributes enforcement is enabled");
+
+    if (!ctx->server_csrattrs && !ctx->est_get_csr_cb) {
+	EST_LOG_WARN("CSR attributes enforcement is enabled, but no attributes have been configured");
+	return EST_ERR_NONE;
+    }
+
+    /*
+     * Build the list of attributes present in the CSR.  This list will be
+     * used later when we confirm the required attributes are present.
+     */
+    rv =  est_server_build_csr_oid_list(&csr_attr_oids, body, body_len);
+    if (rv != EST_ERR_NONE) {
+	return (rv);
+    }
+
+    /*
+     * Get the CSR attributes configured on the server.  We'll need to 
+     * look in the CSR to make sure the CSR provided each of these. 
+     * Use the callback if configured, otherwise use the local copy.
+     */
+    if (ctx->est_get_csr_cb) {
+	csr_data = (char *)ctx->est_get_csr_cb(&csr_len, ctx->ex_data);
+	if (!csr_data) {
+	    EST_LOG_ERR("Application layer failed to return CSR attributes");
+	    est_server_free_csr_oid_list(csr_attr_oids);
+	    return (EST_ERR_CB_FAILED);
+	}
+    } else {
+        csr_data = malloc(ctx->server_csrattrs_len + 1);
+	if (!csr_data) {
+	    EST_LOG_ERR("malloc failure");
+	    est_server_free_csr_oid_list(csr_attr_oids);
+            return (EST_ERR_MALLOC);
+        }
+        strncpy(csr_data, (char *)ctx->server_csrattrs, ctx->server_csrattrs_len);
+	csr_data[ctx->server_csrattrs_len] = 0;
+	csr_len = ctx->server_csrattrs_len;
+    }
+    EST_LOG_INFO("Checking CSR attrs present in CSR: %s", csr_data);
+
+    /* 
+     * We have the CSR configured on the server and it needs base64 decoding.
+     * Check smallest possible base64 case here for now 
+     * and sanity test will check min/max value for ASN.1 data
+     */
+    if (csr_len < MIN_CSRATTRS) {
+	est_server_free_csr_oid_list(csr_attr_oids);
+	free(csr_data);
+        return (EST_ERR_INVALID_PARAMETERS);
+    }
+
+    /*
+     * grab some space to hold the decoded CSR data
+     */
+    der_data = malloc(csr_len*2);
+    if (!der_data) {
+	EST_LOG_ERR("malloc failed");
+	est_server_free_csr_oid_list(csr_attr_oids);
+	free(csr_data);
+        return (EST_ERR_MALLOC);
+    }
+
+    /*
+     * Decode the CSR data
+     */
+    der_len = est_base64_decode(csr_data, (char *)der_data, csr_len*2);
+    free(csr_data);
+    if (der_len <= 0) {
+        EST_LOG_ERR("Invalid base64 encoded data");
+	est_server_free_csr_oid_list(csr_attr_oids);
+	free(der_data);
+        return (EST_ERR_BAD_BASE64);
+    }
+
+    /*
+     * pointer fun starts here, joy to OpenSSL
+     */
+    out_len_save = out_len = der_len;
+    der_ptr = save_ptr = der_data;
+
+    if (out_len_save > max_len) {
+	EST_LOG_ERR("DER length exceeds max");
+	est_server_free_csr_oid_list(csr_attr_oids);
+	free(der_data);
+        return (EST_ERR_INVALID_PARAMETERS);
+    }
+
+    /* make sure its long enough to be ASN.1 */
+    if (der_len < MIN_ASN1_CSRATTRS) {
+	EST_LOG_ERR("DER too short");
+	est_server_free_csr_oid_list(csr_attr_oids);
+	free(der_data);
+        return (EST_ERR_INVALID_PARAMETERS);
+    }
+
+    /*
+     * Iterate through the CSR attributes configured on the server
+     */
+    while (out_len > 0) {
+	/*
+	 * Get the next attributes
+	 */
+	j = ASN1_get_object((const unsigned char**)&der_ptr, &len, &tag, &xclass, out_len);
+
+	EST_LOG_INFO("Sanity: tag=%d, len=%d, j=%d, out_len=%d", tag, len, j, out_len);
+	if (j & 0x80) {
+	    EST_LOG_ERR("Bad ASN1 hex");
+	    est_server_free_csr_oid_list(csr_attr_oids);
+	    free(der_data);
+	    return (EST_ERR_BAD_ASN1_HEX);
+        }
+	switch (tag) {
+	case V_ASN1_OBJECT:
+            a_object = c2i_ASN1_OBJECT(NULL, (const unsigned char**)&der_ptr, len);
+	    if (!a_object) {
+		EST_LOG_ERR("a_object is null");
+	        est_server_free_csr_oid_list(csr_attr_oids);
+		free(der_data);
+		return (EST_ERR_UNKNOWN);
+	    }
+	    /*
+	     * If this is the challengePassword, no need to check it.
+	     * This is already covered when authenticating the client
+	     */
+	    nid = OBJ_obj2nid(a_object);
+	    if (nid == NID_pkcs9_challengePassword) {
+		ASN1_OBJECT_free(a_object);
+		break;
+	    }
+
+	    a_len = i2t_ASN1_OBJECT(tbuf, EST_MAX_ATTR_LEN, a_object);
+	    EST_LOG_INFO("Looking for attr=%s in the CSR", tbuf);
+	    ASN1_OBJECT_free(a_object);
+
+	    /*
+	     * If there were no attrubutes in the CSR, we can
+	     * bail now.
+	     */
+	    if (csr_attr_oids == NULL) {
+		EST_LOG_WARN("CSR did not contain any attributes, CSR will be rejected", tbuf);
+		free(der_data);
+	        return (EST_ERR_CSR_ATTR_MISSING);
+	    }
+
+	    found_match = 0;
+	    oid_entry = csr_attr_oids;
+	    /*
+	     * Iterate through the attributes that are in the CSR
+	     */
+	    while (oid_entry) { 
+		EST_LOG_INFO("Comparing %s to %s", tbuf, oid_entry->oid);
+		if (!strncmp(oid_entry->oid, tbuf, (a_len < EST_MAX_ATTR_LEN ? a_len : EST_MAX_ATTR_LEN))) {
+		    found_match = 1;
+		    break;
+		}
+		oid_entry = oid_entry->next;
+	    } 
+
+	    if (!found_match) {
+		EST_LOG_WARN("CSR did not contain %s attribute, CSR will be rejected", tbuf);
+	        est_server_free_csr_oid_list(csr_attr_oids);
+		free(der_data);
+	        return (EST_ERR_CSR_ATTR_MISSING);
+	    }
+	    break;
+	default:
+	    /* have to adjust string pointer here, move on to the next item */
+	    der_ptr += len;
+	    break;
+	case V_ASN1_SET:
+	case V_ASN1_SEQUENCE:
+	    break;
+	}
+	out_len = out_len_save - (der_ptr - save_ptr);
+    }
+    
+    /*
+     * One file check to ensure we didn't missing something when parsing
+     * the locally configured CSR attributes.
+     */
+    if (out_len != 0) {
+	EST_LOG_ERR("DER length not zero (%d)", out_len);
+	est_server_free_csr_oid_list(csr_attr_oids);
+	free(der_data);
+        return (EST_ERR_BAD_ASN1_HEX);
+    }
+
+    /*
+     * If we're lucky enough to make it this far, then in means all the
+     * locally configured CSR attributes were found in the client's CSR.
+     */
+    est_server_free_csr_oid_list(csr_attr_oids);
+    free(der_data);
+    return (EST_ERR_NONE);
+}
+
 /*
  * This function is used by the server to process and incoming
  * Simple Enroll request from the client.
@@ -663,6 +1068,18 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
 	    X509_free(peer_cert);
 	    return (EST_ERR_AUTH_FAIL_TLSUID);
 	} 
+    }
+
+    /*
+     * Check if we need to ensure the client included all the
+     * CSR attributes required by the CA.
+     */
+    if (ctx->enforce_csrattrs) {
+	if (EST_ERR_NONE != est_server_all_csrattrs_present(ctx, body, body_len)) {
+	    X509_REQ_free(csr);
+	    X509_free(peer_cert);
+	    return (EST_ERR_CSR_ATTR_MISSING);
+	}
     }
 
     /* body now points to the pkcs10 data, pass
@@ -1756,3 +2173,27 @@ EST_ERROR est_server_init_csrattrs (EST_CTX *ctx, char *csrattrs, int csrattrs_l
     return (EST_ERR_NONE);
 }
 
+/*! @brief est_server_enforce_csrattrs() is used by an application to 
+    enable checking of the CSR attributes on the EST server.  When
+    enabled, the EST client must provide all the CSR attributes that
+    were in the /csrattrs response sent by the server.  The enrollment
+    will fail if the client fails to provide all the CSR attributes.
+    This setting applies to simple enroll and reenroll operations.
+    This setting applies only to server mode and has no bearing on
+    proxy mode operation.
+    
+    @param ctx Pointer to the EST context
+
+    This function must be called prior to starting the EST server.  
+ 
+    @return EST_ERROR.
+ */
+EST_ERROR est_server_enforce_csrattr (EST_CTX *ctx)
+{
+    if (!ctx) {
+	EST_LOG_ERR("Null context");
+        return (EST_ERR_NO_CTX);
+    }
+    ctx->enforce_csrattrs = 1;
+    return (EST_ERR_NONE);
+}

@@ -852,3 +852,10 @@ void st_set_http_auth_required ()
 {
     est_set_http_auth_required(ectx, HTTP_AUTH_REQUIRED);
 }
+
+void st_enable_csrattr_enforce ()
+{
+    est_server_enforce_csrattr(ectx);
+}
+
+
