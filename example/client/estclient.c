@@ -779,7 +779,7 @@ static void do_operation ()
 
 int main (int argc, char **argv)
 {
-    char c;
+    signed char c;
     int set_fips_return = 0;
     char file_name[MAX_FILENAME_LEN];
     BIO *keyin;
