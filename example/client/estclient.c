@@ -779,7 +779,7 @@ static void do_operation ()
 
 int main (int argc, char **argv)
 {
-    char c;
+    signed char c;
     int set_fips_return = 0;
     char file_name[MAX_FILENAME_LEN];
     BIO *keyin;
@@ -1054,7 +1054,7 @@ int main (int argc, char **argv)
         est_init_logger(EST_LOG_LVL_ERR, &test_logger_stdout);
     }
 
-    if (!priv_key_file[0] && enroll) {
+    if (!priv_key_file[0] && enroll && !csr_file[0]) {
 	printf("\nA private key is required for enrolling.  Creating a new RSA key pair since you didn't provide a key using the -x option.");
         /*
          * Create a private key that will be used for the
@@ -1072,7 +1072,7 @@ int main (int argc, char **argv)
 
     }
 
-    if (enroll) {
+    if (enroll && !csr_file[0]) {
 	/* Read in the private key file */
 	priv_key = read_private_key(priv_key_file);
     }
