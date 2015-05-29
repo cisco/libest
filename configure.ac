@@ -1,5 +1,5 @@
 dnl Process this file with autoconf to produce a configure script.
-AC_INIT([libest],[1.1.0p],[libest-dev])
+AC_INIT([libest],[1.1.1p],[libest-dev])
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(src/est/est.c)
 AC_CONFIG_SRCDIR(example/client/estclient.c)
