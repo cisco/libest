@@ -215,7 +215,7 @@ static EST_ERROR est_generate_pkcs10 (EST_CTX *ctx, char *cn, char *cp,
  * This function is a callback used by OpenSSL's verify_cert function.
  * It's called at the end of a cert verification to allow an opportunity to
  * gather more information regarding a failing cert verification, and to
- * possibly change the result of the verfication.
+ * possibly change the result of the verification.
  *
  * This callback is similar to the ossl routine, but does not alter
  * the verification result.
@@ -878,7 +878,8 @@ EST_ERROR est_client_init_ssl_ctx (EST_CTX *ctx)
  * It uses the tokens that were parsed from the HTTP
  * server response earlier to calculate the digest.
  */
-static unsigned char *est_client_generate_auth_digest (EST_CTX *ctx, char *uri)
+static unsigned char *est_client_generate_auth_digest (EST_CTX *ctx, char *uri,
+                                                       char *user, char *pwd)
 {
     EVP_MD_CTX *mdctx;
     const EVP_MD *md = EVP_md5();
@@ -901,11 +902,11 @@ static unsigned char *est_client_generate_auth_digest (EST_CTX *ctx, char *uri)
         EST_LOG_ERR("Unable to Initialize digest");
         return NULL;
     }
-    EVP_DigestUpdate(mdctx, ctx->userid, strnlen(ctx->userid, MAX_UIDPWD));
+    EVP_DigestUpdate(mdctx, user, strnlen(user, MAX_UIDPWD));
     EVP_DigestUpdate(mdctx, ":", 1);
     EVP_DigestUpdate(mdctx, ctx->realm, strnlen(ctx->realm, MAX_REALM));
     EVP_DigestUpdate(mdctx, ":", 1);
-    EVP_DigestUpdate(mdctx, ctx->password, strnlen(ctx->password, MAX_UIDPWD));
+    EVP_DigestUpdate(mdctx, pwd, strnlen(pwd, MAX_UIDPWD));
     EVP_DigestFinal(mdctx, ha1, &ha1_len);
     EVP_MD_CTX_destroy(mdctx);
     est_hex_to_str(ha1_str, ha1, ha1_len);
@@ -958,6 +959,72 @@ static unsigned char *est_client_generate_auth_digest (EST_CTX *ctx, char *uri)
 }
 
 /*
+ * est_client_retrieve_credentials() is used to retrieve the credentials when
+ * the server has requested either BASIC or DIGEST mode.  The values needed from
+ * the application layer in either mode are the same, username, password, but the
+ * API will indicate the mode to the callback in case anything changes.
+ */
+static void est_client_retrieve_credentials (EST_CTX *ctx, EST_HTTP_AUTH_MODE auth_mode,
+                                             char *user, char *pwd) 
+{
+    EST_HTTP_AUTH_HDR auth_credentials;
+    EST_HTTP_AUTH_CRED_RC rc;
+    
+    /*
+     * See if we only have one part of them.  If so, reset the part we
+     * have.
+     */
+    if (ctx->userid[0] != '\0') {
+        memset(ctx->userid, 0x0, sizeof(ctx->userid));
+    }
+            
+    if (ctx->password[0] != '\0') {
+        memset(ctx->password, 0x0, sizeof(ctx->password));
+    }
+                
+    /*
+     * Need to ask the application layer for the credentials
+     */
+    memset(&auth_credentials, 0x0, sizeof(auth_credentials));
+            
+    if (ctx->auth_credentials_cb) {
+        auth_credentials.mode = auth_mode;
+        rc = ctx->auth_credentials_cb(&auth_credentials);
+        if (rc == EST_HTTP_AUTH_CRED_NOT_AVAILABLE) {
+            EST_LOG_ERR("Attempt to obtain token from application failed.");
+        }
+    }
+
+    /*
+     * Did we get the credentials we expected?  If not, point to a NULL string
+     * to generate the header
+     */
+    if (auth_credentials.user == NULL) {
+        user[0] = '\0'; 
+    } else if (MAX_UIDPWD < strnlen(auth_credentials.user, MAX_UIDPWD+1)) {
+        EST_LOG_ERR("Userid provided is larger than the max of %d", MAX_UIDPWD);
+        user[0] = '\0'; 
+    } else {
+        if (!strncpy(user, auth_credentials.user, MAX_UIDPWD)) {
+            EST_LOG_ERR("Invalid User ID provided");
+        }
+    }
+    
+    if (auth_credentials.pwd == NULL) {
+        pwd[0] = '\0'; 
+    } else if (MAX_UIDPWD < strnlen(auth_credentials.pwd, MAX_UIDPWD+1)) {
+        EST_LOG_ERR("Password provided is larger than the max of %d", MAX_UIDPWD);
+        pwd[0] = '\0'; 
+    } else {
+        if (!strncpy(pwd, auth_credentials.pwd, MAX_UIDPWD)) {
+            EST_LOG_ERR("Invalid User password provided");
+        }
+    }
+
+    cleanse_auth_credentials(&auth_credentials);    
+}
+
+/*
  * This function adds the HTTP authentication header to
  * an outgoing HTTP request, allowing the server to
  * authenticate the EST client.
@@ -974,7 +1041,12 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
     unsigned char client_random[8];
     char both[MAX_UIDPWD*2+2]; /* both UID and PWD + ":" + /0 */
     char both_b64[2*2*MAX_UIDPWD];
-
+    EST_HTTP_AUTH_HDR auth_credentials;
+    EST_HTTP_AUTH_CRED_RC rc;
+    char *token = NULL;
+    char user[MAX_UIDPWD];
+    char pwd[MAX_UIDPWD];
+    
     hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
         EST_LOG_WARN("Authentication header took up the maximum amount in buffer (%d)",
@@ -985,6 +1057,33 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
     case AUTH_BASIC:
         snprintf(both, MAX_UIDPWD*2+2, "%s:%s", ctx->userid,
                  ctx->password);
+        /*
+         * make sure we have both parts of the credentials to send.  If we do,
+         * then we're operating in the original mode where the app layer
+         * provides them up front before they're needed.  If not, then we can
+         * now go ask for them from the app layer.
+         */
+        if (ctx->userid[0] == '\0' || ctx->password[0] == '\0') {
+
+            memset(user, 0, MAX_UIDPWD);
+            memset(pwd, 0, MAX_UIDPWD);
+            
+            est_client_retrieve_credentials(ctx, ctx->auth_mode, user, pwd);
+            
+            /*
+             * regardless of what comes back, build the string containing both
+             */            
+            snprintf(both, MAX_UIDPWD*2+2, "%s:%s", user, pwd);
+        } else {
+            /*
+             * Use what was given during configuration through est_client_set_auth
+             */
+            snprintf(both, MAX_UIDPWD*2+2, "%s:%s", ctx->userid,
+                     ctx->password);
+        }        
+        /*
+         * base64 encode the combined string and buld the HTTP auth header
+         */
         est_base64_encode((const unsigned char *)both, strnlen(both, 2*MAX_UIDPWD), both_b64);
         snprintf(hdr + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,
                  "Authorization: Basic %s\r\n", both_b64);
@@ -1001,18 +1100,40 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
         
         est_hex_to_str(ctx->c_nonce, client_random, 8);
 
-        digest = est_client_generate_auth_digest(ctx, uri);
+        /*
+         * Check to see if the application layer has provided username and password
+         * up front during configuration.  If it has not, go retrieve them now, otherwise,
+         * copy them into the local buffers to get them ready
+         */
+        if (ctx->userid[0] == '\0' || ctx->password[0] == '\0') {
+
+            memset(user, 0, MAX_UIDPWD);
+            memset(pwd, 0, MAX_UIDPWD);
+            
+            est_client_retrieve_credentials(ctx, ctx->auth_mode, user, pwd);
+        } else {
+            if (!strncpy(user, ctx->userid, MAX_UIDPWD)) {
+                EST_LOG_ERR("Invalid User ID provided");
+            }
+            if (!strncpy(pwd, ctx->password, MAX_UIDPWD)) {
+                EST_LOG_ERR("Invalid User password provided");
+            }
+        }
+        
+        digest = est_client_generate_auth_digest(ctx, uri, user, pwd);
         if (digest == NULL) {
             EST_LOG_ERR("Error while generating digest");
             /* Force hdr to a null string */
             memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);
             memset(ctx->c_nonce, 0, MAX_NONCE);
+            memset(user, 0, MAX_UIDPWD);
+            memset(pwd, 0, MAX_UIDPWD);
             break;
         }
             
         snprintf(hdr + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,
                  "Authorization: Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", cnonce=\"%s\", nc=00000001, qop=\"auth\", response=\"%s\"\r\n",
-                ctx->userid,
+                user,
                 ctx->realm,
                 ctx->s_nonce,
                 uri,
@@ -1020,7 +1141,52 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
                 digest);
         memset(digest, 0, EST_MAX_MD5_DIGEST_STR_LEN);
         memset(ctx->c_nonce, 0, MAX_NONCE);
+        memset(user, 0, MAX_UIDPWD);
+        memset(pwd, 0, MAX_UIDPWD);
         free(digest);
+        break;
+    case AUTH_TOKEN:
+        
+        EST_LOG_INFO("Server requested Token based authentication");
+
+        memset(&auth_credentials, 0x0, sizeof(auth_credentials));
+        
+        if (ctx->auth_credentials_cb) {    
+            auth_credentials.mode = AUTH_TOKEN;
+            rc = ctx->auth_credentials_cb(&auth_credentials);
+            if (rc == EST_HTTP_AUTH_CRED_NOT_AVAILABLE) {
+                EST_LOG_ERR("Attempt to obtain token from application failed.");
+            }
+        }
+
+        /*
+         * Did we get the credentials we expected?  If not, point to a NULL string
+         * to generate the header
+         */
+        if (auth_credentials.auth_token == NULL) {
+            EST_LOG_ERR("Requested token credentials, but application did not provide any.");
+            token = ""; 
+        } else {
+
+            /*
+             * Make sure the token we were given is not too long.
+             * If it is, force it to NULL to cause the auth faliure at
+             * the server just as if no credentials were provided
+             */
+            if (MAX_AUTH_TOKEN_LEN < strnlen(auth_credentials.auth_token, MAX_AUTH_TOKEN_LEN+1)) {
+                EST_LOG_ERR("Token provided is larger than the max of %d",
+                            MAX_AUTH_TOKEN_LEN);
+                token = "";
+            } else {
+                token = auth_credentials.auth_token;
+            }
+        }
+        
+        snprintf(hdr + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,
+                 "Authorization: Bearer %s\r\n", token);
+
+        cleanse_auth_credentials(&auth_credentials);
+        
         break;
     default:
         EST_LOG_INFO("No HTTP auth mode set, sending anonymous request");
@@ -1265,7 +1431,7 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
                                     unsigned char *pkcs7, int *pkcs7_len,
 				    int reenroll)
 {
-    char        *http_data;
+    char *http_data;
     int hdr_len;
     int write_size;
     unsigned char *enroll_buf = NULL;
@@ -1355,7 +1521,9 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
         }
         free(enroll_buf);
     }
+    OPENSSL_cleanse(http_data, strnlen(http_data, EST_HTTP_REQ_TOTAL_LEN));
     free(http_data);
+    http_data = NULL;
     return (rv);
 }
 
@@ -1642,7 +1810,7 @@ static EST_ERROR est_client_enroll_pkcs10 (EST_CTX *ctx, SSL *ssl, X509_REQ *csr
     pkcs7 response is placed.
     @param pkey The new client public key that is to be enrolled
 
-    @return EST_ERROR - 
+    @return EST_ERROR 
  */
 static EST_ERROR est_client_enroll_cn (EST_CTX *ctx, SSL *ssl, char *cn,
                                          int *pkcs7_len, EVP_PKEY *pkey)
@@ -2551,7 +2719,8 @@ EST_ERROR est_client_enroll_csr (EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EV
     est_client_disconnect(ctx, &ssl);
     if (rv == EST_ERR_AUTH_FAIL &&
         (ctx->auth_mode == AUTH_DIGEST ||
-         ctx->auth_mode == AUTH_BASIC)) {
+         ctx->auth_mode == AUTH_BASIC  ||
+         ctx->auth_mode == AUTH_TOKEN)) {
 
         /*
          * HTTPS digest mode requires the use of MD5.  Make sure we're not
@@ -2643,7 +2812,8 @@ EST_ERROR est_client_enroll (EST_CTX *ctx, char *cn, int *pkcs7_len,
     est_client_disconnect(ctx, &ssl);
     if (rv == EST_ERR_AUTH_FAIL &&
         (ctx->auth_mode == AUTH_DIGEST ||
-         ctx->auth_mode == AUTH_BASIC)) {
+         ctx->auth_mode == AUTH_BASIC  ||
+         ctx->auth_mode == AUTH_TOKEN)) {
 
         /*
          * HTTPS digest mode requires the use of MD5.  Make sure we're not
@@ -2656,18 +2826,33 @@ EST_ERROR est_client_enroll (EST_CTX *ctx, char *cn, int *pkcs7_len,
         }
         
         /* Try one more time if we're doing Digest auth */
-        EST_LOG_INFO("HTTP Auth failed, trying again with digest/basic parameters");
+        EST_LOG_INFO("HTTP Auth failed, trying again with basic/digest/token parameters");
         rv = est_client_connect(ctx, &ssl);
         if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Connection failed on second attempt with basic/digest parameters");
+            EST_LOG_ERR("Connection failed on second attempt with basic/digest/token parameters");
             goto err;
         }
         rv = est_client_enroll_cn(ctx, ssl, cn, pkcs7_len, new_public_key);
         if (rv != EST_ERR_NONE) {
             EST_LOG_ERR("Enroll failed on second attempt during basic/digest authentication");
+
+            /*
+             * If we're attempting token mode for the second time, and
+             * the server responded with error attributes, log them now
+             */
+            if (ctx->token_error != NULL || ctx->token_error_desc != NULL) {
+                EST_LOG_ERR("Token Auth mode failed, server provided error information: \n"
+                            "   Error = %s\n Error description: %s",
+                            ctx->token_error, ctx->token_error_desc);
+                ctx->token_error[0] = '\0';
+                ctx->token_error_desc[0] = '\0';
+            }
         }
+        
         est_client_disconnect(ctx, &ssl);
     }
+
+    ctx->auth_mode = AUTH_NONE;
 
   err:    
     if (ssl) {
@@ -2941,7 +3126,8 @@ EST_ERROR est_client_reenroll (EST_CTX *ctx, X509 *cert, int *pkcs7_len, EVP_PKE
     est_client_disconnect(ctx, &ssl);
     if (rv == EST_ERR_AUTH_FAIL &&
         (ctx->auth_mode == AUTH_DIGEST ||
-         ctx->auth_mode == AUTH_BASIC)) {
+         ctx->auth_mode == AUTH_BASIC  ||
+         ctx->auth_mode == AUTH_TOKEN)) {
 
         /*
          * HTTPS digest mode requires the use of MD5.  Make sure we're not
@@ -2963,6 +3149,19 @@ EST_ERROR est_client_reenroll (EST_CTX *ctx, X509 *cert, int *pkcs7_len, EVP_PKE
         rv = est_client_enroll_pkcs10(ctx, ssl, req, pkcs7_len, priv_key, 1);
         if (rv != EST_ERR_NONE) {
             EST_LOG_ERR("Reenroll failed on second attempt during basic/digest authentication");
+            
+            /*
+             * If we're attempting token mode for the second time, and
+             * the server responded with error attributes, log them now
+             */
+            if (ctx->token_error[0] != '\0' || ctx->token_error_desc[0] != '\0') {
+                EST_LOG_ERR("Token Auth mode failed, server provided error information: \n"
+                            "   Error = %s\n Error description: %s",
+                            ctx->token_error, ctx->token_error_desc);
+                ctx->token_error[0] = '\0';
+                ctx->token_error_desc[0] = '\0';
+            }            
+            
         }
         est_client_disconnect(ctx, &ssl);
     }
@@ -3416,6 +3615,66 @@ EST_ERROR est_client_set_auth (EST_CTX *ctx, const char *uid, const char *pwd,
 }
 
 
+/*! @brief est_client_set_auth_cred_cb() is used by an application to register
+  its callback function.
+    
+  @param ctx EST context obtained from the est_client_init() call.
+  @param auth_credentials_cb  Function pointer to the application layer callback
+
+  The registered callback function is used by the EST client library to obtain
+  authentication credentials.  The application can provide authentication
+  credentials during initialization if they are available, such as the userid
+  and password used with HTTP basic authentication.  During the processing of
+  a request, the EST client library will call this application callback in the
+  event that it does not have the authentication credentials that are being
+  requested by the EST server.
+
+  The callback function definition must match the following function
+  prototype,
+
+  int (*auth_credentials_cb)(EST_HTTP_AUTH_HDR *auth_credentials);
+
+  auth_credentials - A pointer to a EST_HTTP_AUTH_HDR structure.  The
+                     structure is provided by the EST library and the callback
+                     function fills in the specific credentials being
+                     requested.  These credential values must be passed in the
+                     format in which they will be sent to the server, that is,
+                     the EST client library will perform no reformatting of
+                     these credentials.  Ownership of the memory holding these
+                     credential values is transferred from the application
+                     layer to the EST library when the application layer
+                     returns these values to the EST library.  This allows the
+                     EST library to free up this memory as soon as it is done
+                     using these values.
+                         
+  The return value from the callback must be one of the following values:
+
+  EST_HTTP_AUTH_CRED_SUCCESS - If the callback was able to provide the
+                               requested credentials.
+  EST_HTTP_AUTH_CRED_NOT_AVAILABLE - If the callback could not provide the
+                                     requested credentials.
+
+  The auth_credentials_cb parameter can be set to NULL to reset the callback
+  function.
+  
+  All string parameters are NULL terminated strings.
+    
+  @return EST_ERROR.
+  EST_ERR_NONE - Success.
+  EST_ERR_NO_CTX
+*/
+EST_ERROR est_client_set_auth_cred_cb (EST_CTX *ctx, auth_credentials_cb callback)
+{
+    if (ctx == NULL) {
+	EST_LOG_ERR("Null context passed");
+        return (EST_ERR_NO_CTX);
+    }
+    
+    ctx->auth_credentials_cb = callback;
+    
+    return EST_ERR_NONE;
+}
+
 
 /*! @brief est_client_enable_basic_auth_hint() is used by an application to 
     reduce overhead at the TCP and TLS layers when the client knows that
@@ -3462,7 +3721,7 @@ EST_ERROR est_client_enable_basic_auth_hint (EST_CTX *ctx)
     @param cert_format defines the format of the certificates that will be
     passed down during this instantiation of the EST client library.  Currently,
     the only value accepted is EST_CERT_FORMAT_PEM
-    @param cert_verify_cb A pointer to a function in the ET client application
+    @param cert_verify_cb A pointer to a function in the EST client application
     that is called when a received server identity certificate has failed
     verification from the SSL code.  This function takes as input two
     parameters, a pointer to the X509 structure containing the server's

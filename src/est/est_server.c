@@ -227,6 +227,8 @@ static EST_HTTP_AUTH_HDR * est_create_ah()
  */
 static void est_destroy_ah(EST_HTTP_AUTH_HDR *ah)
 {
+    size_t len;
+
     if (!ah) return;
     if (ah->user) free(ah->user);
     if (ah->pwd) free(ah->pwd);
@@ -236,6 +238,13 @@ static void est_destroy_ah(EST_HTTP_AUTH_HDR *ah)
     if (ah->nc) free(ah->nc);
     if (ah->nonce) free(ah->nonce);
     if (ah->response) free(ah->response);
+    if (ah->auth_token) {
+	len = strnlen(ah->auth_token, MAX_AUTH_TOKEN_LEN);
+	if (len) {
+	    memset(ah->auth_token, 0x0, len);
+	}
+	free(ah->auth_token);
+    }
     free(ah);
 }
 
@@ -971,7 +980,7 @@ static EST_ERROR est_server_all_csrattrs_present(EST_CTX *ctx, char *body, int b
 }
 
 /*
- * This function is used by the server to process and incoming
+ * This function is used by the server to process an incoming
  * Simple Enroll request from the client.
  */
 static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ssl,
@@ -1632,16 +1641,17 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
 
 /*! @brief est_server_set_auth_mode() is used by an application to configure
     the HTTP authentication method to use for validating the identity of
-    and EST client.
+    an EST client.
  
-    @param ctx Pointer to the EST context
-    @param amode Should be either AUTH_BASIC or AUTH_DIGEST
+    @param ctx   Pointer to the EST context
+    @param amode Must be one of the following: AUTH_BASIC, AUTH_DIGEST, AUTH_TOKEN
 
-    This function can optionally be invoked by the application to change
-    the default HTTP authentication mode.  The default mode is HTTP Basic
-    authentication.  An application may desire to use Digest authentication
-    instead, in which case this function can be used to set that mode.  
-    This function should be invoked prior to starting the EST server.  
+    This function can optionally be invoked by the application to change the
+    default HTTP authentication mode.  The default mode is HTTP Basic
+    authentication.  An application may desire to use Digest or Token
+    authentication instead, in which case this function can be used to set
+    that mode.  This function must be invoked prior to starting the EST
+    server.
 
     @return EST_ERROR.
  */
@@ -1653,21 +1663,22 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
     }
 
     switch (amode) {
-    case AUTH_BASIC:
     case AUTH_DIGEST:
+        /*
+         * Since HTTP digest auth uses MD5, make sure we're not in FIPS mode.
+         */
 	if (FIPS_mode()) {
-	    /*
-	     * Since HTTP digest auth uses MD5, make sure we're
-	     * not in FIPS mode.
-	     */
 	    EST_LOG_ERR("HTTP digest auth not allowed while in FIPS mode");
 	    return (EST_ERR_BAD_MODE);
 	}
+        /* fallthrough */
+    case AUTH_BASIC:        
+    case AUTH_TOKEN:        
 	ctx->auth_mode = amode;
 	return (EST_ERR_NONE);
 	break;
     default:
-        EST_LOG_ERR("Unsupported HTTP authentication mode, only Basic and Digest allowed");
+        EST_LOG_ERR("Unsupported HTTP authentication mode, only Basic, Digest and Token allowed");
 	return (EST_ERR_BAD_MODE);
 	break;
     }
@@ -1749,7 +1760,7 @@ EST_ERROR est_set_ca_reenroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10,
     This function must be called prior to starting the EST server.  The
     callback function must match the following prototype:
 
-        char * func(int*)
+        unsigned char *(*cb)(int*csr_len, void *ex_data)
 
     This function is called by libest when a CSR attributes 
     request is received.  The attributes are provided by the CA
@@ -1785,7 +1796,7 @@ EST_ERROR est_set_csr_cb (EST_CTX *ctx, unsigned char *(*cb)(int*csr_len, void *
     This function must be called prior to starting the EST server.  The
     callback function must match the following prototype:
 
-        int func(EST_CTX *, EST_HTTP_AUTH_HDR *, X509 *)
+    int (*cb)(EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert, void *ex_data)
 
     This function is called by libest when a performing HTTP authentication.
     libest will pass the EST_HTTP_AUTH_HDR struct to the application,

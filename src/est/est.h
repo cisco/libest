@@ -189,6 +189,7 @@ typedef enum {
     AUTH_NONE,
     AUTH_BASIC,
     AUTH_DIGEST,
+    AUTH_TOKEN,
     AUTH_FAIL
 } EST_HTTP_AUTH_MODE;
 
@@ -228,6 +229,9 @@ typedef enum {
 #define MAX_CSRATTRS 1024
 #define MIN_ASN1_CSRATTRS 2
 #define MAX_CSRATTRS_WITHPOP 1035
+#define MAX_TOKEN_ERROR (255)
+#define MAX_TOKEN_ERROR_DESC (255)
+#define MAX_AUTH_TOKEN_LEN (512) 
 
 /*
  * The following values define the minimum, maximum, and default
@@ -265,6 +269,8 @@ typedef enum {
  *	Contains the server nonce for HTTP digest authentication.
  *  @var EST_HTTP_AUTH_HDR::response
  *	Contains the client's digest value to verify.
+ *  @var EST_HTTP_AUTH_HDR::auth_token
+ *	Contains the client's token value to verify.
  */
 typedef struct {
     EST_HTTP_AUTH_MODE mode;
@@ -276,8 +282,19 @@ typedef struct {
     char *nc;
     char *nonce;
     char *response;
+    char *auth_token;
 } EST_HTTP_AUTH_HDR;
 
+/*
+ * Defines the valid return codes that the application layer's auth credential
+ * callback function can provide.
+ */
+typedef enum {
+    EST_HTTP_AUTH_CRED_SUCCESS = 1,
+    EST_HTTP_AUTH_CRED_NOT_AVAILABLE,
+} EST_HTTP_AUTH_CRED_RC;
+    
+        
 /*! @struct EST_CTX
  *  @brief This structure is used to maintain the state of EST operations
  *         on behalf of the application.  A single context can be used to
@@ -291,6 +308,23 @@ typedef struct {
  *         associated with the context.  
  */
 typedef struct est_ctx EST_CTX;
+
+
+/*! @typedef auth_credentials_cb
+ *  @brief This typedef defines the prototype of the callback function
+ *         that is to reside in the application code.  The application
+ *         can register this function callback using the est_client_set_auth_cred_cb()
+ *         API function.  This callback is called by the EST client library
+ *         when it requires HTTP authentication credentials.
+ *         This callback function takes as input a pointer to a EST_HTTP_AUTH_HDR
+ *         structure.  The callback function must look at the mode structure
+ *         element to determine which type of credentials are required.  If the
+ *         mode is set to AUTH_BASIC or AUTH_DIGEST, the callback function must
+ *         supply the user and pwd values.  If the mode is set to AUTH_TOKEN, the
+ *         the callback must supply the auth_token value.  The auth_token value
+ *         must be a base64 encoded string representing the access token.
+ */
+typedef EST_HTTP_AUTH_CRED_RC (*auth_credentials_cb)(EST_HTTP_AUTH_HDR *auth_credentials);
 
 
 /*
@@ -336,6 +370,7 @@ EST_ERROR est_proxy_stop(EST_CTX *ctx);
 EST_ERROR est_proxy_set_server(EST_CTX *ctx, const char *server, int port);
 EST_ERROR est_proxy_set_auth_mode(EST_CTX *ctx, EST_HTTP_AUTH_MODE amode);
 EST_ERROR est_proxy_set_read_timeout(EST_CTX *ctx, int timeout);
+EST_ERROR est_proxy_set_auth_cred_cb(EST_CTX *ctx, auth_credentials_cb);
 
 /*
  * The following functions are used by an EST client
@@ -345,6 +380,7 @@ EST_CTX *est_client_init(unsigned char *ca_chain, int ca_chain_len,
                          int (*cert_verify_cb)(X509 *, int));
 EST_ERROR est_client_set_auth(EST_CTX *ctx, const char *uid, const char *pwd,
                               X509 *client_cert, EVP_PKEY *private_key);
+EST_ERROR est_client_set_auth_cred_cb(EST_CTX *ctx, auth_credentials_cb);
 EST_ERROR est_client_set_server(EST_CTX *ctx, const char *server, int port);
 EST_ERROR est_client_provision_cert(EST_CTX *ctx, char *cn, 
 	                            int *pkcs7_len,
@@ -379,6 +415,8 @@ EST_ERROR est_set_ca_reenroll_cb(EST_CTX *ctx, int (*cb)(unsigned char * pkcs10,
 				 char *user_id, X509 *peer_cert, void *ex_data));
 EST_ERROR est_set_csr_cb(EST_CTX * ctx, unsigned char *(*cb)(int*csr_len, void *ex_data));
 EST_ERROR est_set_http_auth_cb(EST_CTX * ctx, int (*cb)(EST_CTX*, EST_HTTP_AUTH_HDR*, X509*, void*));
+
+    
 EST_ERROR est_set_http_auth_required(EST_CTX * ctx, EST_HTTP_AUTH_REQUIRED required);
 EST_ERROR est_add_attributes_helper(X509_REQ *req, int nid, void *string, int chtype);
 EST_ERROR est_get_attributes_helper(unsigned char **der_ptr, int *der_len, int *new_nid);

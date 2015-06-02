@@ -1371,3 +1371,74 @@ EST_ERROR est_get_attributes_helper (unsigned char **der_ptr, int *der_len, int 
     return (EST_ERR_NONE);
 }
 
+
+/* 
+ * cleanse_auth_credentials - Walk through the auth_credentials structure and
+ * overwrite and free each value.
+ */
+void cleanse_auth_credentials(EST_HTTP_AUTH_HDR *auth_cred)
+{
+
+    if (auth_cred == NULL) {
+        return;
+    }
+    
+    if (auth_cred->user) {
+        OPENSSL_cleanse(auth_cred->user, strnlen(auth_cred->user, MAX_UIDPWD));
+        free(auth_cred->user);
+        auth_cred->user = NULL;
+    }
+    
+    if (auth_cred->pwd) {
+        OPENSSL_cleanse(auth_cred->pwd, strnlen(auth_cred->pwd, MAX_UIDPWD));
+        free(auth_cred->pwd);
+        auth_cred->pwd = NULL;
+    }
+    
+    if (auth_cred->uri) {
+        OPENSSL_cleanse(auth_cred->uri, strnlen(auth_cred->uri, EST_URI_MAX_LEN));
+        free(auth_cred->uri);
+        auth_cred->uri = NULL;
+    }
+    
+    if (auth_cred->cnonce) {
+        OPENSSL_cleanse(auth_cred->cnonce, strnlen(auth_cred->cnonce, MAX_NONCE));
+        free(auth_cred->cnonce);
+        auth_cred->cnonce = NULL;
+    }
+    
+    if (auth_cred->qop) {
+        OPENSSL_cleanse(auth_cred->qop, strnlen(auth_cred->qop, MAX_QOP));
+        free(auth_cred->qop);
+        auth_cred->qop = NULL;
+    }
+    
+    if (auth_cred->nc) {
+        OPENSSL_cleanse(auth_cred->nc, strnlen(auth_cred->nc, MAX_NC));
+        free(auth_cred->nc);
+        auth_cred->nc = NULL;
+    }
+    
+    if (auth_cred->nonce) {
+        OPENSSL_cleanse(auth_cred->nonce, strnlen(auth_cred->nonce,
+                                                    MAX_NONCE));
+        free(auth_cred->nonce);
+        auth_cred->nonce = NULL;
+    }
+    
+    if (auth_cred->response) {
+        OPENSSL_cleanse(auth_cred->response, strnlen(auth_cred->response,
+                                                       MAX_RESPONSE));
+        free(auth_cred->response);
+        auth_cred->response = NULL;
+    }
+    
+    if (auth_cred->auth_token) {
+        OPENSSL_cleanse(auth_cred->auth_token, strnlen(auth_cred->auth_token,
+                                                         MAX_AUTH_TOKEN_LEN));
+        free(auth_cred->auth_token);
+        auth_cred->auth_token = NULL;
+    }        
+    
+    return;
+}

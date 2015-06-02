@@ -32,7 +32,9 @@ int st_start_srp (int listen_port,
 		  char *vfile);
 void st_enable_http_digest_auth();
 void st_enable_http_basic_auth();
+void st_enable_http_token_auth();
 void st_enable_http_auth();
+void st_set_token(char *value);
 void st_enable_pop(void);
 void st_disable_pop(void);
 void st_disable_http_auth(void);

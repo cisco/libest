@@ -901,6 +901,37 @@ static void mg_parse_auth_hdr_digest (struct mg_connection *conn,
     }
 }
 
+
+/*
+ * Performs parsing of HTTP Authentication header from
+ * the client when Token(bearer) authentication is used.
+ */
+static void mg_parse_auth_hdr_token (struct mg_connection *conn, 
+				     const char *auth_header,
+	                             EST_HTTP_AUTH_HDR *ah)
+{
+    char *s;
+    
+    s = (char *) auth_header + (strlen(EST_BEARER_TOKEN_STR)-1);
+
+    // Gobble initial spaces
+    while (isspace(*(unsigned char*)s)) {
+	s++;
+    }
+
+    if (*s != '\0') {
+        /*Copy the token into the auth header structure. */
+        ah->auth_token = strndup(s, MAX_AUTH_TOKEN_LEN);
+        ah->mode = AUTH_TOKEN;
+        if (ah->auth_token == NULL) {
+            EST_LOG_ERR("Failed to obtain memory for authentication token buffer");
+        }
+    } else {
+	EST_LOG_ERR("Authentication header from client contained no Token");
+    }   
+}
+
+
 /*
  * This function parses the HTTP Authentication header
  * from the client.  It will fill in the fields on the
@@ -935,15 +966,16 @@ EST_HTTP_AUTH_HDR_RESULT mg_parse_auth_header (struct mg_connection *conn,
 	    return EST_AUTH_HDR_BAD;
 	}
 	mg_parse_auth_hdr_basic(conn, auth_header, ah);
+    } else if (mg_strncasecmp(auth_header, EST_BEARER_TOKEN_STR,
+                              strlen(EST_BEARER_TOKEN_STR)) == 0) {
+	/* Make sure server is configured for bearer(token) auth */
+	if (conn->ctx->est_ctx->auth_mode != AUTH_TOKEN) {
+	    return EST_AUTH_HDR_BAD;
+	}
+	mg_parse_auth_hdr_token(conn, auth_header, ah);
     } else {
-	/* Only Basic and Digest authentication are supported */
+	/* Only Basic, Digest and Bearer Token authentication are supported */
 	ah->mode = AUTH_FAIL;
-        return EST_AUTH_HDR_BAD;
-    }
-
-    /* If we were not able to parse a user ID, then
-     * make sure we fail the authentication. */
-    if (ah->user == NULL) {
         return EST_AUTH_HDR_BAD;
     }
 
@@ -960,10 +992,20 @@ EST_HTTP_AUTH_HDR_RESULT mg_parse_auth_header (struct mg_connection *conn,
     }
 
     /*
-     * Save the user ID on the connection context.
-     * We will want to pass this to the CA later.
+     * If we were not able to parse a user ID and we're not
+     * in token auth mode, then make sure we fail the authentication.
      */
-    strncpy(conn->user_id, ah->user, MG_UID_MAX);
+    if (ah->user == NULL && ah->mode != AUTH_TOKEN) {
+        return EST_AUTH_HDR_BAD;
+    }
+
+    if (ah->mode != AUTH_TOKEN) {   
+        /*
+         * Save the user ID on the connection context.
+         * We will want to pass this to the CA later.
+         */
+        strncpy(conn->user_id, ah->user, MG_UID_MAX);
+    }
 
     return EST_AUTH_HDR_GOOD;
 }
@@ -993,6 +1035,16 @@ void mg_send_authorization_request (struct mg_connection *conn)
 	      EST_HTTP_HDR_AUTH,
               conn->ctx->est_ctx->realm,
               (unsigned long)time(NULL));
+	break;
+    case AUTH_TOKEN:
+	mg_printf(conn,
+              "%s\r\n"
+              "%s: 0\r\n"
+              "%s: Bearer realm=\"%s\"\r\n\r\n",
+	      EST_HTTP_HDR_401,
+	      EST_HTTP_HDR_CL,
+	      EST_HTTP_HDR_AUTH,
+              conn->ctx->est_ctx->realm);
 	break;
     case AUTH_FAIL:
     case AUTH_NONE:

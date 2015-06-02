@@ -31,7 +31,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
-
+#include "st_proxy.h"
 
 static int tcp_port;
 volatile int stop_proxy_flag = 0;
@@ -41,6 +41,19 @@ EST_CTX *epctx;
 unsigned char *proxy_trustcerts = NULL;
 int proxy_trustcerts_len = 0;
 SRP_VBASE *p_srp_db = NULL;
+
+/*
+ * holds the token on the server side of proxy used to
+ * verify incoming token based credentials in requests
+ */
+static char server_valid_token[MAX_AUTH_TOKEN_LEN+1];
+
+/*
+ * holds the token on the client side of proxy used
+ * to pass back down when EST client lib requests a
+ * token credential
+ */
+static char client_token_cred[MAX_AUTH_TOKEN_LEN+1];
 
 extern void dumpbin(char *buf, size_t len);
 
@@ -150,6 +163,19 @@ static int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah,
 	free(digest);
       }
       break;
+    case AUTH_TOKEN:
+	/*
+         * The bearer token has just been passed up from the EST Proxy
+         * library.  Assuming it's an OAuth 2.0 based access token, it would
+         * now be sent along to the OAuth Authorization Server.  The
+         * Authorization Server would return either a success or failure
+         * response.
+	 */
+	if (!strcmp(ah->auth_token, server_valid_token)) {
+	    /* The token is currently valid */
+	    user_valid = 1;
+	} 
+	break;
     case AUTH_FAIL:
     case AUTH_NONE:
     default:
@@ -220,6 +246,63 @@ static void cleanup()
     //the occur later.
     //est_apps_shutdown();
 }
+
+
+/*
+ * auth_credentials_token_cb() is the application layer callback function that will
+ * return a token based authentication credential when called.  It's registered
+ * with the EST Client using the est_client_set_auth_cred_cb().
+ * The test function is required to set some global values in order to make this
+ * callback operate the way that the test case wants.
+ * - auth_cred_force_error = tell this function to force a response code error
+ * - test_token = pointer to a hard coded string that is the token string to return
+ *
+ * This callback must provide the token credentials in a heap based buffer, and
+ * ownership of that buffer is implicitly transferred to the ET client library upon
+ * return.
+ */
+static
+EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credentials)
+{
+    char *token_ptr = NULL;
+    int token_len = 0;
+
+    printf("\nHTTP Token authentication credential callback invoked from EST client library\n");
+    
+    if (auth_credentials->mode == AUTH_TOKEN) {
+        /*
+         * If the test_token is set to anything, then we need to allocate
+         * space from the heap and copy in the value.
+         */
+        if (client_token_cred[0] != '\0') {
+            token_len = strlen(client_token_cred);
+
+            if (token_len == 0) {
+                printf("\nError determining length of token string used for credentials\n");
+                return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
+            }   
+            token_ptr = malloc(token_len+1);
+            if (token_ptr == NULL){
+                printf("\nError allocating token string used for credentials\n");
+                return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
+            }   
+            strncpy(token_ptr, client_token_cred, strlen(client_token_cred));
+            token_ptr[token_len] = '\0';
+        }
+        /*
+         * If we made it this far, token_ptr is pointing to a string
+         * containing the token to be returned. Assign it and return success
+         */
+        auth_credentials->auth_token = token_ptr;
+
+        printf("Returning access token = %s\n\n", auth_credentials->auth_token);
+        
+        return (EST_HTTP_AUTH_CRED_SUCCESS);
+    }
+    
+    return (EST_HTTP_AUTH_CRED_NOT_AVAILABLE);
+}
+
 
 static void* master_thread (void *arg)
 {
@@ -299,7 +382,8 @@ static int st_proxy_start_internal (int listen_port,
 	            int enable_pop,
 	            int ec_nid, 
 		    int enable_srp,
-		    char *srp_vfile)
+		    char *srp_vfile,
+                    int enable_server_token_auth)
 {
     X509 *x;
     EVP_PKEY *priv_key;
@@ -446,6 +530,30 @@ static int st_proxy_start_internal (int listen_port,
 	}
     }
 
+    /*
+     * Are we going to use token mode on the server side of proxy?
+     * server side
+     * - set token mode for the server side
+     * - NOTE: It's assumed that the valid token has already been set using
+     *   st_proxy_set_srv_valid_token()
+     */
+    if (enable_server_token_auth) {
+        printf("\nEnabling server side proxy token authentication mode...\n");
+        st_proxy_enable_http_token_auth();
+    }
+    /* prepare the client side for the case where the server
+     * requests token based authentication credentials.
+     *
+     * - NOTE: It's assumed that the client token credential to use has been
+     *   set using st_proxy_set_clnt_token_cred()
+     */
+    printf("\nEnabling client side proxy token authentication mode...\n");
+    rv = est_proxy_set_auth_cred_cb(epctx, auth_credentials_token_cb);
+    if (rv != EST_ERR_NONE) {
+        printf("\nUnable to register token auth callback.  Aborting!!!\n");
+        return (-1);
+    }
+
     printf("\nLaunching EST proxy server...\n");
 
     rv = est_proxy_start(epctx);
@@ -504,7 +612,7 @@ int st_proxy_start (int listen_port,
 {
     return st_proxy_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
 	    trusted_certs_file, userid, password, server, server_port, enable_pop, ec_nid,
-	    0, NULL);
+	    0, NULL, 0);
 }
 
 /*
@@ -546,7 +654,49 @@ int st_proxy_start_srp (int listen_port,
 {
     return st_proxy_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
 	    trusted_certs_file, userid, password, server, server_port, enable_pop, 0,
-	    1, vfile);
+	    1, vfile, 0);
+}
+
+
+/*
+ * Call this to start a simple EST proxy server that is in token auth mode.
+ * This server will not be thread safe.  It can only handle a single EST
+ * request on the listening socket at any given time.  This server will run
+ * until st_proxy_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  userid          User ID used by proxy to identify itself to the server for
+ *                  HTTP authentication.
+ *  password        The password associated with userid.
+ *  server          Hostname or IP address of the CA EST server that this
+ *                  proxy will forward requests too.
+ *  server_port     TCP port number used by the CA EST server.
+ *  enable_pop      Enable PoP of the CSR challengePassword.
+ *  vfile:          Name of Openssl compatible SRP verifier file.
+ */
+int st_proxy_start_token (int listen_port,
+                          char *certfile,
+                          char *keyfile,
+                          char *realm,
+                          char *ca_chain_file,
+                          char *trusted_certs_file,
+                          char *userid,
+                          char *password,
+                          char *server,
+                          int server_port,
+                          int enable_pop)
+{
+    return st_proxy_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+	    trusted_certs_file, userid, password, server, server_port, enable_pop, 0,
+				   0, NULL, 1);
 }
 
 void st_proxy_enable_pop ()
@@ -588,4 +738,35 @@ int st_proxy_http_disable (int disable)
         }
     }
     return (0);
+}
+
+void st_proxy_enable_http_basic_auth ()
+{
+    est_proxy_set_auth_mode(epctx, AUTH_BASIC);
+}
+
+void st_proxy_enable_http_digest_auth ()
+{
+    est_proxy_set_auth_mode(epctx, AUTH_DIGEST);
+}
+
+/*
+ * tell the server side of proxy to request
+ * token based credentials from clients
+ */
+void st_proxy_enable_http_token_auth ()
+{
+    est_proxy_set_auth_mode(epctx, AUTH_TOKEN);
+}
+
+void st_proxy_set_srv_valid_token (char *value)
+{
+    memset(server_valid_token, MAX_AUTH_TOKEN_LEN+1, 0);
+    strncpy(&(server_valid_token[0]), value, MAX_AUTH_TOKEN_LEN);    
+}
+
+void st_proxy_set_clnt_token_cred (char *value)
+{
+    memset(client_token_cred, MAX_AUTH_TOKEN_LEN+1, 0);
+    strncpy(&(client_token_cred[0]), value, MAX_AUTH_TOKEN_LEN);    
 }

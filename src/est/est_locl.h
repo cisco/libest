@@ -17,7 +17,7 @@
  * Version identifiers.  These should be updated appropriately
  * for each release.
  */
-#define EST_API_LEVEL       3  //Update this whenever there's a change to the public API
+#define EST_API_LEVEL       4  //Update this whenever there's a change to the public API
 #define EST_VER_STRING      PACKAGE_STRING
 
 #define EST_URI_MAX_LEN     32
@@ -109,6 +109,7 @@
 #define EST_CACERTS_URI         "/.well-known/est/cacerts"
 #define EST_KEYGEN_URI          "/.well-known/est/serverkeygen"
 
+#define EST_BEARER_TOKEN_STR    "Bearer "
 
 typedef enum {
     EST_AUTH_HDR_GOOD = 0,
@@ -172,6 +173,9 @@ struct est_ctx {
     SSL_CTX         *ssl_ctx;
     int              enable_crl;
 
+    char             token_error[MAX_TOKEN_ERROR+1];
+    char             token_error_desc[MAX_TOKEN_ERROR_DESC+1];
+    
     /*
      * Callbacks requried for server mode operation
      */
@@ -194,6 +198,7 @@ struct est_ctx {
     int est_port_num;
     X509 *client_cert;
     EVP_PKEY   *client_key;
+    EST_HTTP_AUTH_CRED_RC (*auth_credentials_cb)(EST_HTTP_AUTH_HDR *auth_credentials);
     EST_HTTP_AUTH_MODE auth_mode;
     char userid[MAX_UIDPWD+1];
     char password[MAX_UIDPWD+1];
@@ -322,4 +327,5 @@ EST_ERROR est_add_challengePassword(const char *base64_ptr, int b64_len, char **
 EST_ERROR est_proxy_retrieve_cacerts (EST_CTX *ctx, unsigned char **cacerts_rtn,
                                       int *cacerts_rtn_len);
 EST_ERROR est_send_csrattr_data(EST_CTX *ctx, char *csr_data, int csr_len, void *http_ctx);
+void cleanse_auth_credentials(EST_HTTP_AUTH_HDR *auth_cred);
 #endif

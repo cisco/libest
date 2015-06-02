@@ -725,6 +725,22 @@ static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
                 */
                 rv = EST_ERR_INVALID_TOKEN;
             }
+        } else if (!strcasecmp(token, "error")) {
+            if ((value = HTNextField(&p))) {
+                if (!strncpy(ctx->token_error, value, MAX_TOKEN_ERROR)) {
+                    rv = EST_ERR_INVALID_TOKEN;
+                }
+            } else {
+                rv = EST_ERR_INVALID_TOKEN;
+            }
+        } else if (!strcasecmp(token, "error_description")) {
+            if ((value = HTNextField(&p))) {
+                if (!strncpy(ctx->token_error_desc, value, MAX_TOKEN_ERROR_DESC)) {
+                    rv = EST_ERR_INVALID_TOKEN;
+                }
+            } else {
+                rv = EST_ERR_INVALID_TOKEN;
+            }
         } else {
             EST_LOG_WARN("Unsupported auth token ignored: %s", token);
         }
@@ -883,6 +899,13 @@ static void est_io_parse_http_auth_request (EST_CTX *ctx,
             if (!strncmp(hdrs[i].value, "Digest", 6)) {
                 ctx->auth_mode = AUTH_DIGEST;
                 /* Parse the realm and nonce */
+                rv = est_io_parse_auth_tokens(ctx, hdrs[i].value);
+                if (rv != EST_ERR_NONE) {
+                    ctx->auth_mode = AUTH_FAIL;
+                }    
+            } else if (!strncmp(hdrs[i].value, "Bearer", 6)) {
+                ctx->auth_mode = AUTH_TOKEN;
+                /* Parse the realm and possible token error fields */
                 rv = est_io_parse_auth_tokens(ctx, hdrs[i].value);
                 if (rv != EST_ERR_NONE) {
                     ctx->auth_mode = AUTH_FAIL;
@@ -1253,9 +1276,13 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
     case 401:
         /* Server is requesting user auth credentials */
         EST_LOG_INFO("EST server requesting user authentication");
-        /* Check if we've already tried authenticating, if so, then bail */
+
+        /* Check if we've already tried authenticating, if so, then bail
+         * First time through, auth_mode will be set to NONE
+         */
         if (ctx->auth_mode == AUTH_DIGEST ||
-            ctx->auth_mode == AUTH_BASIC) {
+            ctx->auth_mode == AUTH_BASIC ||
+            ctx->auth_mode == AUTH_TOKEN) {
             ctx->auth_mode = AUTH_FAIL;
             rv = EST_ERR_AUTH_FAIL;
             break;

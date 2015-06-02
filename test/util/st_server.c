@@ -47,6 +47,8 @@ int trustcerts_len = 0;
 static char conf_file[255];
 static char *csr_attr_value = NULL;
 
+static char valid_token_value[MAX_AUTH_TOKEN_LEN+1];
+
 extern void dumpbin(char *buf, size_t len);
 
 /*
@@ -338,7 +340,6 @@ static int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah,
 	} 
 	break;
     case AUTH_DIGEST:
-	//FIXME: digest not supported yet
       /*
        * Check the user's name
        */
@@ -357,6 +358,19 @@ static int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah,
 	free(digest);
       }
       break;
+    case AUTH_TOKEN:
+	/*
+         * The bearer token has just been passed up from the EST Server
+         * library.  Assuming it's an OAuth 2.0 based access token, it would
+         * now be sent along to the OAuth Authorization Server.  The
+         * Authorization Server would return either a success or failure
+         * response.
+	 */
+	if (!strcmp(ah->auth_token, valid_token_value)) {
+	    /* The token is currently valid */
+	    user_valid = 1;
+	} 
+	break;
     case AUTH_FAIL:
     case AUTH_NONE:
     default:
@@ -831,6 +845,17 @@ void st_enable_http_digest_auth ()
 void st_enable_http_basic_auth ()
 {
     est_server_set_auth_mode(ectx, AUTH_BASIC);
+}
+
+void st_enable_http_token_auth ()
+{
+    est_server_set_auth_mode(ectx, AUTH_TOKEN);
+}
+
+void st_set_token (char *value)
+{
+    memset(valid_token_value, MAX_AUTH_TOKEN_LEN+1, 0);
+    strncpy(&(valid_token_value[0]), value, MAX_AUTH_TOKEN_LEN);
 }
 
 void st_enable_pop ()

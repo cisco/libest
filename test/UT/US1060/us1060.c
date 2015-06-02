@@ -1063,7 +1063,7 @@ static void us1060_start_tls_server (char *cipherstring)
     SSL_free(ssl);
     SSL_CTX_free(ssl_ctx);
     BIO_free(berr);
-    BIO_reset(listener);
+    (void)BIO_reset(listener);
     BIO_free_all(listener);
     pthread_exit(0);
 }

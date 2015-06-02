@@ -35,14 +35,18 @@
 #define PROXY_PORT 8086  
 
 static char est_server[MAX_SERVER_LEN];
+static char est_auth_token[MAX_AUTH_TOKEN_LEN+1];
 static int est_server_port;
 static int listen_port = PROXY_PORT;
 static int verbose = 0;
 static int pop = 0;
 static int v6 = 0;
 static int srp = 0;
+static int client_token_auth_mode = 0;
 static int http_auth_disable = 0;
 static int http_digest_auth = 0;
+static int http_basic_auth = 0;
+static int server_http_token_auth = 0;
 static int set_fips_return = 0;
 static unsigned long set_fips_error = 0;
 
@@ -56,6 +60,8 @@ unsigned char *trustcerts = NULL;
 int trustcerts_len = 0;
 
 SRP_VBASE *srp_db = NULL;
+
+static char valid_token_value[MAX_AUTH_TOKEN_LEN];
 
 static void print_version (FILE *fp)
 {
@@ -131,6 +137,23 @@ int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
 	}
 	free(digest);
 	break;
+    case AUTH_TOKEN:
+	/*
+         * The bearer token has just been passed up from the EST Server
+         * library.  Assuming it's an OAuth 2.0 based access token, it would
+         * now be sent along to the OAuth Authorization Server.  The
+         * Authorization Server would return either a success or failure
+         * response.
+	 */
+        printf("\nConfigured for HTTP Token Authentication\n");
+        printf("Configured access token = %s \nClient access token received = %s\n\n",
+               ah->auth_token, valid_token_value);
+
+	if (!strcmp(ah->auth_token, valid_token_value)) {
+	    /* The token is currently valid */
+	    user_valid = 1;
+	} 
+	break;        
     case AUTH_FAIL:
     case AUTH_NONE:
     default:
@@ -139,6 +162,63 @@ int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
     }
     return user_valid;
 }
+
+
+/*
+ * auth_credentials_token_cb() is the application layer callback function that will
+ * return a token based authentication credential when called.  It's registered
+ * with the EST Client using the est_client_set_auth_cred_cb().
+ * The test function is required to set some global values in order to make this
+ * callback operate the way that the test case wants.
+ * - auth_cred_force_error = tell this function to force a response code error
+ * - test_token = pointer to a hard coded string that is the token string to return
+ *
+ * This callback must provide the token credentials in a heap based buffer, and
+ * ownership of that buffer is implicitly transferred to the ET client library upon
+ * return.
+ */
+static
+EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credentials)
+{
+    char *token_ptr = NULL;
+    int token_len = 0;
+
+    printf("\nHTTP Token authentication credential callback invoked from EST client library\n");
+    
+    if (auth_credentials->mode == AUTH_TOKEN) {
+        /*
+         * If the test_token is set to anything, then we need to allocate
+         * space from the heap and copy in the value.
+         */
+        if (est_auth_token[0] != '\0') {
+            token_len = strlen(est_auth_token);
+
+            if (token_len == 0) {
+                printf("\nError determining length of token string used for credentials\n");
+                return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
+            }   
+            token_ptr = malloc(token_len+1);
+            if (token_ptr == NULL){
+                printf("\nError allocating token string used for credentials\n");
+                return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
+            }   
+            strncpy(token_ptr, est_auth_token, strlen(est_auth_token));
+            token_ptr[token_len] = '\0';
+        }
+        /*
+         * If we made it this far, token_ptr is pointing to a string
+         * containing the token to be returned. Assign it and return success
+         */
+        auth_credentials->auth_token = token_ptr;
+
+        printf("Returning access token = %s\n\n", auth_credentials->auth_token);
+        
+        return (EST_HTTP_AUTH_CRED_SUCCESS);
+    }
+    
+    return (EST_HTTP_AUTH_CRED_NOT_AVAILABLE);
+}
+
 
 /*
  * This callback is issued during the TLS-SRP handshake.  
@@ -243,6 +323,8 @@ int main (int argc, char **argv)
     int option_index = 0;
     static struct option long_options[] = {
         {"srp", 1, NULL, 0},
+        {"token", 1, 0, 0},
+        {"auth-token", 1, 0, 0},
         {NULL, 0, NULL, 0}
     };
     
@@ -261,6 +343,14 @@ int main (int argc, char **argv)
 		srp = 1;
                 strncpy(vfile, optarg, 255);
             }
+            if (!strncmp(long_options[option_index].name,"token", strlen("token"))) {
+		server_http_token_auth = 1;
+                strncpy(&(valid_token_value[0]), optarg, MAX_AUTH_TOKEN_LEN);
+            }
+            if (!strncmp(long_options[option_index].name,"auth-token", strlen("auth-token"))) {
+                strncpy(est_auth_token, optarg, MAX_AUTH_TOKEN_LEN);
+                client_token_auth_mode = 1;
+            }
 	    break;
         case 'v':
             verbose = 1;
@@ -273,6 +363,9 @@ int main (int argc, char **argv)
             break;
         case 'h':
             http_digest_auth = 1;
+            break;
+        case 'b':
+            http_basic_auth = 1;
             break;
         case 'n':
             http_auth_disable = 1;
@@ -429,6 +522,22 @@ int main (int argc, char **argv)
 	}
     }
 
+    if (http_basic_auth) {
+	rv = est_server_set_auth_mode(ectx, AUTH_BASIC);
+	if (rv != EST_ERR_NONE) {
+            printf("\nUnable to enable HTTP basic authentication.  Aborting!!!\n");
+            exit(1);
+	}
+    }
+    
+    if (server_http_token_auth) {
+	rv = est_server_set_auth_mode(ectx, AUTH_TOKEN);
+	if (rv != EST_ERR_NONE) {
+            printf("\nUnable to enable HTTP token authentication.  Aborting!!!\n");
+            exit(1);
+	}
+    }
+
     if (!pop) {
 	printf("\nDisabling PoP check");
 	est_server_disable_pop(ectx);
@@ -453,6 +562,14 @@ int main (int argc, char **argv)
 	}
     }
 
+    if (client_token_auth_mode) {
+        rv = est_proxy_set_auth_cred_cb(ectx, auth_credentials_token_cb);
+        if (rv != EST_ERR_NONE) {
+            printf("\nUnable to register token auth callback.  Aborting!!!\n");
+            exit(1);
+        }        
+    }            
+    
     /*
      * Install thread locking mechanism for OpenSSL
      */

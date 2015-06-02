@@ -15,6 +15,10 @@ SRC =  	runtest.c \
 	US1005/us1005.c \
 	US1159/us1159.c \
 	US1060/us1060.c \
+	US1864/us1864.c \
+	US1883/us1883.c \
+	US1884/us1884.c \
+	US2174/us2174.c \
 	../util/curl_utils.c \
 	../util/test_utils.c \
 	../util/st_server.c \

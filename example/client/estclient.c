@@ -41,9 +41,11 @@ static char est_srp_uid[MAX_UID_LEN];
 static char est_srp_pwd[MAX_PWD_LEN];
 static char subj_cn[MAX_CN];
 static char est_server[MAX_SERVER_LEN];
+static char est_auth_token[MAX_AUTH_TOKEN_LEN+1];
 static int est_port;
 static int verbose = 0;
 static int srp = 0;
+static int token_auth_mode = 0;
 static int pem_out = 0;
 static char csr_file[MAX_FILENAME_LEN];
 static char priv_key_file[MAX_FILENAME_LEN];
@@ -116,6 +118,7 @@ static void show_usage_and_exit (void)
             "  --srp                       Enable TLS-SRP cipher suites.  Use with --srp-user and --srp-password options\n"
             "  --srp-user     <string>     Specify the SRP user name\n"
             "  --srp-password <string>     Specify the SRP password\n"
+            "  --auth-token   <string>     Specify the token to be used with HTTP token authentication.\n"
             "\n");
     exit(255);
 }
@@ -173,6 +176,61 @@ static void save_cert (char *file_name, unsigned char *cert_data, int cert_len)
 	snprintf(full_file_name, MAX_FILENAME_LEN, "%s.%s", file_name, "pkcs7");
         write_binary_file(full_file_name, cert_data, cert_len);
     }
+}
+
+/*
+ * auth_credentials_token_cb() is the application layer callback function that will
+ * return a token based authentication credential when called.  It's registered
+ * with the EST Client using the est_client_set_auth_cred_cb().
+ * The test function is required to set some global values in order to make this
+ * callback operate the way that the test case wants.
+ * - auth_cred_force_error = tell this function to force a response code error
+ * - test_token = pointer to a hard coded string that is the token string to return
+ *
+ * This callback must provide the token credentials in a heap based buffer, and
+ * ownership of that buffer is implicitly transferred to the ET client library upon
+ * return.
+ */
+static
+EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credentials)
+{
+    char *token_ptr = NULL;
+    int token_len = 0;
+
+    printf("\nHTTP Token authentication credential callback invoked from EST client library\n");
+    
+    if (auth_credentials->mode == AUTH_TOKEN) {
+        /*
+         * If the test_token is set to anything, then we need to allocate
+         * space from the heap and copy in the value.
+         */
+        if (est_auth_token[0] != '\0') {
+            token_len = strlen(est_auth_token);
+
+            if (token_len == 0) {
+                printf("\nError determining length of token string used for credentials\n");
+                return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
+            }   
+            token_ptr = malloc(token_len+1);
+            if (token_ptr == NULL){
+                printf("\nError allocating token string used for credentials\n");
+                return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
+            }   
+            strncpy(token_ptr, est_auth_token, strlen(est_auth_token));
+            token_ptr[token_len] = '\0';
+        }
+        /*
+         * If we made it this far, token_ptr is pointing to a string
+         * containing the token to be returned. Assign it and return success
+         */
+        auth_credentials->auth_token = token_ptr;
+
+        printf("Returning access token = %s\n\n", auth_credentials->auth_token);
+        
+        return (EST_HTTP_AUTH_CRED_SUCCESS);
+    }
+    
+    return (EST_HTTP_AUTH_CRED_NOT_AVAILABLE);
 }
 
 static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
@@ -620,6 +678,14 @@ static void do_operation ()
         }
     }
 
+    if (token_auth_mode) {
+        rv = est_client_set_auth_cred_cb(ectx, auth_credentials_token_cb);
+        if (rv != EST_ERR_NONE) {
+	    printf("\nUnable to register token auth callback.  Aborting!!!\n");
+	    exit(1);
+        }        
+    }            
+
     est_client_set_server(ectx, est_server, est_port);
 
     if (getcert) {
@@ -789,6 +855,7 @@ int main (int argc, char **argv)
         { "srp",          0, 0,    0 },
         { "srp-user",     1, 0,    0 },
         { "srp-password", 1, 0,    0 },
+        { "auth-token",   1, 0,    0 },
         { "common-name",  1, 0,    0 },
         { "pem-output",   0, 0,    0 },
         { NULL,           0, NULL, 0 }
@@ -837,6 +904,10 @@ int main (int argc, char **argv)
             if (!strncmp(long_options[option_index].name, "srp-password", strlen("srp-password"))) {
                 strncpy(est_srp_pwd, optarg, MAX_PWD_LEN);
             }
+	    if (!strncmp(long_options[option_index].name,"auth-token", strlen("auth-token"))) {
+		strncpy(est_auth_token, optarg, MAX_AUTH_TOKEN_LEN);
+                token_auth_mode = 1;
+	    }
             if (!strncmp(long_options[option_index].name, "common-name", strlen("common-name"))) {
                 strncpy(subj_cn, optarg, MAX_CN);
             }

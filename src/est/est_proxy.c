@@ -126,6 +126,12 @@ static EST_CTX *get_client_ctx (EST_CTX *p_ctx)
             return (NULL);
 	}        
 
+        rv = est_client_set_auth_cred_cb(c_ctx, p_ctx->auth_credentials_cb);
+        if (rv != EST_ERR_NONE) {
+            EST_LOG_ERR("Unable to register authentication credential callback.");
+            return (NULL);
+        }
+
 	rv = est_client_set_server(c_ctx, p_ctx->est_server, p_ctx->est_port_num);
         if (rv != EST_ERR_NONE) {
             EST_LOG_ERR("Unable to set the upstream server configuration in the client context for Proxy use");
@@ -416,7 +422,7 @@ static EST_ERROR est_proxy_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
     int pkcs7_len = 0;
     X509_REQ *csr = NULL;
     EST_CTX *client_ctx;
-    
+     
     /*
      * Make sure the client has sent us a PKCS10 CSR request
      */
@@ -506,8 +512,11 @@ static EST_ERROR est_proxy_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
      */
     switch (rv) {
     case EST_ERR_AUTH_FAIL:
-        if (client_ctx->auth_mode == AUTH_DIGEST || client_ctx->auth_mode == AUTH_BASIC) {
-            /* Try one more time if we're doing Digest auth */
+        /* Try one more time if we're doing Digest auth */
+        if ((ctx->auth_mode == AUTH_DIGEST ||
+             ctx->auth_mode == AUTH_BASIC  ||
+             ctx->auth_mode == AUTH_TOKEN)) {
+            
             EST_LOG_INFO("HTTP Auth failed, trying again with digest/basic parameters");
 
             rv = est_proxy_send_enroll_request(client_ctx, pkcs10, pkcs7, &pkcs7_len, reenroll);
@@ -526,6 +535,8 @@ static EST_ERROR est_proxy_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
 	break;
     }
 
+    client_ctx->auth_mode = AUTH_NONE;
+    
     /*
      * Prevent OpenSSL from freeing our data
      */
@@ -1061,6 +1072,60 @@ EST_CTX * est_proxy_init (unsigned char *ca_chain, int ca_chain_len,
 EST_ERROR est_proxy_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
 {
     return(est_server_set_auth_mode(ctx, amode));
+}
+
+
+/*! @brief est_proxy_set_auth_cred_cb() is used by an application to register
+  its callback function. 
+    
+  @param ctx EST context obtained from the est_proxy_init() call.
+  @param auth_credentials_cb  Function pointer to the application layer callback
+
+  The registered callback function is used by the EST client library to obtain
+  authentication credentials.  The application can provide authentication
+  credentials during initialization if they are available, such as the userid
+  and password used with HTTP basic authentication.  During the processing of
+  a request, the EST client library will call this application callback in the
+  event that it does not have the authentication credentials that are being
+  requested by the EST server.
+
+  The callback function definition must match the following function
+  prototype,
+
+  int (*auth_credentials_cb)(EST_HTTP_AUTH_HDR *auth_credentials);
+
+  auth_credentials - A pointer to a EST_HTTP_AUTH_HDR structure.  The
+                     structure is provided by the EST library and the callback
+                     function fills in the specific credentials being
+                     requested.  These credential values must be passed in the
+                     format in which they will be sent to the server, that is,
+                     the EST client library will perform no reformatting of
+                     these credentials.  Ownership of the memory holding these
+                     credential values is transferred from the application
+                     layer to the EST library when the application layer
+                     returns these values to the EST library.  This allows the
+                     EST library to free up this memory as soon as it is done
+                     using these values.
+                         
+  The return value from the callback must be one of the following values:
+
+  EST_HTTP_AUTH_CRED_SUCCESS - If the callback was able to provide the
+                               requested credentials.
+  EST_HTTP_AUTH_CRED_NOT_AVAILABLE - If the callback could not provide the
+                                     requested credentials.
+
+  The auth_credentials_cb parameter can be set to NULL to reset the callback
+  function.
+  
+  All string parameters are NULL terminated strings.
+    
+  @return EST_ERROR.
+  EST_ERR_NONE - Success.
+  EST_ERR_NO_CTX
+*/
+EST_ERROR est_proxy_set_auth_cred_cb (EST_CTX *ctx, auth_credentials_cb callback)
+{
+    return(est_client_set_auth_cred_cb(ctx, callback));
 }
 
 

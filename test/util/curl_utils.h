@@ -27,6 +27,10 @@ long curl_http_post(char *url, char *ct, char *data,
 long curl_http_post_cert(char *url, char *ct, char *data, 
 	                 char *certfile, char *keyfile, 
 			 char *cacert, void *writefunc);
+long curl_http_post_cert_write (char *url, char *ct, char *data, 
+                                char *certfile, char *keyfile, 
+                                char *cacert, void *writefunc,
+                                void *hdrfunc);
 long curl_http_post_certuid(char *url, char *ct, char *data, 
 	                    char *uidpwd, 
 	                    char *certfile, char *keyfile, 

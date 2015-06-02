@@ -52,6 +52,8 @@ static int manual_enroll = 0;
 #endif
 static int tcp_port = 8085;
 static int http_digest_auth = 0;
+static int http_basic_auth = 0;
+static int http_token_auth = 0;
 static int http_auth_disable = 0;
 static int disable_forced_http_auth = 0;
 static int set_fips_return = 0;
@@ -67,6 +69,8 @@ unsigned char *trustcerts = NULL;
 int trustcerts_len = 0;
 
 SRP_VBASE *srp_db = NULL;
+
+static char valid_token_value[MAX_AUTH_TOKEN_LEN+1];
 
 /*
  * This is the single EST context we need for operating
@@ -147,6 +151,7 @@ static void show_usage_and_exit (void)
             "  -n           Disable HTTP authentication (TLS client auth required)\n"
             "  -o           Disable HTTP authentication when TLS client auth succeeds\n"
             "  -h           Use HTTP Digest auth instead of Basic auth\n"
+            "  -b           Use HTTP Basic auth.  Causes explicit call to set Basic auth\n"
 	    "  -p <num>     TCP port number to listen on\n"
 #ifndef DISABLE_PTHREADS
 	    "  -d <seconds> Sleep timer to auto-shut the server\n"
@@ -157,6 +162,7 @@ static void show_usage_and_exit (void)
 	    "  -?           Print this help message and exit\n"
 	    "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
 	    "  --enforce-csr  Enable CSR attributes enforcement. The client must provide all the attributes in the CSR.\n"
+	    "  --token <value> Use HTTP Bearer Token auth.\n"
             "\n");
     exit(255);
 }
@@ -508,6 +514,23 @@ int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
 	}
 	free(digest);
 	break;
+    case AUTH_TOKEN:
+	/*
+         * The bearer token has just been passed up from the EST Server
+         * library.  Assuming it's an OAuth 2.0 based access token, it would
+         * now be sent along to the OAuth Authorization Server.  The
+         * Authorization Server would return either a success or failure
+         * response.
+	 */
+        printf("\nConfigured for HTTP Token Authentication\n");
+        printf("Configured access token = %s \nClient access token received = %s\n\n",
+               ah->auth_token, valid_token_value);
+
+	if (!strcmp(ah->auth_token, valid_token_value)) {
+	    /* The token is currently valid */
+	    user_valid = 1;
+	} 
+	break;        
     case AUTH_FAIL:
     case AUTH_NONE:
     default:
@@ -641,6 +664,7 @@ int main (int argc, char **argv)
     static struct option long_options[] = {
         {"srp", 1, NULL, 0},
         {"enforce-csr", 0, NULL, 0},
+        {"token", 1, 0, 0},
         {NULL, 0, NULL, 0}
     };
     
@@ -650,7 +674,7 @@ int main (int argc, char **argv)
         show_usage_and_exit();
     }
 
-    while ((c = getopt_long(argc, argv, "?fhwnovr:c:k:m:p:d:lt6", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "?fhbwnovr:c:k:m:p:d:lt6", long_options, &option_index)) != -1) {
         switch (c) {
 	case 0:
 #if 0
@@ -667,6 +691,11 @@ int main (int argc, char **argv)
             if (!strncmp(long_options[option_index].name,"enforce-csr", strlen("enforce-csr"))) {
 		enforce_csr = 1;
             }
+            if (!strncmp(long_options[option_index].name,"token", strlen("token"))) {
+		http_token_auth = 1;
+                memset(valid_token_value, MAX_AUTH_TOKEN_LEN+1, 0); 
+                strncpy(&(valid_token_value[0]), optarg, MAX_AUTH_TOKEN_LEN);
+            }
 	    break;
 #ifndef DISABLE_TSEARCH
         case 'm':
@@ -676,6 +705,9 @@ int main (int argc, char **argv)
 #endif
         case 'h':
             http_digest_auth = 1;
+            break;
+        case 'b':
+            http_basic_auth = 1;
             break;
         case 'w':
             write_csr = 1;
@@ -909,6 +941,22 @@ int main (int argc, char **argv)
 	rv = est_server_set_auth_mode(ectx, AUTH_DIGEST);
 	if (rv != EST_ERR_NONE) {
             printf("\nUnable to enable HTTP digest authentication.  Aborting!!!\n");
+            exit(1);
+	}
+    }
+        
+    if (http_basic_auth) {
+	rv = est_server_set_auth_mode(ectx, AUTH_BASIC);
+	if (rv != EST_ERR_NONE) {
+            printf("\nUnable to enable HTTP basic authentication.  Aborting!!!\n");
+            exit(1);
+	}
+    }
+    
+    if (http_token_auth) {
+	rv = est_server_set_auth_mode(ectx, AUTH_TOKEN);
+	if (rv != EST_ERR_NONE) {
+            printf("\nUnable to enable HTTP token authentication.  Aborting!!!\n");
             exit(1);
 	}
     }

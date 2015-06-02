@@ -12,6 +12,7 @@
 #include <openssl/engine.h>
 #include <openssl/conf.h>
 #include <est.h>
+#include <pthread.h>
 #ifdef HAVE_CUNIT
 #include "CUnit/Basic.h"
 #include "CUnit/Automated.h"
@@ -33,6 +34,36 @@ extern int us903_add_suite(void);
 extern int us1005_add_suite(void);
 extern int us1060_add_suite(void);
 extern int us1159_add_suite(void);
+extern int us1864_add_suite(void);
+extern int us1883_add_suite(void);
+extern int us1884_add_suite(void);
+extern int us2174_add_suite(void);
+
+
+/*
+ * We're using OpenSSL, both as the CA and libest
+ * requires it.  OpenSSL requires these platform specific
+ * locking callbacks to be set when multi-threaded support
+ * is needed.  
+ */
+static pthread_mutex_t *ssl_mutexes;
+static void ssl_locking_callback (int mode, int mutex_num, const char *file,
+                                  int line)
+{
+    line = 0;    // Unused
+    file = NULL; // Unused
+
+    if (mode & CRYPTO_LOCK) {
+        (void)pthread_mutex_lock(&ssl_mutexes[mutex_num]);
+    } else {
+        (void)pthread_mutex_unlock(&ssl_mutexes[mutex_num]);
+    }
+}
+static unsigned long ssl_id_callback (void)
+{
+    return (unsigned long)pthread_self();
+}
+
 
 /* The main() function for setting up and running the tests.
  * Returns a CUE_SUCCESS on successful running, another
@@ -43,6 +74,8 @@ int main(int argc, char *argv[])
     int xml = 0;
     int con = 0;
     CU_pFailureRecord fr;
+    int size;
+    int i;
 
     if (argc >= 2 && !strcmp(argv[1], "-xml")) {
 	xml = 1;
@@ -54,7 +87,22 @@ int main(int argc, char *argv[])
     int rv;
 
     est_apps_startup();
-   
+
+    /*
+     * Install thread locking mechanism for OpenSSL
+     */
+    size = sizeof(pthread_mutex_t) * CRYPTO_num_locks();
+    if ((ssl_mutexes = (pthread_mutex_t*)malloc((size_t)size)) == NULL) {
+        printf("Cannot allocate mutexes");
+	exit(1);
+    }
+
+    for (i = 0; i < CRYPTO_num_locks(); i++) {
+        pthread_mutex_init(&ssl_mutexes[i], NULL);
+    }
+    CRYPTO_set_locking_callback(&ssl_locking_callback);
+    CRYPTO_set_id_callback(&ssl_id_callback);
+    
 
     /* initialize the CUnit test registry */
     if (CUE_SUCCESS != CU_initialize_registry()) {
@@ -165,6 +213,34 @@ int main(int argc, char *argv[])
 	exit(1);
     }
 #endif
+#if 10 
+    rv = us1864_add_suite();
+    if (rv != CUE_SUCCESS) {
+	printf("\nFailed to add test suite for US1864 (%d)", rv);
+	exit(1);
+    }
+#endif
+#if 10 
+    rv = us1883_add_suite();
+    if (rv != CUE_SUCCESS) {
+	printf("\nFailed to add test suite for US1883 (%d)", rv);
+	exit(1);
+    }
+#endif
+#if 10 
+    rv = us1884_add_suite();
+    if (rv != CUE_SUCCESS) {
+	printf("\nFailed to add test suite for US1884 (%d)", rv);
+	exit(1);
+    }
+#endif
+#if 10 
+    rv = us2174_add_suite();
+    if (rv != CUE_SUCCESS) {
+	printf("\nFailed to add test suite for US2174 (%d)", rv);
+	exit(1);
+    }
+#endif
 
     if (xml) {
 	/* Run all test using automated interface, which
@@ -185,6 +261,17 @@ int main(int argc, char *argv[])
 	}
     }
 
+    /*
+     * Tear down the mutexes used by OpenSSL
+     */
+    CRYPTO_set_locking_callback(NULL);
+    for (i = 0; i < CRYPTO_num_locks(); i++) {
+        pthread_mutex_destroy(&ssl_mutexes[i]);
+    }
+    CRYPTO_set_locking_callback(NULL);
+    CRYPTO_set_id_callback(NULL);
+    free(ssl_mutexes);
+    
     CU_cleanup_registry();
     est_apps_shutdown();
 
