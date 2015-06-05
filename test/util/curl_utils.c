@@ -130,11 +130,13 @@ long curl_http_post_srp (char *url, char *ct, char *data,
   curl_easy_setopt(hnd, CURLOPT_HTTPAUTH, authmode);
   curl_easy_setopt(hnd, CURLOPT_TLSAUTH_USERNAME, srp_user);
   curl_easy_setopt(hnd, CURLOPT_TLSAUTH_PASSWORD, srp_pwd);
+  curl_easy_setopt(hnd, CURLOPT_SSL_ENABLE_ALPN, 0L);
   if (cacert) {
     curl_easy_setopt(hnd, CURLOPT_CAINFO, cacert);
     curl_easy_setopt(hnd, CURLOPT_SSL_VERIFYPEER, 1L);
   } else {
     curl_easy_setopt(hnd, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(hnd, CURLOPT_SSL_VERIFYHOST, 0L);
   }
   curl_easy_setopt(hnd, CURLOPT_VERBOSE, 1L);
   curl_easy_setopt(hnd, CURLOPT_TCP_KEEPALIVE, 1L);
