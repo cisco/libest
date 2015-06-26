@@ -1,0 +1,293 @@
+estserver.o: estserver.c /usr/include/stdio.h /usr/include/features.h \
+ /usr/include/i386-linux-gnu/bits/predefs.h \
+ /usr/include/i386-linux-gnu/sys/cdefs.h \
+ /usr/include/i386-linux-gnu/bits/wordsize.h \
+ /usr/include/i386-linux-gnu/gnu/stubs.h \
+ /usr/include/i386-linux-gnu/gnu/stubs-32.h \
+ /usr/lib/gcc/i686-linux-gnu/4.6/include/stddef.h \
+ /usr/include/i386-linux-gnu/bits/types.h \
+ /usr/include/i386-linux-gnu/bits/typesizes.h /usr/include/libio.h \
+ /usr/include/_G_config.h /usr/include/wchar.h \
+ /usr/lib/gcc/i686-linux-gnu/4.6/include/stdarg.h \
+ /usr/include/i386-linux-gnu/bits/stdio_lim.h \
+ /usr/include/i386-linux-gnu/bits/sys_errlist.h \
+ /usr/include/i386-linux-gnu/bits/stdio.h \
+ /usr/include/i386-linux-gnu/bits/stdio2.h /usr/include/pthread.h \
+ /usr/include/endian.h /usr/include/i386-linux-gnu/bits/endian.h \
+ /usr/include/i386-linux-gnu/bits/byteswap.h /usr/include/sched.h \
+ /usr/include/time.h /usr/include/i386-linux-gnu/bits/sched.h \
+ /usr/include/i386-linux-gnu/bits/time.h /usr/include/xlocale.h \
+ /usr/include/i386-linux-gnu/bits/pthreadtypes.h \
+ /usr/include/i386-linux-gnu/bits/setjmp.h \
+ /usr/lib/gcc/i686-linux-gnu/4.6/include/stdint.h /usr/include/stdint.h \
+ /usr/include/i386-linux-gnu/bits/wchar.h /usr/include/search.h \
+ /usr/include/getopt.h /usr/local/ssl/include/openssl/err.h \
+ /usr/local/ssl/include/openssl/e_os2.h \
+ /usr/local/ssl/include/openssl/opensslconf.h /usr/include/stdlib.h \
+ /usr/include/i386-linux-gnu/bits/waitflags.h \
+ /usr/include/i386-linux-gnu/bits/waitstatus.h \
+ /usr/include/i386-linux-gnu/sys/types.h \
+ /usr/include/i386-linux-gnu/sys/select.h \
+ /usr/include/i386-linux-gnu/bits/select.h \
+ /usr/include/i386-linux-gnu/bits/sigset.h \
+ /usr/include/i386-linux-gnu/bits/select2.h \
+ /usr/include/i386-linux-gnu/sys/sysmacros.h /usr/include/alloca.h \
+ /usr/include/i386-linux-gnu/bits/stdlib.h \
+ /usr/local/ssl/include/openssl/ossl_typ.h \
+ /usr/local/ssl/include/openssl/bio.h \
+ /usr/local/ssl/include/openssl/crypto.h \
+ /usr/local/ssl/include/openssl/stack.h \
+ /usr/local/ssl/include/openssl/safestack.h \
+ /usr/local/ssl/include/openssl/opensslv.h \
+ /usr/local/ssl/include/openssl/symhacks.h \
+ /usr/local/ssl/include/openssl/lhash.h /usr/include/errno.h \
+ /usr/include/i386-linux-gnu/bits/errno.h /usr/include/linux/errno.h \
+ /usr/include/i386-linux-gnu/asm/errno.h /usr/include/asm-generic/errno.h \
+ /usr/include/asm-generic/errno-base.h \
+ /usr/local/ssl/include/openssl/engine.h \
+ /usr/local/ssl/include/openssl/bn.h /usr/local/ssl/include/openssl/rsa.h \
+ /usr/local/ssl/include/openssl/asn1.h \
+ /usr/local/ssl/include/openssl/dsa.h /usr/local/ssl/include/openssl/dh.h \
+ /usr/local/ssl/include/openssl/ecdh.h \
+ /usr/local/ssl/include/openssl/ec.h \
+ /usr/local/ssl/include/openssl/ecdsa.h \
+ /usr/local/ssl/include/openssl/rand.h \
+ /usr/local/ssl/include/openssl/ui.h \
+ /usr/local/ssl/include/openssl/x509.h \
+ /usr/local/ssl/include/openssl/buffer.h \
+ /usr/local/ssl/include/openssl/evp.h \
+ /usr/local/ssl/include/openssl/objects.h \
+ /usr/local/ssl/include/openssl/obj_mac.h \
+ /usr/local/ssl/include/openssl/sha.h \
+ /usr/local/ssl/include/openssl/x509_vfy.h \
+ /usr/local/ssl/include/openssl/pkcs7.h \
+ /usr/local/ssl/include/openssl/conf.h \
+ /usr/local/ssl/include/openssl/ssl.h \
+ /usr/local/ssl/include/openssl/comp.h \
+ /usr/local/ssl/include/openssl/pem.h \
+ /usr/local/ssl/include/openssl/pem2.h \
+ /usr/local/ssl/include/openssl/hmac.h \
+ /usr/local/ssl/include/openssl/kssl.h \
+ /usr/local/ssl/include/openssl/ssl2.h \
+ /usr/local/ssl/include/openssl/ssl3.h \
+ /usr/local/ssl/include/openssl/tls1.h \
+ /usr/local/ssl/include/openssl/dtls1.h \
+ /usr/local/ssl/include/openssl/pqueue.h /usr/include/string.h \
+ /usr/include/i386-linux-gnu/bits/string.h \
+ /usr/include/i386-linux-gnu/bits/string2.h \
+ /usr/include/i386-linux-gnu/bits/string3.h \
+ /usr/include/i386-linux-gnu/sys/time.h \
+ /usr/local/ssl/include/openssl/ssl23.h \
+ /usr/local/ssl/include/openssl/srtp.h ../../src/est/est.h \
+ /usr/local/ssl/include/openssl/srp.h ossl_srv.h ../util/utils.h \
+ ../util/simple_server.h
+
+/usr/include/stdio.h:
+
+/usr/include/features.h:
+
+/usr/include/i386-linux-gnu/bits/predefs.h:
+
+/usr/include/i386-linux-gnu/sys/cdefs.h:
+
+/usr/include/i386-linux-gnu/bits/wordsize.h:
+
+/usr/include/i386-linux-gnu/gnu/stubs.h:
+
+/usr/include/i386-linux-gnu/gnu/stubs-32.h:
+
+/usr/lib/gcc/i686-linux-gnu/4.6/include/stddef.h:
+
+/usr/include/i386-linux-gnu/bits/types.h:
+
+/usr/include/i386-linux-gnu/bits/typesizes.h:
+
+/usr/include/libio.h:
+
+/usr/include/_G_config.h:
+
+/usr/include/wchar.h:
+
+/usr/lib/gcc/i686-linux-gnu/4.6/include/stdarg.h:
+
+/usr/include/i386-linux-gnu/bits/stdio_lim.h:
+
+/usr/include/i386-linux-gnu/bits/sys_errlist.h:
+
+/usr/include/i386-linux-gnu/bits/stdio.h:
+
+/usr/include/i386-linux-gnu/bits/stdio2.h:
+
+/usr/include/pthread.h:
+
+/usr/include/endian.h:
+
+/usr/include/i386-linux-gnu/bits/endian.h:
+
+/usr/include/i386-linux-gnu/bits/byteswap.h:
+
+/usr/include/sched.h:
+
+/usr/include/time.h:
+
+/usr/include/i386-linux-gnu/bits/sched.h:
+
+/usr/include/i386-linux-gnu/bits/time.h:
+
+/usr/include/xlocale.h:
+
+/usr/include/i386-linux-gnu/bits/pthreadtypes.h:
+
+/usr/include/i386-linux-gnu/bits/setjmp.h:
+
+/usr/lib/gcc/i686-linux-gnu/4.6/include/stdint.h:
+
+/usr/include/stdint.h:
+
+/usr/include/i386-linux-gnu/bits/wchar.h:
+
+/usr/include/search.h:
+
+/usr/include/getopt.h:
+
+/usr/local/ssl/include/openssl/err.h:
+
+/usr/local/ssl/include/openssl/e_os2.h:
+
+/usr/local/ssl/include/openssl/opensslconf.h:
+
+/usr/include/stdlib.h:
+
+/usr/include/i386-linux-gnu/bits/waitflags.h:
+
+/usr/include/i386-linux-gnu/bits/waitstatus.h:
+
+/usr/include/i386-linux-gnu/sys/types.h:
+
+/usr/include/i386-linux-gnu/sys/select.h:
+
+/usr/include/i386-linux-gnu/bits/select.h:
+
+/usr/include/i386-linux-gnu/bits/sigset.h:
+
+/usr/include/i386-linux-gnu/bits/select2.h:
+
+/usr/include/i386-linux-gnu/sys/sysmacros.h:
+
+/usr/include/alloca.h:
+
+/usr/include/i386-linux-gnu/bits/stdlib.h:
+
+/usr/local/ssl/include/openssl/ossl_typ.h:
+
+/usr/local/ssl/include/openssl/bio.h:
+
+/usr/local/ssl/include/openssl/crypto.h:
+
+/usr/local/ssl/include/openssl/stack.h:
+
+/usr/local/ssl/include/openssl/safestack.h:
+
+/usr/local/ssl/include/openssl/opensslv.h:
+
+/usr/local/ssl/include/openssl/symhacks.h:
+
+/usr/local/ssl/include/openssl/lhash.h:
+
+/usr/include/errno.h:
+
+/usr/include/i386-linux-gnu/bits/errno.h:
+
+/usr/include/linux/errno.h:
+
+/usr/include/i386-linux-gnu/asm/errno.h:
+
+/usr/include/asm-generic/errno.h:
+
+/usr/include/asm-generic/errno-base.h:
+
+/usr/local/ssl/include/openssl/engine.h:
+
+/usr/local/ssl/include/openssl/bn.h:
+
+/usr/local/ssl/include/openssl/rsa.h:
+
+/usr/local/ssl/include/openssl/asn1.h:
+
+/usr/local/ssl/include/openssl/dsa.h:
+
+/usr/local/ssl/include/openssl/dh.h:
+
+/usr/local/ssl/include/openssl/ecdh.h:
+
+/usr/local/ssl/include/openssl/ec.h:
+
+/usr/local/ssl/include/openssl/ecdsa.h:
+
+/usr/local/ssl/include/openssl/rand.h:
+
+/usr/local/ssl/include/openssl/ui.h:
+
+/usr/local/ssl/include/openssl/x509.h:
+
+/usr/local/ssl/include/openssl/buffer.h:
+
+/usr/local/ssl/include/openssl/evp.h:
+
+/usr/local/ssl/include/openssl/objects.h:
+
+/usr/local/ssl/include/openssl/obj_mac.h:
+
+/usr/local/ssl/include/openssl/sha.h:
+
+/usr/local/ssl/include/openssl/x509_vfy.h:
+
+/usr/local/ssl/include/openssl/pkcs7.h:
+
+/usr/local/ssl/include/openssl/conf.h:
+
+/usr/local/ssl/include/openssl/ssl.h:
+
+/usr/local/ssl/include/openssl/comp.h:
+
+/usr/local/ssl/include/openssl/pem.h:
+
+/usr/local/ssl/include/openssl/pem2.h:
+
+/usr/local/ssl/include/openssl/hmac.h:
+
+/usr/local/ssl/include/openssl/kssl.h:
+
+/usr/local/ssl/include/openssl/ssl2.h:
+
+/usr/local/ssl/include/openssl/ssl3.h:
+
+/usr/local/ssl/include/openssl/tls1.h:
+
+/usr/local/ssl/include/openssl/dtls1.h:
+
+/usr/local/ssl/include/openssl/pqueue.h:
+
+/usr/include/string.h:
+
+/usr/include/i386-linux-gnu/bits/string.h:
+
+/usr/include/i386-linux-gnu/bits/string2.h:
+
+/usr/include/i386-linux-gnu/bits/string3.h:
+
+/usr/include/i386-linux-gnu/sys/time.h:
+
+/usr/local/ssl/include/openssl/ssl23.h:
+
+/usr/local/ssl/include/openssl/srtp.h:
+
+../../src/est/est.h:
+
+/usr/local/ssl/include/openssl/srp.h:
+
+ossl_srv.h:
+
+../util/utils.h:
+
+../util/simple_server.h:
