@@ -1046,7 +1046,6 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
     char *token = NULL;
     char user[MAX_UIDPWD];
     char pwd[MAX_UIDPWD];
-    int valid_token; //flag determines if token is valid or not
     
     hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
@@ -1056,33 +1055,23 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
     
     switch (ctx->auth_mode) {
     case AUTH_BASIC:
+        snprintf(both, MAX_UIDPWD*2+2, "%s:%s", ctx->userid,
+                 ctx->password);
         /*
          * make sure we have both parts of the credentials to send.  If we do,
          * then we're operating in the original mode where the app layer
          * provides them up front before they're needed.  If not, then we can
          * now go ask for them from the app layer.
          */
-        if (ctx->userid[0] == '\0' && ctx->password[0] == '\0') {
+        if (ctx->userid[0] == '\0' || ctx->password[0] == '\0') {
 
             memset(user, 0, MAX_UIDPWD);
             memset(pwd, 0, MAX_UIDPWD);
             
             est_client_retrieve_credentials(ctx, ctx->auth_mode, user, pwd);
-
-	    /*
-	     *If valid userID and password are returned by the application continue building
-	     *the HTTP auth header. Otherwise, point the header to a NULL string since the the
-	     *it is not capable of Basic/Digest authentication 
-	     */
-	    if (user[0] == '\0' || pwd[0] == '\0'){
-	      /*Force hdr to a null string */
-	      EST_LOG_ERR("No User ID or Password was provided, not trying another enrollment attempt.");
-	      memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);	  
-	      break;
-	    }
             
             /*
-             * If a user ID and password are returned, build the string containing both
+             * regardless of what comes back, build the string containing both
              */            
             snprintf(both, MAX_UIDPWD*2+2, "%s:%s", user, pwd);
         } else {
@@ -1091,16 +1080,14 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
              */
             snprintf(both, MAX_UIDPWD*2+2, "%s:%s", ctx->userid,
                      ctx->password);
-        }				    
-	  
-	  /*
-	   * base64 encode the combined string and buld the HTTP auth header
-	   */
-	  est_base64_encode((const unsigned char *)both, strnlen(both, 2*MAX_UIDPWD), both_b64);
-	  snprintf(hdr + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,
-		   "Authorization: Basic %s\r\n", both_b64);
-	  break;
-    
+        }        
+        /*
+         * base64 encode the combined string and buld the HTTP auth header
+         */
+        est_base64_encode((const unsigned char *)both, strnlen(both, 2*MAX_UIDPWD), both_b64);
+        snprintf(hdr + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,
+                 "Authorization: Basic %s\r\n", both_b64);
+        break;
     case AUTH_DIGEST:
 
         /* Generate a client nonce */
@@ -1124,14 +1111,6 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
             memset(pwd, 0, MAX_UIDPWD);
             
             est_client_retrieve_credentials(ctx, ctx->auth_mode, user, pwd);
-
-	    /*Check to make sure a valid userID and pwd was provided. If not point hdr to a null string*/
-	    if (user[0] == '\0' || pwd[0] == '\0'){
-     	      EST_LOG_ERR("No User ID or Password was provided, not trying another enrollment attempt.");
-	      /*Force hdr to a null string */
-	      memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);	    
-	      break;
-	    }
         } else {
             if (!strncpy(user, ctx->userid, MAX_UIDPWD)) {
                 EST_LOG_ERR("Invalid User ID provided");
@@ -1140,10 +1119,8 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
                 EST_LOG_ERR("Invalid User password provided");
             }
         }
-
-	
-
-	digest = est_client_generate_auth_digest(ctx, uri, user, pwd);
+        
+        digest = est_client_generate_auth_digest(ctx, uri, user, pwd);
         if (digest == NULL) {
             EST_LOG_ERR("Error while generating digest");
             /* Force hdr to a null string */
@@ -1188,7 +1165,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
          */
         if (auth_credentials.auth_token == NULL) {
             EST_LOG_ERR("Requested token credentials, but application did not provide any.");
-            token = ""; //error check here -- MD
+            token = ""; 
         } else {
 
             /*
@@ -1204,16 +1181,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
                 token = auth_credentials.auth_token;
             }
         }
-
-	/*If the token is not valid, point hdr to a null string*/
-	if(strncmp(token, "", MAX_AUTH_TOKEN_LEN) == 0){
-	  /* Force hdr to a null string */	  
-	  EST_LOG_ERR("No valid token was provided, not trying another enrollment attempt.");
-	  memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);
-	  break;
-	}
-
-	
+        
         snprintf(hdr + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,
                  "Authorization: Bearer %s\r\n", token);
 
@@ -2730,7 +2698,7 @@ EST_ERROR est_client_enroll_csr (EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EV
 	/*
 	 * Do a sanity check on the CSR
 	*/
-      rv = est_client_check_csr(csr); 
+	rv = est_client_check_csr(csr); 
 	if (EST_ERR_NONE != rv) {
 	    return (rv);
 	}
