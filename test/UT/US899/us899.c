@@ -1312,10 +1312,8 @@ static void us899_test18 (void)
  *
  * This is a basic test to perform a /simpleenroll without a 
  * user ID and password. 
- * No identity certificate is used by the client.
- * This test case uses the alternate enroll method where the CSR
- * is provided by the application layer rather than having libest
- * generate the CSR.
+ * The server will ask for Basic authentication, but the application will not provide
+ * a userID or password so the client will not retry an enrollment attempt. 
  */
 
 static void us899_test19 (void)
@@ -1391,10 +1389,9 @@ static void us899_test19 (void)
  *
  * This is a basic test to perform a /simpleenroll without a 
  * user ID and password. 
- * No identity certificate is used by the client.
- * This test case uses the alternate enroll method where the CSR
- * is provided by the application layer rather than having libest
- * generate the CSR.
+ * The server will ask for Digest authentication, but the application will not provide
+ * a userID or password so the client will not retry an enrollment attempt. 
+ *
  */
 
 static void us899_test20 (void)
@@ -1471,10 +1468,9 @@ static void us899_test20 (void)
  *
  * This is a basic test to perform a /simpleenroll without a 
  * user ID and password. 
- * No identity certificate is used by the client.
- * This test case uses the alternate enroll method where the CSR
- * is provided by the application layer rather than having libest
- * generate the CSR.
+ * This is a basic test to perform a /simpleenroll without a user ID and password. 
+ * The server will ask for Token authentication, but the application will not provide
+ * a userID or password so the client will not retry an enrollment attempt. 
  */
 
 static void us899_test21 (void)
@@ -1612,9 +1608,9 @@ int us899_add_suite (void)
        (NULL == CU_add_test(pSuite, "Simple enroll - CRL enabled, valid server cert", us899_test16)) ||
        (NULL == CU_add_test(pSuite, "Simple enroll - CRL enabled, revoked server cert", us899_test17)) ||
        (NULL == CU_add_test(pSuite, "Simple enroll - Retry-After received", us899_test18)) ||
-       (NULL == CU_add_test(pSuite, "Simple enroll - HTTP Basic Auth: No uID/pwd", us899_test19)) ||
-       (NULL == CU_add_test(pSuite, "Simple enroll - HTTP Digest Auth: No uID/pwd", us899_test20)) ||
-       (NULL == CU_add_test(pSuite, "Simple enroll - HTTP Token Auth: No uID/pwd", us899_test21)))
+       (NULL == CU_add_test(pSuite, "Simple enroll - HTTP Basic Auth - No uID/pwd", us899_test19)) ||
+       (NULL == CU_add_test(pSuite, "Simple enroll - HTTP Digest Auth - No uID/pwd", us899_test20)) ||
+       (NULL == CU_add_test(pSuite, "Simple enroll - HTTP Token Auth - No uID/pwd", us899_test21)))
    {
       CU_cleanup_registry();
       return CU_get_error();
