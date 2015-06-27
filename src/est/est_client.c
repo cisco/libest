@@ -1046,7 +1046,6 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
     char *token = NULL;
     char user[MAX_UIDPWD];
     char pwd[MAX_UIDPWD];
-    int valid_token; //flag determines if token is valid or not
     
     hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
@@ -1188,7 +1187,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
          */
         if (auth_credentials.auth_token == NULL) {
             EST_LOG_ERR("Requested token credentials, but application did not provide any.");
-            token = ""; //error check here -- MD
+            token = "";
         } else {
 
             /*
@@ -2730,7 +2729,7 @@ EST_ERROR est_client_enroll_csr (EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EV
 	/*
 	 * Do a sanity check on the CSR
 	*/
-      rv = est_client_check_csr(csr); 
+        rv = est_client_check_csr(csr); 
 	if (EST_ERR_NONE != rv) {
 	    return (rv);
 	}
