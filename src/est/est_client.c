@@ -1070,7 +1070,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
 
 	    /*
 	     *If valid userID and password are returned by the application continue building
-	     *the HTTP auth header. Otherwise, point the header to a NULL string since the the
+	     *the HTTP auth header. Otherwise, point the header to a NULL string since
 	     *it is not capable of Basic/Digest authentication 
 	     */
 	    if (user[0] == '\0' || pwd[0] == '\0'){
@@ -1093,7 +1093,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
         }				    
 	  
 	  /*
-	   * base64 encode the combined string and buld the HTTP auth header
+	   * base64 encode the combined string and build the HTTP auth header
 	   */
 	  est_base64_encode((const unsigned char *)both, strnlen(both, 2*MAX_UIDPWD), both_b64);
 	  snprintf(hdr + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,
