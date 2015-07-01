@@ -1307,6 +1307,245 @@ static void us899_test18 (void)
     est_destroy(ectx);
 }
 
+/*
+ * Simple enroll CSR -- No UserID or Password   
+ *
+ * This is a basic test to perform a /simpleenroll without a 
+ * user ID and password. 
+ * The server will ask for Basic authentication, but the application will not provide
+ * a userID or password so the client will not retry an enrollment attempt. 
+ */
+
+static void us899_test19 (void)
+{
+    EST_CTX *ectx;
+    EVP_PKEY *key;
+    int rv;
+    int pkcs7_len = 0;
+    unsigned char *new_cert = NULL;
+    X509_REQ *csr;
+    unsigned char *attr_data = NULL;
+    int attr_len;
+
+    LOG_FUNC_NM;
+
+    /*
+     * Create a client context
+     */
+    ectx = est_client_init(cacerts, cacerts_len,
+                           EST_CERT_FORMAT_PEM,
+                           client_manual_cert_verify);
+    CU_ASSERT(ectx != NULL);
+
+    /*
+     * Set the authentication mode to use a user id/password
+     */
+    /*rv = est_client_set_auth(ectx, "", "" , NULL, NULL);
+      CU_ASSERT(rv == EST_ERR_NONE);*/ //Remove these
+
+    /*
+     * Set the EST server address/port
+     */
+    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT);
+
+    /*
+     * generate a private key
+     */
+    key = generate_private_key();
+    CU_ASSERT(key != NULL);
+
+    /*
+     * Generate a CSR
+     */
+    csr = X509_REQ_new();
+    CU_ASSERT(csr != NULL);
+    rv = populate_x509_csr(csr, key, "US899-TC2");
+
+    /*
+     * Get the latest CSR attributes
+     */
+    rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
+    CU_ASSERT(rv == EST_ERR_NONE);
+
+    /*
+     * Use the alternate API to enroll an existing CSR
+     */
+    rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, key);
+    CU_ASSERT(rv == EST_ERR_HTTP_CANNOT_BUILD_HEADER);
+ 
+    /*
+     * Cleanup
+     */
+    X509_REQ_free(csr);
+    EVP_PKEY_free(key);
+    if (new_cert) {
+        free(new_cert);
+    }
+    est_destroy(ectx);
+}
+
+/*
+ * Simple enroll CSR -- HTTP Digest Auth No UserID or Password   
+ *
+ * This is a basic test to perform a /simpleenroll without a 
+ * user ID and password. 
+ * The server will ask for Digest authentication, but the application will not provide
+ * a userID or password so the client will not retry an enrollment attempt. 
+ *
+ */
+
+static void us899_test20 (void)
+{
+    EST_CTX *ectx;
+    EVP_PKEY *key;
+    int rv;
+    int pkcs7_len = 0;
+    unsigned char *new_cert = NULL;
+    X509_REQ *csr;
+    unsigned char *attr_data = NULL;
+    int attr_len;
+
+    LOG_FUNC_NM;
+
+    /*
+     * Create a client context
+     */
+    ectx = est_client_init(cacerts, cacerts_len,
+                           EST_CERT_FORMAT_PEM,
+                           client_manual_cert_verify);
+    CU_ASSERT(ectx != NULL);
+
+    /*
+     * Set the EST server address/port
+     */
+    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT);
+
+    /*
+     * generate a private key
+     */
+    key = generate_private_key();
+    CU_ASSERT(key != NULL);
+
+    /*
+     * Generate a CSR
+     */
+    csr = X509_REQ_new();
+    CU_ASSERT(csr != NULL);
+    rv = populate_x509_csr(csr, key, "US899-TC2");
+
+    /*
+     * Get the latest CSR attributes
+     */
+    rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
+    CU_ASSERT(rv == EST_ERR_NONE);
+
+    /*
+     * Set the server authentication mode to Digest
+     */
+
+    st_enable_http_digest_auth();
+    
+    /*
+     * Use the alternate API to enroll an existing CSR
+     */
+    rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, key);
+    CU_ASSERT(rv == EST_ERR_HTTP_CANNOT_BUILD_HEADER);
+ 
+    /*
+     * Cleanup
+     */
+    st_enable_http_basic_auth();
+    X509_REQ_free(csr);
+    EVP_PKEY_free(key);
+    if (new_cert) {
+        free(new_cert);
+    }
+    est_destroy(ectx);
+}
+
+/*
+ * Simple enroll CSR -- HTTP Token Auth No UserID or Password   
+ *
+ * This is a basic test to perform a /simpleenroll without a 
+ * user ID and password. 
+ * This is a basic test to perform a /simpleenroll without a user ID and password. 
+ * The server will ask for Token authentication, but the application will not provide
+ * a userID or password so the client will not retry an enrollment attempt. 
+ */
+
+static void us899_test21 (void)
+{
+    EST_CTX *ectx;
+    EVP_PKEY *key;
+    int rv;
+    int pkcs7_len = 0;
+    unsigned char *new_cert = NULL;
+    X509_REQ *csr;
+    unsigned char *attr_data = NULL;
+    int attr_len;
+
+    LOG_FUNC_NM;
+
+    /*
+     * Create a client context
+     */
+    ectx = est_client_init(cacerts, cacerts_len,
+                           EST_CERT_FORMAT_PEM,
+                           client_manual_cert_verify);
+    CU_ASSERT(ectx != NULL);
+
+    /*
+     * Set the EST server address/port
+     */
+    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT);
+
+    /*
+     * generate a private key
+     */
+    key = generate_private_key();
+    CU_ASSERT(key != NULL);
+
+    /*
+     * Generate a CSR
+     */
+    csr = X509_REQ_new();
+    CU_ASSERT(csr != NULL);
+    rv = populate_x509_csr(csr, key, "US899-TC2");
+
+    /*
+     * Get the latest CSR attributes
+     */
+    rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
+    CU_ASSERT(rv == EST_ERR_NONE);
+
+    /*
+     * Set the server authentication mode to Digest
+     */
+
+    st_enable_http_token_auth();
+    
+    /*
+     * Use the alternate API to enroll an existing CSR
+     */
+    rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, key);
+    CU_ASSERT(rv == EST_ERR_HTTP_CANNOT_BUILD_HEADER);
+ 
+    /*
+     * Cleanup
+     */
+    st_enable_http_basic_auth();
+    X509_REQ_free(csr);
+    EVP_PKEY_free(key);
+    if (new_cert) {
+        free(new_cert);
+    }
+    est_destroy(ectx);
+}
+
+
+
+
+
 //TO DO
 //
 //Auth (HTTP basic auth enabled on server) 
@@ -1368,7 +1607,10 @@ int us899_add_suite (void)
        (NULL == CU_add_test(pSuite, "Simple enroll - wildcard mismatch FQDN SAN", us899_test15)) ||
        (NULL == CU_add_test(pSuite, "Simple enroll - CRL enabled, valid server cert", us899_test16)) ||
        (NULL == CU_add_test(pSuite, "Simple enroll - CRL enabled, revoked server cert", us899_test17)) ||
-       (NULL == CU_add_test(pSuite, "Simple enroll - Retry-After received", us899_test18)))
+       (NULL == CU_add_test(pSuite, "Simple enroll - Retry-After received", us899_test18)) ||
+       (NULL == CU_add_test(pSuite, "Simple enroll - HTTP Basic Auth - No uID/pwd", us899_test19)) ||
+       (NULL == CU_add_test(pSuite, "Simple enroll - HTTP Digest Auth - No uID/pwd", us899_test20)) ||
+       (NULL == CU_add_test(pSuite, "Simple enroll - HTTP Token Auth - No uID/pwd", us899_test21)))
    {
       CU_cleanup_registry();
       return CU_get_error();
