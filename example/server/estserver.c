@@ -693,7 +693,7 @@ int main (int argc, char **argv)
             }
             if (!strncmp(long_options[option_index].name,"token", strlen("token"))) {
 		http_token_auth = 1;
-                memset(valid_token_value, MAX_AUTH_TOKEN_LEN+1, 0); 
+                memset(valid_token_value, 0, MAX_AUTH_TOKEN_LEN+1); 
                 strncpy(&(valid_token_value[0]), optarg, MAX_AUTH_TOKEN_LEN);
             }
 	    break;
