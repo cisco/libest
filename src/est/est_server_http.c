@@ -910,7 +910,9 @@ static void mg_parse_auth_hdr_token (struct mg_connection *conn,
 				     const char *auth_header,
 	                             EST_HTTP_AUTH_HDR *ah)
 {
-    char *s;
+    char *value, *s;
+    char value_decoded[MAX_AUTH_TOKEN_LEN*2];
+    int len;
     
     s = (char *) auth_header + (strlen(EST_BEARER_TOKEN_STR)-1);
 
@@ -919,9 +921,17 @@ static void mg_parse_auth_hdr_token (struct mg_connection *conn,
 	s++;
     }
 
+    value = s;
+    memset(value_decoded, 0, MAX_AUTH_TOKEN_LEN*2);
+    len = est_base64_decode(value, value_decoded, (MAX_AUTH_TOKEN_LEN*2));
+    if (len <= 0) {
+	EST_LOG_WARN("Base64 decode of HTTP auth credentials failed, HTTP auth will fail");
+	return;
+    }
+
     if (*s != '\0') {
         /*Copy the token into the auth header structure. */
-        ah->auth_token = strndup(s, MAX_AUTH_TOKEN_LEN);
+        ah->auth_token = strndup(value_decoded, MAX_AUTH_TOKEN_LEN);
         ah->mode = AUTH_TOKEN;
         if (ah->auth_token == NULL) {
             EST_LOG_ERR("Failed to obtain memory for authentication token buffer");
