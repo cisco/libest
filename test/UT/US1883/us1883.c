@@ -558,7 +558,7 @@ void us1883_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
 
 /*
  * Test2 - Application layer did not register callback, causing an
- *         HTTP Aithentication header with an empty token credential
+ *         HTTP Authentication header with an empty token credential
  *         
  * In this test,
  * - application layer DOES NOT register its callback
@@ -596,7 +596,8 @@ static void us1883_test2 (void)
      *
      * enroll better fail due to missing credentials
      */
-    us1883_simple_enroll("TC1883-2", US1883_SERVER_IP, EST_ERR_AUTH_FAIL, NULL);
+    us1883_simple_enroll("TC1883-2", US1883_SERVER_IP,
+                         EST_ERR_HTTP_CANNOT_BUILD_HEADER, NULL);
 
     /*
      * callback was never registered, so it should not have been invoked.
@@ -647,7 +648,9 @@ static void us1883_test3 (void)
      *
      * enroll better fail due to missing credentials
      */
-    us1883_simple_enroll("TC1883-3", US1883_SERVER_IP, EST_ERR_AUTH_FAIL, auth_credentials_token_cb);
+    us1883_simple_enroll("TC1883-3", US1883_SERVER_IP,
+                         EST_ERR_HTTP_CANNOT_BUILD_HEADER,
+                         auth_credentials_token_cb);
 
     /*
      * callback should have been called
@@ -734,7 +737,9 @@ static void us1883_test5 (void)
      * enroll better fail due to credentials not being supplied by the application layer
      * and eventual failure at the server due to missing credentials.
      */
-    us1883_simple_enroll("TC1883-5", US1883_SERVER_IP, EST_ERR_AUTH_FAIL, auth_credentials_token_cb);
+    us1883_simple_enroll("TC1883-5", US1883_SERVER_IP,
+                         EST_ERR_HTTP_CANNOT_BUILD_HEADER,
+                         auth_credentials_token_cb);
 
     /*
      * callback should have been called
@@ -863,7 +868,8 @@ static void us1883_test8 (void)
      * Pass a callback function to catch and handle the request for a token auth.
      *
      */
-    us1883_simple_enroll("TC1883-8", US1883_SERVER_IP, EST_ERR_AUTH_FAIL,
+    us1883_simple_enroll("TC1883-8", US1883_SERVER_IP,
+                         EST_ERR_HTTP_CANNOT_BUILD_HEADER,
                          auth_credentials_token_cb);
 
     /*
