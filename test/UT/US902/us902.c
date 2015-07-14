@@ -55,7 +55,23 @@ static int cacerts_len = 0;
 
 #define US902_PKCS10_CORRUPT "MIIBMTCB2gIBADB4MQswCQYDVQQGEwJVUzELMAkGA1UECAwCTkMxDDAKBgNVBAcM\nA1JUUDESMBAGA1UECgwJRUNDb21wYW55MQ4wDAYDVQQLDAVFQ39yZzEPMA0GA1UE\nAwwGRUMgZG9lMRkwFwYJKoZIhvcNAQkBFgplY0Bkb2UuY29tMFkwEwYHKoZIzj0C\nAQYIKoZIzj0DAQcDQgAEO1uszCKdXNFzygNLNeS8azQKod1516GT9qdDddt9iJN4\nLpBTnv+7K7+tji5kts1kWSYyvqLxvnq8Q/TU1iQJ56AAMAkGByqGSM49BAEDRwAw\nRAIgP6qda+0TEKZFPopgUfwFMRsxcNmuQUe2yuz16460/SQCIBfLvmuMeyYOqbbD\nX0Ifde9yzkROVBCEPvK0hcU5KsTO"
 
+
+/*
+ * The following CSR was generated using the following openssl command and then
+ * using cat on the rsa.req file:
+ *
+ * openssl req -newkey rsa:2048 -keyout rsakey.pem -keyform PEM -out rsa.req -outform PEM -nodes
+ */
+
 #define US902_PKCS10_BADSUBJECT "MIIC0TCCAbkCAQAwgYsxCzAJBgNVBAYTAlVTMRcwFQYDVQQIDA5Ob3J0aCBDYXJv\nbGluYTEMMAoGA1UEBwwDUlRQMQ4wDAYDVQQKDAVDaXNjbzENMAsGA1UECwwEUyZU\nTzEWMBQGA1UEAwwNUlNBIFZhbGlkIENTUjEeMBwGCSqGSIb3DQEJARYPZW1haWxA\nZW1haWwuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0qf1f9sh\nUEDfYo6LpaSgPuALrKEd/P+hh9lTwkbCUI821Z1qO7Ocd3Ks5RiwJPJ8qQY1xxKr\nrC7p5axAZtbLWiQr9C46LihzUnQa3buQWlVXRv4sX2BNDZvwl7sFzb0K/P+WSB96\nfD4x537wb+EQoyQe/LCcwby6yxDaek6gRY60RgR5ERFQ+ZjHiZNzA6w8gbtirrGP\nD8wMy6YDYzpbi/xsDhwCEyoKcWm4f9rlUtQ6L1chJJ5Y4p63V/0nsZhwmPKKGBQn\nq/2t/vVWYJYxuskEmduVUCGIIvwl/PRarsQO4fWEZEFvW2yjKbhCWZPA5k+aSSOS\noTdBcVU8LVhYtQIDAQABoAAwDQYJKoZIhvcNAQEFBQADggEBAEr5aoFzcdZK9CHS\noQiC8kq3WwTdTzu9mHtlg0meBQQzlFKa/hx7ItzR+vSAfkMhQXg25VXACCw+TS9Z\nfRFJwcAxQYmalLUoMzEtyqIqwZV8a0VVPzBZnj6MyDdzxbrS3BVympLie00c9xtv\noKpt1JCPAAMn6hYKLgX+wIqd/sVovnd9j2jkD1rYAqoMv8Im9nLfNxoc2BR4VDmB\nsJMTIz6DoK92+QuAfdRTG2SjMG7Lnohak1NoM1p7tlKmZQk6086z6rUz7Gn0X1qx\n1pv6ZMqJN/8eWSw1OaNaYaOtS0p9s8297fkipq4+80LPEGo7B9hou0QKsFEyCy+h\nK8ioEcc=\n"
+
+/*
+ * The following CSR was generated using the following openssl command and then
+ * using cat on the rsa.req file:
+ *
+ * openssl req -newkey rsa:2048 -keyout rsakey.pem -keyform PEM -out rsa.req -outform PEM -nodes
+ */
+
 
 #define US902_PKCS10_CERTAUTH "MIICXTCCAUUCAQAwGDEWMBQGA1UEAwwNUlNBIFZhbGlkIENTUjCCASIwDQYJKoZI\nhvcNAQEBBQADggEPADCCAQoCggEBALdREMh1tTORenFmzh4DPBphmF1/8krquNPo\n8uzRJtBuXMa5JeyEMQDwNVllFla+Tb8WhpWfTovaQQLXKNohHm7l5v9uDcKzkZdX\n+GSkyokGZrUtocrYl3DhKoRIzl8ZygOo644GvyM8sfvxcg7PNZz3VeO8yXBhNzfX\nn/YyqaT6xaARJFVTxI+jotEfM2fj9d4m7ymbFp6loMi1ICVjt8HllGai0/REsSgp\nY207fyBVj1chxaUq1w6OqkUhxfvmum26XxmVYcodob0rB3AKvAXNAS2pKzNz8DF3\nRK0mTl/lxDjjyshPdBsPnATViha7BLac0lXu/RZMTNYCJyl8ZrcCAwEAAaAAMA0G\nCSqGSIb3DQEBBQUAA4IBAQAjENl1fVd/yLI+86oyc+nmrAbWsmvyupG4pnamc/hD\niAej5fH+HWI0zGf41gnWmY8RxC7T6b7uFn61hdRWKE0GE6JZ/grwyLZ3sAihB46f\nk3OiTCfZiDUArCou2ErUJFej2Jz7wiBD/dMwvKhatgPCQEQVUdzWh4dShXI9mQHs\nQafk5bp6njV2LS8jbofczguLT3hvVthgbUoOB2AM5/Ol+Jq9L2nfoCacv8Gvhx36\nIsglDmsEajxzjR1JORwpARv3xptQKi92UyeKYBhwPS1drnNZ9wL53R0XMVHnBwUP\ndB2dAxt/5wnMkt1b4+4wJHKY+WYbdAeCxfZ0MtFIn+4n\n"
 
@@ -63,8 +79,8 @@ static int cacerts_len = 0;
 #define US902_PKCS10_CT	    "Content-Type: application/pkcs10" 
 #define US902_UIDPWD_GOOD   "estuser:estpwd"
 #define US902_CACERTS	    "CA/estCA/cacert.crt"
-#define US902_EXPLICIT_CERT "US902/newcert.pkcs7.pem"
-#define US902_EXPLICIT_KEY "US902/rsakey.pem"
+#define US902_EXPLICIT_CERT "US902/cert.pem"
+#define US902_EXPLICIT_KEY "US902/cert-key.pem"
 
 
 static FILE *outfile;
