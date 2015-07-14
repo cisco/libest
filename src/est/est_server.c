@@ -1079,6 +1079,21 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
 	} 
     }
 
+    if (reenroll && !client_is_ra && peer_cert) {
+	/*
+	 * As specified in RFC 7030 section 2.3, the TLS peer certitificate
+	 * is not necessarily the one that is being re-enrolled. Thus:
+	 * TODO generalize this invocation of the subject name match check
+	 * such that it takes into account also other sources of the previous cert.
+	 */
+	rv = ossl_check_subjects_agree(csr, peer_cert);
+	if (rv != EST_ERR_NONE) {
+	    X509_REQ_free(csr);
+	    X509_free(peer_cert);
+	    return (EST_ERR_SUBJECT_MISMATCH);
+	}	
+    }
+
     /*
      * Check if we need to ensure the client included all the
      * CSR attributes required by the CA.

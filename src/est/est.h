@@ -87,6 +87,7 @@ typedef enum {
     E(EST_ERR_SYSCALL) \
     E(EST_ERR_CSR_ALREADY_SIGNED) \
     E(EST_ERR_CSR_ATTR_MISSING) \
+    E(EST_ERR_SUBJECT_MISMATCH) \
     E(EST_ERR_INVALID_DIGEST) \
     E(EST_ERR_CACERT_VERIFICATION) \
     E(EST_ERR_INVALID_TOKEN) \
@@ -164,6 +165,7 @@ typedef enum {
 \n EST_ERR_SYSCALL  The OpenSSL library reported a system call error when attempting to establish the TLS session.
 \n EST_ERR_CSR_ALREADY_SIGNED  The PKCS10 CSR provided to libest already contained a signature.  libest requires the CSR to not be signed since libest is responsible for signing the CSR.
 \n EST_ERR_CSR_ATTR_MISSING  The PKCS10 CSR received from the EST client does not contain all the required CSR attributes.
+\n EST_ERR_SUBJECT_MISMATCH The Subject or SubjectAltName fields of client CSR and certificate do not agree.
 \n EST_ERR_INVALID_DIGEST  An invalid digest type was requested.   
 \n EST_ERR_CACERT_VERIFICATION  Validation of the CA certificate chain received from the EST server has failed.
 \n EST_ERR_INVALID_TOKEN  An invalid authorization token was received.
