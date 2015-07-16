@@ -1074,7 +1074,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
 	     *the HTTP auth header. Otherwise, point the header to a NULL string since
 	     *it is not capable of Basic/Digest authentication 
 	     */
-	    if (user[0] == '\0' || pwd[0] == '\0'){
+	    if ((user[0] == '\0' || pwd[0] == '\0') && !(ctx->client_cert)){
 	      /*Force hdr to a null string */
 	      EST_LOG_ERR("No User ID or Password was provided, not trying another enrollment attempt.");
 	      memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);	  
@@ -1126,7 +1126,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
             est_client_retrieve_credentials(ctx, ctx->auth_mode, user, pwd);
 
 	    /*Check to make sure a valid userID and pwd was provided. If not point hdr to a null string*/
-	    if (user[0] == '\0' || pwd[0] == '\0'){
+	    if ((user[0] == '\0' || pwd[0] == '\0') && !(ctx->client_cert)){
      	      EST_LOG_ERR("No User ID or Password was provided, not trying another enrollment attempt.");
 	      /*Force hdr to a null string */
 	      memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);	    
@@ -1203,18 +1203,20 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
             }
         }
 
-		/*If the token is not valid, point hdr to a null string*/
-		if(strncmp(token, "", MAX_AUTH_TOKEN_LEN) == 0){
-		  /* Force hdr to a null string */	  
-		  EST_LOG_ERR("No valid token was provided, not trying another enrollment attempt.");
-		  memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);
-		  break;
-		}
 
-		/*
-         * base64 encode the combined string and build the HTTP auth header
-         */
-        memset(token_b64, 0, MAX_AUTH_TOKEN_LEN*2);
+	/*If the token is not valid, point hdr to a null string*/
+	if((strncmp(token, "", MAX_AUTH_TOKEN_LEN) == 0) && !(ctx->client_cert)){
+	  /* Force hdr to a null string */	  
+	  EST_LOG_ERR("No valid token was provided, not trying another enrollment attempt.");
+	  memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);
+	  break;
+	}
+
+      /*
+       * base64 encode the combined string and build the HTTP auth header
+       */
+
+	memset(token_b64, 0, MAX_AUTH_TOKEN_LEN*2);
         est_base64_encode((const unsigned char *)token, strnlen(token, MAX_AUTH_TOKEN_LEN), token_b64);
 	
         snprintf(hdr + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,
