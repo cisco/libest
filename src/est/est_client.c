@@ -1044,6 +1044,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
     EST_HTTP_AUTH_HDR auth_credentials;
     EST_HTTP_AUTH_CRED_RC rc;
     char *token = NULL;
+    char token_b64[MAX_AUTH_TOKEN_LEN*2];
     char user[MAX_UIDPWD];
     char pwd[MAX_UIDPWD];
     
@@ -1139,10 +1140,8 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
                 EST_LOG_ERR("Invalid User password provided");
             }
         }
-
-	
-
-	digest = est_client_generate_auth_digest(ctx, uri, user, pwd);
+        
+        digest = est_client_generate_auth_digest(ctx, uri, user, pwd);
         if (digest == NULL) {
             EST_LOG_ERR("Error while generating digest");
             /* Force hdr to a null string */
@@ -1192,7 +1191,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
 
             /*
              * Make sure the token we were given is not too long.
-             * If it is, force it to NULL to cause the auth faliure at
+             * If it is, force it to NULL to cause the auth failure at
              * the server just as if no credentials were provided
              */
             if (MAX_AUTH_TOKEN_LEN < strnlen(auth_credentials.auth_token, MAX_AUTH_TOKEN_LEN+1)) {
@@ -1204,6 +1203,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
             }
         }
 
+
 	/*If the token is not valid, point hdr to a null string*/
 	if((strncmp(token, "", MAX_AUTH_TOKEN_LEN) == 0) && !(ctx->client_cert)){
 	  /* Force hdr to a null string */	  
@@ -1212,9 +1212,15 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
 	  break;
 	}
 
+      /*
+       * base64 encode the combined string and build the HTTP auth header
+       */
+
+	memset(token_b64, 0, MAX_AUTH_TOKEN_LEN*2);
+        est_base64_encode((const unsigned char *)token, strnlen(token, MAX_AUTH_TOKEN_LEN), token_b64);
 	
         snprintf(hdr + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,
-                 "Authorization: Bearer %s\r\n", token);
+                 "Authorization: Bearer %s\r\n", token_b64);
 
         cleanse_auth_credentials(&auth_credentials);
         
@@ -2871,7 +2877,7 @@ EST_ERROR est_client_enroll (EST_CTX *ctx, char *cn, int *pkcs7_len,
              * If we're attempting token mode for the second time, and
              * the server responded with error attributes, log them now
              */
-            if (ctx->token_error != NULL || ctx->token_error_desc != NULL) {
+            if (ctx->token_error[0] != '\0' || ctx->token_error_desc[0] != '\0') {
                 EST_LOG_ERR("Token Auth mode failed, server provided error information: \n"
                             "   Error = %s\n Error description: %s",
                             ctx->token_error, ctx->token_error_desc);
