@@ -63,6 +63,7 @@
 
 #ifndef _WIN32_WCE // Some ANSI #includes are not available on Windows CE
 #include <sys/types.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <signal.h>

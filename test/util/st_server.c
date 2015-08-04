@@ -460,7 +460,7 @@ static void* master_thread (void *arg)
     int rc;
     int flags;
     int new;
-    int unsigned len;
+    socklen_t len;
 
     memset(&addr, 0x0, sizeof(struct sockaddr_in6));
     addr.sin6_family = AF_INET6;

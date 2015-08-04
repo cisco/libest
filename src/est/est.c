@@ -50,6 +50,7 @@ static void est_logger_stderr (char *format, va_list l)
     funlockfile(stderr);
 }
 
+#ifndef DISABLE_BACKTRACE
 static void est_log_msg (char *format, ...)
 {
     va_list arguments;
@@ -66,6 +67,7 @@ static void est_log_msg (char *format, ...)
     }
     va_end(arguments);
 }
+#endif
 
 /*
  * Global function to be called to log something

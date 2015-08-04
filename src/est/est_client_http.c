@@ -39,6 +39,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <limits.h>
 #include <openssl/ssl.h>
 #include <assert.h>
 #include "est.h"
@@ -46,7 +47,6 @@
 #include "est_server_http.h"
 #include "est_ossl_util.h"
 
-#define INT_MAX         (  2147483647 )
 
 #ifdef RETRY_AFTER_DELAY_TIME_SUPPORT
 
