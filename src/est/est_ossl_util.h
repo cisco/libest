@@ -25,5 +25,6 @@ unsigned char *ossl_get_cert_subject_alt_name(const X509 *cert);
 unsigned char *ossl_get_extension_value (const X509_EXTENSION *ext);
 int ossl_name_entries_inclusion (X509_NAME *name1, X509_NAME *name2);
 EST_ERROR ossl_check_subjects_agree(const X509_REQ *csr, const X509 *cert);
+EST_ERROR ossl_check_cert (X509 *cert, const EVP_PKEY *priv_key, SSL_CTX *ssl_ctx);
 
 #endif

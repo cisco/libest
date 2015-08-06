@@ -3121,6 +3121,23 @@ EST_ERROR est_client_reenroll (EST_CTX *ctx, X509 *cert, int *pkcs7_len, EVP_PKE
     }
 
     /*
+     * Ensure the enrolled certificate fits with the
+     * current trust anchor before using it. 
+     */
+    
+    if (cert && (ctx->userid[0] == '\0' && ctx->password[0] == '\0')) {
+      if (!priv_key) {
+	return EST_ERR_NO_KEY;
+      }
+      else {	
+	  rv = ossl_check_cert(cert, priv_key, ctx->ssl_ctx);
+	  if (rv != EST_ERR_NONE) {
+	    return (rv);
+	  }
+      }
+    }
+    
+    /*
      * Convert the existing certificate to a CSR
      * This will copy the subject name from the cert into
      * a new CSR.  We pass in NULL for the private key parameter
@@ -3628,6 +3645,24 @@ EST_ERROR est_client_set_auth (EST_CTX *ctx, const char *uid, const char *pwd,
     }            
 
     ctx->auth_mode = AUTH_NONE;
+
+    /*
+     * Ensure the enrolled certificate fits with the
+     * current trust anchor before using it. 
+     */
+    
+    if (client_cert && (uid == NULL && pwd == NULL)) {
+      if (!private_key) {
+	return EST_ERR_NO_KEY;
+      }
+      else {	
+	  rv = ossl_check_cert(client_cert, private_key, ctx->ssl_ctx);
+	  if (rv != EST_ERR_NONE) {
+	    return (rv);
+	  }
+      }
+      } 
+
 
     /*
      * cache away the client cert and the associated private key, then
