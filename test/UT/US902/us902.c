@@ -72,8 +72,18 @@ static int cacerts_len = 0;
  * openssl req -newkey rsa:2048 -keyout rsakey.pem -keyform PEM -out rsa.req -outform PEM -nodes
  */
 
-
 #define US902_PKCS10_CERTAUTH "MIICXTCCAUUCAQAwGDEWMBQGA1UEAwwNUlNBIFZhbGlkIENTUjCCASIwDQYJKoZI\nhvcNAQEBBQADggEPADCCAQoCggEBALdREMh1tTORenFmzh4DPBphmF1/8krquNPo\n8uzRJtBuXMa5JeyEMQDwNVllFla+Tb8WhpWfTovaQQLXKNohHm7l5v9uDcKzkZdX\n+GSkyokGZrUtocrYl3DhKoRIzl8ZygOo644GvyM8sfvxcg7PNZz3VeO8yXBhNzfX\nn/YyqaT6xaARJFVTxI+jotEfM2fj9d4m7ymbFp6loMi1ICVjt8HllGai0/REsSgp\nY207fyBVj1chxaUq1w6OqkUhxfvmum26XxmVYcodob0rB3AKvAXNAS2pKzNz8DF3\nRK0mTl/lxDjjyshPdBsPnATViha7BLac0lXu/RZMTNYCJyl8ZrcCAwEAAaAAMA0G\nCSqGSIb3DQEBBQUAA4IBAQAjENl1fVd/yLI+86oyc+nmrAbWsmvyupG4pnamc/hD\niAej5fH+HWI0zGf41gnWmY8RxC7T6b7uFn61hdRWKE0GE6JZ/grwyLZ3sAihB46f\nk3OiTCfZiDUArCou2ErUJFej2Jz7wiBD/dMwvKhatgPCQEQVUdzWh4dShXI9mQHs\nQafk5bp6njV2LS8jbofczguLT3hvVthgbUoOB2AM5/Ol+Jq9L2nfoCacv8Gvhx36\nIsglDmsEajxzjR1JORwpARv3xptQKi92UyeKYBhwPS1drnNZ9wL53R0XMVHnBwUP\ndB2dAxt/5wnMkt1b4+4wJHKY+WYbdAeCxfZ0MtFIn+4n\n"
+
+/*
+ * The following CSRs were generated using the following openssl command and then
+ * using cat on the rsa.req file:
+ *
+ * openssl req -newkey rsa:2048 -keyout rsakey.pem -keyform PEM -out rsa.req -outform PEM -nodes -subj "/CN=example.com" -reqexts SAN -config <(cat /etc/ssl/openssl.c * nf <(printf "[SAN]\nsubjectAltName=DNS:badSAN.com"))
+ */
+
+#define US902_PKCS10_ValidSubjAlt "MIIChDCCAWwCAQAwFjEUMBIGA1UEAwwLZXhhbXBsZS5jb20wggEiMA0GCSqGSIb3\nDQEBAQUAA4IBDwAwggEKAoIBAQDY2Hcbe3CeckdkzwM1RJFiUA4XzJGjsCY+EPoI\nrbsbZOA+T9WqlA0XlHQrv1tSdlbyhfi5x0g6zMSuLpXzf0Eu+qtcRNZ0SmWxvK1M\nKxevgWQ/7kVsjC2GQST2soLu5pEUCIM+J+oyzyPNkU3PDmJdI2DPgrTKxw1g63W4\nf7I0cQYevddJrCcQzR9j5CpVE5aqZt+u9MK9aSwr8dkgibMxwzfaAt8JZ0NiD8cP\n0wl5OrSIiYLBW68CMs0v3Ei6VKS3VGCoHAf5He3b9/d8s+xIvpTmzFNAIGyY8Fjl\nifMnbkVRqfSNsL6sH8ODx/J6AiDVf6M3CXB+4aSTTaohxWe1AgMBAAGgKTAnBgkq\nhkiG9w0BCQ4xGjAYMBYGA1UdEQQPMA2CC2V4YW1wbGUuY29tMA0GCSqGSIb3DQEB\nBQUAA4IBAQCAE5zNYJadiBe/ddNJdheYyDBKas2KIDGhS70PiGQA2DzuZ1bFt5MC\nyBFMjPFcxn/tNKMCL8x0lHOkBNTI8s7iIIuuNWLM0ud6oSiEdLDQ2YOfM+Npxtgh\n3L/CGa5OMXhL1YlrQBwbw9kMi3wouvNjA6uJ9YxofefBVGx5VnT6fCRupnOFmV7I\n0WYz54MV+CHGIjnMN+AwXAHCuLieR47XdUkj57cJWMS16zHIkjdSLbhPrPv525Kg\nsBPC5fbSF3tigPy8ZwyOJjUfEwGrb4b4y7YJowHCr8fZnILY+9W+H9pYGd25vbHT\ncyDGuyMWdPiq+Pv1ZdzXW045o34B9+Fj\n"
+
+#define US902_PKCS10_BadSAN "MIIChjCCAW4CAQAwFjEUMBIGA1UEAwwLZXhhbXBsZS5jb20wggEiMA0GCSqGSIb3\nDQEBAQUAA4IBDwAwggEKAoIBAQDKoNqmUqCr4OjHnJKUI+EwgSZvAxfkW/nlFVo2\nmMMnTgbu1X/nnDOU98rj2bn1QSJCftPvXI6KoooTGWj8/S/c1eoGh2n3K+Fdzhkj\nh9UdXEicadHOXl/mkrGi1AZyZWzwJ09NRkrjAl+as5xBCTiapto/vcbIQPBZbeTi\no0dgTjM+Bnen1fmi/WfTe3XXvQHQQpf5KFIzeuVBoaM68O6ej3Wsf9x87LtHY/5F\nC9QtvZ5N3bApJd/IbAmiOtQo5hFPSLvzcM82nz0rAiw7pBWNS64x59xak+h2bfax\n11gFPUb7ta15uwsx2cQYi8Orfz7Lnu1yJ7LctHvuf9FhCo0VAgMBAAGgKzApBgkq\nhkiG9w0BCQ4xHDAaMBgGA1UdEQQRMA+CDWJhZFNBTkNTUi5jb20wDQYJKoZIhvcN\nAQEFBQADggEBAGL1QmZCbaVgeiCTnn2ohOrQNPeQUnYr2vpfMkP1lPjG0H0ER4i8\nrcXlY8XRR7sPDJv5QKBouMdhK/VvxGFKQzIBqsq9AhORD7DZ4YCTpmBzDAZN7QDx\nSl3iuBVMJLU2UdxFkm/yf2zo0XSq5fmAxZ+5hcQ20xNgm/Ac8XJr0+wLfcUlfoW0\n76CF1sqldttg/tB18DtyU2w/P4XH1H3avAXMXy2ibulxcDyznSrvDx/AMo/R4vD3\ntloCh4CgnwJJiadbJDpMH7qoWUQTViizRsQWUsxepRh2zzeM5b6Jlw/4Kq2apEKR\n43J0dIz1GILkdaa+8YS+0QzyvqFSW1Gf0N4=\n"
 
 #define US902_ENROLL_URL_BA "https://127.0.0.1:29001/.well-known/est/simplereenroll"
 #define US902_PKCS10_CT	    "Content-Type: application/pkcs10" 
@@ -81,6 +91,10 @@ static int cacerts_len = 0;
 #define US902_CACERTS	    "CA/estCA/cacert.crt"
 #define US902_EXPLICIT_CERT "US902/cert.pem"
 #define US902_EXPLICIT_KEY "US902/cert-key.pem"
+#define US902_TC8_CERT "US902/tc8-cert.pem"
+#define US902_TC8_KEY "US902/tc8-key.pem"
+#define US902_TC9_CERT "US902/tc9-cert.pem"
+#define US902_TC9_KEY "US902/tc9-key.pem"
 
 
 static FILE *outfile;
@@ -378,6 +392,67 @@ static void us902_test7 (void)
     st_enable_http_auth();
 }
 
+/*
+ * This test attempts to use a client certificate to
+ * verify the TLS client authentiaiton is working.
+ * The subject alt field of the CSR is valid.
+ * This test should pass.   
+ */
+static void us902_test8 (void)
+{
+    long rv;
+
+    LOG_FUNC_NM;
+    st_disable_http_auth();
+    
+    sleep(1);
+    rv = curl_http_post_cert(US902_ENROLL_URL_BA, 
+	US902_PKCS10_CT, 
+	US902_PKCS10_ValidSubjAlt, 
+        US902_TC8_CERT, 
+	US902_TC8_KEY,
+	US902_CACERTS,
+	NULL);
+    /* 
+     * Since the CSR subject alt name does match the cert SAN,
+     * we expect the server to respond with 200
+     */
+    CU_ASSERT(rv == 200);
+
+    st_enable_http_auth();
+}
+
+/*
+ * This test attempts to use a client certificate to
+ * verify the TLS client authentiaiton is working.
+ * The subject alt name field of the CSR is not the same as 
+ * the corresponding fields in the certificate.
+ * This test should fail.   
+ */
+static void us902_test9 (void)
+{
+    long rv;
+
+    LOG_FUNC_NM;
+    st_disable_http_auth();
+    
+    sleep(1);
+    rv = curl_http_post_cert(US902_ENROLL_URL_BA, 
+	US902_PKCS10_CT, 
+	US902_PKCS10_BadSAN, 
+        US902_TC9_CERT, 
+	US902_TC9_KEY,
+	US902_CACERTS,
+	NULL);
+    /* 
+     * Since the CSR SAN does not match the cert SAN,
+     * we expect the server to respond with 400
+     */
+    CU_ASSERT(rv == 400);
+
+    st_enable_http_auth();
+}
+
 
 
 /* The main() function for setting up and running the tests.
@@ -405,7 +480,9 @@ int us902_add_suite (void)
        (NULL == CU_add_test(pSuite, "ReEnroll corrupted ECDSA cert", us902_test4)) ||
        (NULL == CU_add_test(pSuite, "ReEnroll retry-after manual approval ", us902_test5)) ||
        (NULL == CU_add_test(pSuite, "ReEnroll Valid CSR", us902_test6)) ||
-       (NULL == CU_add_test(pSuite, "ReEnroll Subject Mismatch", us902_test7)))
+       (NULL == CU_add_test(pSuite, "ReEnroll Subject Mismatch", us902_test7)) ||
+       (NULL == CU_add_test(pSuite, "ReEnroll SAN Match", us902_test8)) ||
+       (NULL == CU_add_test(pSuite, "ReEnroll SAN Mismatch", us902_test9)))
    {
       CU_cleanup_registry();
       return CU_get_error();
