@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------
- * estclient.c - Example application that utilizes libest.a for
+ * estclient.c - Example application that utilizes libest for
  *               EST client operations.  This module utilizes OpenSSL
  *               for SSL and crypto services.
  *
@@ -42,7 +42,7 @@ static char est_srp_pwd[MAX_PWD_LEN];
 static char subj_cn[MAX_CN];
 static char est_server[MAX_SERVER_LEN];
 static char est_auth_token[MAX_AUTH_TOKEN_LEN+1];
-static int est_port;
+static int est_port = 8085;
 static int verbose = 0;
 static int srp = 0;
 static int token_auth_mode = 0;
@@ -84,14 +84,12 @@ static void test_logger_stdout (char *format, va_list l)
 
 static void print_version ()
 {
-    printf("Using %s\n", SSLeay_version(SSLEAY_VERSION));
+    // printf("Using %s\n", SSLeay_version(SSLEAY_VERSION));
 }
 
 
 static void show_usage_and_exit (void)
 {
-    printf("estclient \n");
-    printf("Usage:\n");
     fprintf(stderr, "\nAvailable EST client options\n"
             "  -v                Verbose operation\n"
             "  -g                Get CA certificate from EST server\n"
@@ -104,8 +102,8 @@ static void show_usage_and_exit (void)
             "  -k <keyfile>      Use with -c option to specify private key for the identity cert\n"
             "  -x <keyfile>      Use existing private key in the given file for signing the CSR\n"
             "  -y <csrfile>      Use existing CSR in the given file\n"
-            "  -s <server>       Enrollment server IP address\n"
-            "  -p <port>         TCP port number for enrollment server\n"
+            "  -s <server>       Enrollment server name or IP address; default: 127.0.0.1\n"
+            "  -p <port>         TCP port number for enrollment server; default: 8085\n"
             "  -o <dir>          Directory where pkcs7 certs will be written\n"
             "  -w <count>        Timeout in seconds to wait for server response (default=10)\n" //EST_SSL_READ_TIMEOUT_DEF
             "  -f                Runs EST Client in FIPS MODE = ON\n"
@@ -197,7 +195,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
     char *token_ptr = NULL;
     int token_len = 0;
 
-    printf("\nHTTP Token authentication credential callback invoked from EST client library\n");
+    printf("HTTP Token authentication credential callback invoked from EST client library\n");
     
     if (auth_credentials->mode == AUTH_TOKEN) {
         /*
@@ -225,7 +223,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
          */
         auth_credentials->auth_token = token_ptr;
 
-        printf("Returning access token = %s\n\n", auth_credentials->auth_token);
+        printf("Returning access token = %s\n", auth_credentials->auth_token);
         
         return (EST_HTTP_AUTH_CRED_SUCCESS);
     }
@@ -317,7 +315,8 @@ static int simple_enroll_attempt (EST_CTX *ectx)
     if (force_pop) {
         rv =  est_client_force_pop(ectx);
         if (rv != EST_ERR_NONE) {
-            printf("\nFailed to enable force PoP");
+            printf("\nFailed to enable force PoP\n");
+            return (rv);
         }
     }
 
@@ -335,7 +334,7 @@ static int simple_enroll_attempt (EST_CTX *ectx)
         X509_REQ_free(csr);
     }
     if (verbose) {
-        printf("\nenrollment rv = %d (%s) with pkcs7 length = %d\n",
+        printf("Enrollment rv = %d (%s) with pkcs7 length = %d\n",
                rv, EST_ERR_NUM_TO_STR(rv), pkcs7_len);
     }
     if (rv == EST_ERR_NONE) {
@@ -352,17 +351,6 @@ static int simple_enroll_attempt (EST_CTX *ectx)
         }
 
         rv = est_client_copy_enrolled_cert(ectx, new_client_cert);
-        if (verbose) {
-            printf("\nenrollment copy rv = %d\n", rv);
-        }
-        if (rv == EST_ERR_NONE) {
-            /*
-             * Enrollment copy worked, dump the pkcs7 cert to stdout
-             */
-            if (verbose) {
-                dumpbin(new_client_cert, pkcs7_len);
-            }
-        }
 
         snprintf(file_name, MAX_FILENAME_LEN, "%s/newcert", out_dir);
         save_cert(file_name, new_client_cert, pkcs7_len);
@@ -448,7 +436,7 @@ static int regular_csr_attempt (EST_CTX *ectx)
      */
     rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
     if (rv != EST_ERR_NONE) {
-        printf("\nWarning: CSR attributes were not available");
+        printf("Warning: CSR attributes were not available\n");
     } else {
         snprintf(file_name, MAX_FILENAME_LEN, "%s/csr.base64", out_dir);
         write_binary_file(file_name, attr_data, attr_len);
@@ -474,7 +462,7 @@ static int regular_enroll_attempt (EST_CTX *ectx)
      */
     rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
     if (rv != EST_ERR_NONE) {
-        printf("\nWarning: CSR attributes were not available");
+        printf("Warning: CSR attributes were not available\n");
         return (rv);
     }
 
@@ -482,20 +470,20 @@ static int regular_enroll_attempt (EST_CTX *ectx)
     csr = X509_REQ_new();
 
     if (csr == NULL) {
-        printf("\nFailed to get X509_REQ");
+        printf("\nFailed to get X509_REQ\n");
         return (EST_ERR_NO_CSR);
     }
     rv = populate_x509_csr(csr, priv_key, "EST-client");
 
     if (rv) {
-        printf("\nFailed to populate X509_REQ");
+        printf("\nFailed to populate X509_REQ\n");
         return (EST_ERR_X509_PUBKEY);
     }
 
 
     rv = est_decode_attributes_helper((char*)attr_data, attr_len, &der_ptr, &der_len);
     if (rv != EST_ERR_NONE) {
-        printf("\nFailed to decode attributes");
+        printf("\nFailed to decode attributes\n");
         return (rv);
     }
 
@@ -533,7 +521,7 @@ static int regular_enroll_attempt (EST_CTX *ectx)
                 break;
             }
             if (rv != EST_ERR_NONE) {
-                printf("\n Error adding NID=%d", nid);
+                printf("\n Error adding NID=%d\n", nid);
             }
         }
     }
@@ -543,7 +531,7 @@ static int regular_enroll_attempt (EST_CTX *ectx)
     rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, priv_key);
 
     if (verbose) {
-        printf("\nenrollment rv = %d (%s) with pkcs7 length = %d\n",
+        printf("Enrollment rv = %d (%s) with pkcs7 length = %d\n",
                rv, EST_ERR_NUM_TO_STR(rv), pkcs7_len);
     }
     if (rv == EST_ERR_NONE) {
@@ -560,17 +548,6 @@ static int regular_enroll_attempt (EST_CTX *ectx)
         }
 
         rv = est_client_copy_enrolled_cert(ectx, new_client_cert);
-        if (verbose) {
-            printf("\nenrollment copy rv = %d\n", rv);
-        }
-        if (rv == EST_ERR_NONE) {
-            /*
-             * Enrollment copy worked, dump the pkcs7 cert to stdout
-             */
-            if (verbose) {
-                dumpbin(new_client_cert, pkcs7_len);
-            }
-        }
 
         snprintf(file_name, MAX_FILENAME_LEN, "%s/newcert", out_dir);
         save_cert(file_name, new_client_cert, pkcs7_len);
@@ -586,10 +563,10 @@ static void retry_enroll_delay (int retry_delay, time_t retry_time)
 
     if (retry_delay != 0) {
         if (verbose) {
-            printf("\nwaiting for retry period specified by server\n");
+            printf("Waiting for retry period specified by server\n");
         }
         if (verbose) {
-            printf("\nduration can be set on estserver with -m <retry-period> (min is 60 seconds)\n");
+            printf("Duration can be set on estserver with -m <retry-period> (min is 60 seconds)\n");
         }
         sleep(retry_delay);
     } else {
@@ -611,18 +588,18 @@ static void retry_enroll_delay (int retry_delay, time_t retry_time)
 
             if (secs_to_wait <= 0) {
                 if (verbose) {
-                    printf("\nSpecified delay time is in the past. Proceed on to retry \n");
+                    printf("Specified delay time is in the past. Proceed on to retry\n");
                 }
             } else if (secs_to_wait <= 60 * 2) {
                 if (verbose) {
-                    printf("\nSpecified delay time is 2 minutes or less. Wait the specified time before retry \n");
+                    printf("Specified delay time is 2 minutes or less. Wait the specified time before retry\n");
                 }
                 sleep(secs_to_wait);
             } else {
                 if (verbose) {
-                    printf("\nSpecified delay time is more than 2 minutes in the future.  printing out the delay time and terminating\n");
+                    printf("Specified delay time is more than 2 minutes in the future.  printing out the delay time and terminating\n");
                 }
-                printf(" Delay time received from the server is: %s \n", ctime(&retry_time));
+                printf("Delay time received from the server is: %s\n", ctime(&retry_time));
                 return;
             }
         } else {
@@ -694,7 +671,7 @@ static void do_operation ()
         rv = est_client_get_cacerts(ectx, &pkcs7_len);
         if (rv == EST_ERR_NONE) {
             if (verbose) {
-                printf("\nGet CA Cert success\n");
+                printf("Get CA Cert success\n");
             }
 
             /*
@@ -708,7 +685,7 @@ static void do_operation ()
              * Dump the retrieved cert to stdout
              */
             if (verbose) {
-                dumpbin(pkcs7, pkcs7_len);
+                // dumpbin(pkcs7, pkcs7_len);
             }
 
             /*
@@ -723,7 +700,7 @@ static void do_operation ()
         }
     }
 
-    if (enroll && getcsr) {
+    if (rv == EST_ERR_NONE && enroll && getcsr) {
         operation = "Regular enrollment with server-defined attributes";
 
         rv = regular_enroll_attempt(ectx);
@@ -735,7 +712,7 @@ static void do_operation ()
              */
             rv = est_client_copy_retry_after(ectx, &retry_delay, &retry_time);
             if (verbose) {
-                printf("\nretry after period copy rv = %d "
+                printf("\nRetry-After period copy rv = %d "
                        "Retry-After delay seconds = %d "
                        "Retry-After delay time = %s\n",
                        rv, retry_delay, ctime(&retry_time) );
@@ -750,7 +727,7 @@ static void do_operation ()
 
         }
 
-    } else if (enroll && !getcsr) {
+    } else if (rv == EST_ERR_NONE && enroll && !getcsr) {
         operation = "Simple enrollment without server-defined attributes";
 
         rv = simple_enroll_attempt(ectx);
@@ -762,7 +739,7 @@ static void do_operation ()
              */
             rv = est_client_copy_retry_after(ectx, &retry_delay, &retry_time);
             if (verbose) {
-                printf("\nretry after period copy rv = %d "
+                printf("\nRetry-After period copy rv = %d "
                        "Retry-After delay seconds = %d "
                        "Retry-After delay time = %s\n",
                        rv, retry_delay, ctime(&retry_time) );
@@ -777,7 +754,7 @@ static void do_operation ()
             rv = simple_enroll_attempt(ectx);
         }
 
-    } else if (!enroll && getcsr) {
+    } else if (rv == EST_ERR_NONE && !enroll && getcsr) {
         operation = "Get CSR attribues";
 
         rv = regular_csr_attempt(ectx);
@@ -785,12 +762,12 @@ static void do_operation ()
     }
 
     /* Split reenroll from enroll to allow both messages to be sent */
-    if (reenroll) {
+    if (rv == EST_ERR_NONE && reenroll) {
         operation = "Re-enrollment";
 
         rv = est_client_reenroll(ectx, client_cert, &pkcs7_len, client_priv_key);
         if (verbose) {
-            printf("\nreenroll rv = %d (%s) with pkcs7 length = %d\n",
+            printf("Reenroll rv = %d (%s) with pkcs7 length = %d\n",
                    rv, EST_ERR_NUM_TO_STR(rv), pkcs7_len);
         }
         if (rv == EST_ERR_NONE) {
@@ -806,17 +783,6 @@ static void do_operation ()
             }
 
             rv = est_client_copy_enrolled_cert(ectx, new_client_cert);
-            if (verbose) {
-                printf("\nreenroll copy rv = %d\n", rv);
-            }
-            if (rv == EST_ERR_NONE) {
-                /*
-                 * Enrollment copy worked, dump the pkcs7 cert to stdout
-                 */
-                if (verbose) {
-                    dumpbin(new_client_cert, pkcs7_len);
-                }
-            }
 
             /*
              * Generate the output file name, which contains the thread ID
@@ -871,6 +837,8 @@ int main (int argc, char **argv)
      * Set the default common name to put into the Subject field
      */
     strncpy(subj_cn, "127.0.0.1", MAX_CN);
+
+    strncpy(est_server, "127.0.0.1", MAX_SERVER_LEN);
 
     memset(csr_file, 0, 1);
     memset(priv_key_file, 0, 1);
@@ -969,7 +937,7 @@ int main (int argc, char **argv)
                 ERR_print_errors(BIO_new_fp(stderr, BIO_NOCLOSE));
                 exit(1);
             } else {
-                printf("\nRunning EST Sample Client with FIPS MODE = ON\n");
+                printf("Running EST Sample Client with FIPS MODE = ON\n");
             };
             break;
         case 'w':
@@ -996,7 +964,12 @@ int main (int argc, char **argv)
     argv += optind;
 
     if (est_http_uid[0] && !est_http_pwd[0]) {
-        printf("Error: The password for HTTP authentication must be specified when the HTTP user name is set.\n");
+        printf("\nError: The password for HTTP authentication must be specified when the HTTP user name is set.\n");
+        exit(1);
+    }
+
+    if (!getcsr && !getcert && !enroll && !reenroll) {
+        printf("\nNothing to do; give at least one of the -g, -a, or -e/-r options\n");
         exit(1);
     }
 
@@ -1019,18 +992,18 @@ int main (int argc, char **argv)
 
     if (verbose) {
         print_version();
-        printf("\nUsing EST server %s:%d", est_server, est_port);
+        printf("Using EST server %s:%d\n", est_server, est_port);
         if (csr_file        [0]) {
-            printf("\nUsing CSR file %s", csr_file);
+            printf("Using CSR file %s\n", csr_file);
         }
         if (priv_key_file   [0]) {
-            printf("\nUsing identity private key file %s", priv_key_file);
+            printf("Using identity private key file %s\n", priv_key_file);
         }
         if (client_cert_file[0]) {
-            printf("\nUsing identity client cert file %s", client_cert_file);
+            printf("Using identity client cert file %s\n", client_cert_file);
         }
         if (client_key_file [0]) {
-            printf("\nUsing identity private key file %s", client_key_file);
+            printf("Using identity private key file %s\n", client_key_file);
         }
     }
 
@@ -1050,7 +1023,7 @@ int main (int argc, char **argv)
              * Get the trust anchor filename from the environment var
              */
             if (!getenv("EST_OPENSSL_CACERT")) {
-                printf("\nCACERT file not set, set EST_OPENSSL_CACERT to resolve");
+                printf("\nCACERT file not set, set EST_OPENSSL_CACERT to resolve\n");
                 exit(1);
             }
             trustanchor_file = getenv("EST_OPENSSL_CACERT");
@@ -1126,7 +1099,7 @@ int main (int argc, char **argv)
     }
 
     if (!priv_key_file[0] && enroll && !csr_file[0]) {
-	printf("\nA private key is required for enrolling.  Creating a new RSA key pair since you didn't provide a key using the -x option.");
+	printf("A private key is required for enrolling. Creating a new RSA key pair since you didn't provide a key using the -x option.\n");
         /*
          * Create a private key that will be used for the
          * enroll operation.
@@ -1178,7 +1151,6 @@ int main (int argc, char **argv)
     BIO_free(bio_err);
 #endif
 
-    printf("\n");
     return 0;
 }
 

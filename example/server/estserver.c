@@ -3,7 +3,7 @@
  *               EST server operations.  libest does not manage
  *               sockets and pthreads.  This responsibility is
  *               placed on the application.  This module shows
- *               a fairly trivial example of how to setup a
+ *               a fairly trivial example of how to set up a
  *               listening socket and handle EST requests.
  *
  * November, 2012
@@ -13,7 +13,9 @@
  **------------------------------------------------------------------
  */
 #include <stdio.h>
+#ifndef DISABLE_PTHREADS
 #include <pthread.h>
+#endif
 #include <stdint.h>
 #ifndef DISABLE_TSEARCH
 #include <search.h>
@@ -26,7 +28,7 @@
 #include <openssl/bio.h>
 #include <openssl/crypto.h>
 #include <est.h>
-#include "ossl_srv.h"
+#include "../util/ossl_srv.h"
 #include "../util/utils.h"
 #include "../util/simple_server.h"
 
@@ -133,7 +135,7 @@ static DH *get_dh1024dsa()
 
 static void print_version (FILE *fp)
 {
-    fprintf(fp, "Using %s\n", SSLeay_version(SSLEAY_VERSION));
+    // fprintf(fp, "Using %s\n", SSLeay_version(SSLEAY_VERSION));
 }
 
 static void show_usage_and_exit (void)
@@ -152,7 +154,7 @@ static void show_usage_and_exit (void)
             "  -o           Disable HTTP authentication when TLS client auth succeeds\n"
             "  -h           Use HTTP Digest auth instead of Basic auth\n"
             "  -b           Use HTTP Basic auth.  Causes explicit call to set Basic auth\n"
-	    "  -p <num>     TCP port number to listen on\n"
+	    "  -p <num>     TCP port number to listen on; default: 8085\n"
 #ifndef DISABLE_PTHREADS
 	    "  -d <seconds> Sleep timer to auto-shut the server\n"
 #endif
@@ -315,7 +317,10 @@ static void extract_sub_name(X509 *cert, char *name, int len)
  * The following functions are the callbacks used by libest to bind
  * the EST stack to the HTTP/SSL layer and the CA server.
  ***************************************************************************************/
+
+#ifndef DISABLE_PTHREADS
 pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+#endif
 #define MAX_CERT_LEN 8192
 /*
  * Callback function used by EST stack to process a PKCS10
@@ -342,7 +347,6 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
 {
     BIO *result = NULL;
     char *buf;
-    int rc;
     char sn[64];
     char file_name[MAX_FILENAME_LEN];
 
@@ -351,12 +355,12 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
 	 * Informational only
 	 */
 	if (user_id) {
-	    printf("\n%s - User ID is %s\n", __FUNCTION__, user_id);
+	    printf("%s - User ID is %s\n", __FUNCTION__, user_id);
 	}
 	if (peer_cert) {
 	    memset(sn, 0, 64);
 	    extract_sub_name(peer_cert, sn, 64);
-	    printf("\n%s - Peer cert CN is %s\n", __FUNCTION__, sn);
+	    printf("%s - Peer cert CN is %s\n", __FUNCTION__, sn);
 	}
 	if (app_data) {
 	    printf("ex_data value is %x\n", *((unsigned int *)app_data));
@@ -396,11 +400,13 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
     }
 #endif
 
-    rc = pthread_mutex_lock(&m);
+#ifndef DISABLE_PTHREADS
+    int rc = pthread_mutex_lock(&m);
     if (rc) {
-        printf("\nmutex lock failed rc=%d", rc);
+        printf("\nmutex lock failed rc=%d\n", rc);
         exit(1);
     }
+#endif
 
     if (write_csr) {
         /*
@@ -410,11 +416,17 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
         write_binary_file(file_name, pkcs10, p10_len);        
     }    
     
-    result = ossl_simple_enroll(pkcs10, p10_len);
+    result = ossl_simple_enroll(pkcs10, p10_len, NULL);
+#ifndef DISABLE_PTHREADS
     rc = pthread_mutex_unlock(&m);
     if (rc) {
-        printf("\nmutex unlock failed rc=%d", rc);
+        printf("\nmutex unlock failed rc=%d\n", rc);
         exit(1);
+    }
+#endif
+    if (result == NULL) {
+	fprintf(stderr, "ossl_simple_enroll was unsuccessful\n");
+	return EST_ERR_CA_ENROLL_FAIL;
     }
 
     /*
@@ -522,8 +534,8 @@ int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
          * Authorization Server would return either a success or failure
          * response.
 	 */
-        printf("\nConfigured for HTTP Token Authentication\n");
-        printf("Configured access token = %s \nClient access token received = %s\n\n",
+        printf("Configured for HTTP Token Authentication\n");
+        printf("Configured access token = %s \nClient access token received = %s\n",
                ah->auth_token, valid_token_value);
 
 	if (!strcmp(ah->auth_token, valid_token_value)) {
@@ -563,7 +575,7 @@ static int process_ssl_srp_auth (SSL *s, int *ad, void *arg) {
     user = SRP_VBASE_get_by_user(srp_db, login); 
 
     if (user == NULL) {
-	printf("User %s doesn't exist in SRP database\n", login);
+	printf("\nUser %s doesn't exist in SRP database\n", login);
 	return SSL3_AL_FATAL;
     }
 
@@ -585,6 +597,7 @@ static int process_ssl_srp_auth (SSL *s, int *ad, void *arg) {
 }
 
 
+#ifndef DISABLE_PTHREADS
 /*
  * We're using OpenSSL, both as the CA and libest
  * requires it.  OpenSSL requires these platform specific
@@ -605,6 +618,7 @@ static unsigned long ssl_id_callback (void)
 {
     return (unsigned long)pthread_self();
 }
+#endif
 
 /*
  * This routine destroys the EST context and frees 
@@ -612,8 +626,6 @@ static unsigned long ssl_id_callback (void)
  */
 void cleanup (void)
 {
-    int i;
-
     est_server_stop(ectx);
     est_destroy(ectx);
 
@@ -621,22 +633,27 @@ void cleanup (void)
 	SRP_VBASE_free(srp_db);
     }
 
+#ifndef DISABLE_PTHREADS
     /*
      * Tear down the mutexes used by OpenSSL
      */
     CRYPTO_set_locking_callback(NULL);
+    int i;
     for (i = 0; i < CRYPTO_num_locks(); i++) {
         pthread_mutex_destroy(&ssl_mutexes[i]);
     }
     CRYPTO_set_locking_callback(NULL);
     CRYPTO_set_id_callback(NULL);
     free(ssl_mutexes);
+    pthread_mutex_destroy(&m);
+#endif
 
     BIO_free(bio_err);
-    free(cacerts_raw);
-    free(trustcerts);
+    if (cacerts_raw)
+	free(cacerts_raw);
+    if (trustcerts)
+	free(trustcerts);
     est_apps_shutdown();
-    pthread_mutex_destroy(&m);
 }
 
 
@@ -650,8 +667,6 @@ void cleanup (void)
 int main (int argc, char **argv)
 {
     char c;
-    int i;
-    int size;
     X509 *x;
     EVP_PKEY *priv_key;
     BIO *certin, *keyin;
@@ -668,9 +683,9 @@ int main (int argc, char **argv)
         {NULL, 0, NULL, 0}
     };
     
-    /* Show usage if -h or --help options are specified */
+    /* Show usage if -? or --help options are specified */
     if ((argc == 1) ||
-        (argc == 2 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")))) {
+        (argc == 2 && (!strcmp(argv[1], "-?") || !strcmp(argv[1], "--help")))) {
         show_usage_and_exit();
     }
 
@@ -757,7 +772,7 @@ int main (int argc, char **argv)
 	      printf("\nERROR WHILE SETTING FIPS MODE ON exiting ....\n"); 
 	      exit(1);
 	    } else {
-	      printf("\nRunning EST Sample Server with FIPS MODE = ON !\n");
+	      printf("Running EST Sample Server with FIPS MODE = ON !\n");
 	    };
 	    break;
         default:
@@ -773,15 +788,15 @@ int main (int argc, char **argv)
     }
 
     if (getenv("EST_CSR_ATTR")) {
-	printf("\nUsing CSR Attributes: %s", getenv("EST_CSR_ATTR"));
+	printf("Using CSR Attributes: %s\n", getenv("EST_CSR_ATTR"));
     }
 
     if (!getenv("EST_CACERTS_RESP")) {
-        printf("\nEST_CACERTS_RESP file not set, set this env variable to resolve");
+        printf("\nEST_CACERTS_RESP file not set, set this env variable to resolve\n");
         exit(1);
     }
     if (!getenv("EST_TRUSTED_CERTS")) {
-        printf("\nEST_TRUSTED_CERTS file not set, set this env variable to resolve");
+        printf("\nEST_TRUSTED_CERTS file not set, set this env variable to resolve\n");
         exit(1);
     }
 
@@ -877,14 +892,14 @@ int main (int argc, char **argv)
      * Change the retry-after period.  This is not
      * necessary, it's only shown here as an example.
      */
-    if (verbose) printf("\nRetry period being set to: %d \n", retry_period);
+    if (verbose) printf("Retry period being set to: %d \n", retry_period);
     est_server_set_retry_period(ectx, retry_period);
 
     if (crl) {
 	est_enable_crl(ectx);
     }
     if (!pop) {
-	if (verbose) printf("\nDisabling PoP check");
+	if (verbose) printf("Disabling PoP check\n");
 	est_server_disable_pop(ectx);
     }
 
@@ -930,7 +945,7 @@ int main (int argc, char **argv)
 	}    
     }
     if (disable_forced_http_auth) {
-	if (verbose) printf("\nDisabling HTTP authentication when TLS client auth succeeds\n");
+	if (verbose) printf("Disabling HTTP authentication when TLS client auth succeeds\n");
 	if (est_set_http_auth_required(ectx, HTTP_AUTH_NOT_REQUIRED)) {
 	    printf("\nUnable disable required HTTP auth.  Aborting!!!\n");
 	    exit(1);
@@ -970,22 +985,25 @@ int main (int argc, char **argv)
     }
     DH_free(dh);
 
+#ifndef DISABLE_PTHREADS
     /*
      * Install thread locking mechanism for OpenSSL
      */
-    size = sizeof(pthread_mutex_t) * CRYPTO_num_locks();
+    int size = sizeof(pthread_mutex_t) * CRYPTO_num_locks();
     if ((ssl_mutexes = (pthread_mutex_t*)malloc((size_t)size)) == NULL) {
-        printf("Cannot allocate mutexes");
+        printf("\nCannot allocate mutexes\n");
 	exit(1);
     }   
 
+    int i;
     for (i = 0; i < CRYPTO_num_locks(); i++) {
         pthread_mutex_init(&ssl_mutexes[i], NULL);
     }
     CRYPTO_set_locking_callback(&ssl_locking_callback);
     CRYPTO_set_id_callback(&ssl_id_callback);
+#endif
 
-    printf("\nLaunching EST server...\n");
+    printf("Launching EST server...\n");
 
     rv = est_server_start(ectx);
     if (rv != EST_ERR_NONE) {

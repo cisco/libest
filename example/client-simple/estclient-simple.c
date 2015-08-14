@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------
- * estclient-simple.c - Example application that utilizes libest.so for
+ * estclient-simple.c - Simple example application that utilizes libest for
  *               EST client operations.  This module utilizes OpenSSL
  *               for SSL and crypto services. 
  *
@@ -36,7 +36,7 @@ static char est_srp_uid[MAX_UID_LEN];
 static char est_srp_pwd[MAX_PWD_LEN];
 static char est_server[MAX_SERVER_LEN];
 static char est_auth_token[MAX_AUTH_TOKEN_LEN];
-static int est_port;
+static int est_port = 8085;
 static int srp = 0;
 static int token_auth_mode = 0;
 
@@ -46,19 +46,19 @@ static int token_auth_mode = 0;
 
 static void print_version () 
 {
-    printf("Using %s\n", SSLeay_version(SSLEAY_VERSION));
+    // printf("Using %s\n", SSLeay_version(SSLEAY_VERSION));
 }
 
 
 static void show_usage_and_exit (void) 
 {
-    printf("estclient \n");
     printf("Usage:\n");
     printf("\nAvailable client OPTIONS\n"
-	"  -s <server>       Enrollment server IP address\n"
-	"  -p <port#>        TCP port# for enrollment server\n"
+	"  -s <server>       Enrollment server name or IP address; default: 127.0.0.1\n"
+	"  -p <port>         TCP port number of enrollment server; default: 8085\n"
 	"  -u                Specify user name for HTTP authentication.\n"
 	"  -h                Specify password for HTTP authentication.\n"
+	"  -?                Print this help message and exit\n"
 	"  --srp                       Enable TLS-SRP cipher suites.  Use with --srp-user and --srp-password options.\n"
 	"  --srp-user     <string>     Specify the SRP user name.\n"
 	"  --srp-password <string>     Specify the SRP password.\n"
@@ -97,7 +97,7 @@ static EVP_PKEY * generate_private_key (void)
     eckey = EC_KEY_new();
     EC_KEY_set_group(eckey, group); 
     if (!EC_KEY_generate_key(eckey)) {
-	printf("Failed to generate EC key\n");
+	printf("\nFailed to generate EC key\n");
         exit(1);
     }
     out = BIO_new(BIO_s_mem());
@@ -162,7 +162,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb(EST_HTTP_AUTH_HDR *auth_credenti
     char *token_ptr = NULL;
     int token_len = 0;
 
-    printf("\nHTTP Token authentication credential callback invoked from EST client library\n");
+    printf("HTTP Token authentication credential callback invoked from EST client library\n");
     
     if (auth_credentials->mode == AUTH_TOKEN) {
         /*
@@ -190,7 +190,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb(EST_HTTP_AUTH_HDR *auth_credenti
          */
         auth_credentials->auth_token = token_ptr;
 
-        printf("Returning access token = %s\n\n", auth_credentials->auth_token);
+        printf("Returning access token = %s\n", auth_credentials->auth_token);
         
         return (EST_HTTP_AUTH_CRED_SUCCESS);
     }
@@ -282,6 +282,8 @@ int main (int argc, char **argv)
     };
     int option_index = 0;
 
+    strncpy(est_server, "127.0.0.1", MAX_SERVER_LEN);
+
     est_http_uid[0] = 0x0;
     est_http_pwd[0] = 0x0;
 
@@ -329,7 +331,7 @@ int main (int argc, char **argv)
     argv += optind;
 
     if (est_http_uid[0] && !est_http_pwd[0]) {
-	printf ("Error: The password for HTTP authentication must be specified when the HTTP user name is set.\n");
+	printf ("\nError: The password for HTTP authentication must be specified when the HTTP user name is set.\n");
 	exit(1);
     }
 
@@ -339,16 +341,20 @@ int main (int argc, char **argv)
     est_apps_startup();
         
     print_version();
-    printf("\nUsing EST server %s:%d", est_server, est_port);
+    printf("Using EST server %s:%d\n", est_server, est_port);
 
     /*
      * Read in the trusted certificates, which are used by
      * libest to verify the identity of the EST server.
      */
     trustanchor_file = getenv("EST_OPENSSL_CACERT");
+    if (!trustanchor_file) {
+	printf("\nCACERT file not set, set EST_OPENSSL_CACERT to resolve\n");
+	exit(1);
+    }
     cacerts_len = read_binary_file(trustanchor_file, &cacerts);
     if (cacerts_len <= 0) {
-        printf("\nTrusted certs file could not be read.  Did you set EST_OPENSSL_CACERT?\n");
+        printf("\nTrusted certs file %s could not be read.\n", trustanchor_file);
         exit(1);
     }
     
@@ -419,14 +425,13 @@ int main (int argc, char **argv)
     write_binary_file(ca_file_name, new_certs, ca_certs_len); 
     free(new_certs);
 
-    printf("\n\nSuccess!!!\n");
+    // printf("\nSuccess!!!\n");
    
     free(cacerts);
     est_destroy(ectx);
 
     est_apps_shutdown();
 
-    printf("\n");
     return 0;
 }
 
