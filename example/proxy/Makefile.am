@@ -14,5 +14,6 @@ PTHREAD=-lpthread
 endif
 
 estproxy_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto 
+estproxy_DEPENDENCIES = ../../src/est/.libs/libest.la
 
 EXTRA_DIST = createRA.sh runproxy.sh estExampleCA.cnf

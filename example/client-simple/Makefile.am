@@ -8,3 +8,4 @@ else
 DL=-ldl
 endif
 estclient_simple_LDFLAGS = -L../../src/est/.libs $(DL) -lest -lssl -lcrypto 
+estclient_simple_DEPENDENCIES = ../../src/est/.libs/libest.la

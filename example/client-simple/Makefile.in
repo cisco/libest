@@ -290,6 +290,7 @@ AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -I$(SSL_CFLAGS) -g
 @FREEBSD_FALSE@DL = -ldl
 @FREEBSD_TRUE@DL = 
 estclient_simple_LDFLAGS = -L../../src/est/.libs $(DL) -lest -lssl -lcrypto 
+estclient_simple_DEPENDENCIES = ../../src/est/.libs/libest.la
 all: all-am
 
 .SUFFIXES:
