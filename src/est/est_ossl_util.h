@@ -13,6 +13,7 @@
 
 #include "est.h"
 
+char *ossl_error_string(int err_code);
 int ossl_verify_cb(int ok, X509_STORE_CTX *ctx);
 void ossl_dump_ssl_errors(void);
 EST_ERROR ossl_init_cert_store (X509_STORE *store,

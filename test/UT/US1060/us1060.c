@@ -819,7 +819,7 @@ static void us1060_test105 ()
      * Attempt to provision a new cert
      */
     rv = est_client_enroll(ectx, "US1060_TEST105", &pkcs7_len, new_key);
-    CU_ASSERT(rv == EST_ERR_SSL_CONNECT);
+    CU_ASSERT(rv == EST_ERR_AUTH_CERT);
 
     /*
      * Cleanup
@@ -1105,7 +1105,7 @@ static void us1060_test107 ()
      * Attempt to provision a cert w/o using a
      * trust anchor.  We should see an SSL connection error.
      */
-    us1060_easy_provision(1, 0, NULL, US1060_TLS_PORT, EST_ERR_SSL_CONNECT);
+    us1060_easy_provision(1, 0, NULL, US1060_TLS_PORT, EST_ERR_SSL_CIPHER_LIST);
 
 
     /*

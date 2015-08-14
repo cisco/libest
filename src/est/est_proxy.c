@@ -1,4 +1,3 @@
-/** @file */
 /*------------------------------------------------------------------
  * est/est_proxy.c - EST Proxy specific code
  *
@@ -704,7 +703,7 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
             return (EST_ERR_WRONG_METHOD);
         }
 	if (!ct) {
-            EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
+            EST_LOG_WARN("Incoming HTTP header has no Content-Type header");
             est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
 	    return (EST_ERR_BAD_CONTENT_TYPE); 
 	}
@@ -720,7 +719,7 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
 
         rc = est_proxy_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, 0);
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
-            EST_LOG_WARN("Enrollment failed with rc=%d (%s)\n", 
+            EST_LOG_WARN("Enrollment failed with rc=%d (%s)", 
 		         rc, EST_ERR_NUM_TO_STR(rc));
 	    if (rc == EST_ERR_AUTH_FAIL) {
 		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
@@ -741,7 +740,7 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
             return (EST_ERR_WRONG_METHOD);
         }
 	if (!ct) {
-            EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
+            EST_LOG_WARN("Incoming HTTP header has no Content-Type header");
             est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
 	    return (EST_ERR_BAD_CONTENT_TYPE); 
 	}
@@ -757,7 +756,7 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
 
         rc = est_proxy_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, 1);
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
-            EST_LOG_WARN("Reenroll failed with rc=%d (%s)\n", 
+            EST_LOG_WARN("Reenroll failed with rc=%d (%s)", 
 		         rc, EST_ERR_NUM_TO_STR(rc));
 	    if (rc == EST_ERR_AUTH_FAIL) {
 		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
@@ -781,7 +780,7 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
             return (EST_ERR_WRONG_METHOD);
         }
 	if (!ct) {
-            EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
+            EST_LOG_WARN("Incoming HTTP header has no Content-Type header");
 	    return (EST_ERR_BAD_CONTENT_TYPE); 
 	}
         if (est_proxy_handle_keygen(ctx)) {

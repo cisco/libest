@@ -295,6 +295,9 @@ void est_hex_to_str(char *dst, unsigned char *src, int len);
 void est_base64_encode(const unsigned char *src, int src_len, char *dst);
 int est_base64_decode(const char *src, char *dst, int max_len);
 
+/* From est_server_http.c */
+int wait_for_read(int socket, int usec);
+
 /* From est_server.c */
 int est_http_request(EST_CTX *ctx, void *http_ctx,
                      char *method, char *uri,

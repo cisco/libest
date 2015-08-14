@@ -1,4 +1,3 @@
-/** @file */
 /*------------------------------------------------------------------
  * est/est_server.c - EST Server specific code
  *
@@ -10,9 +9,14 @@
  * April, 2013
  *
  * Copyright (c) 2013-2014 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
+
+// 2015-08-13 improved logging and error handling, preventing NULL pointer access
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -98,7 +102,8 @@ int est_handle_cacerts (EST_CTX *ctx, void *http_ctx)
     if (ctx->ca_certs  == NULL) {
         return (EST_ERR_HTTP_NOT_FOUND);
     }
-        
+    EST_LOG_INFO("CACerts to be sent:\n%.*s", ctx->ca_certs_len, ctx->ca_certs);
+
     /*
      * Send HTTP header
      */
@@ -1023,7 +1028,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
     case EST_CERT_AUTH:
 	/*
 	 * this means the user was authorized, either through
-	 * HTTP authoriztion or certificate authorization
+	 * HTTP authentication or certificate authentication
 	 */
         break;
     case EST_HTTP_AUTH_PENDING:
@@ -1067,8 +1072,8 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
 
     /*
      * Do the PoP check (Proof of Possession).  The challenge password
-     * in the pkcs10 request should match the TLS uniqe ID.
-     * The PoP check is not performend when the client is an RA.
+     * in the pkcs10 request should match the TLS unique ID.
+     * The PoP check is not performed when the client is an RA.
      */
     if (!client_is_ra) {
 	rv = est_tls_uid_auth(ctx, ssl, csr);
@@ -1081,7 +1086,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
 
     if (reenroll && !client_is_ra && peer_cert) {
 	/*
-	 * As specified in RFC 7030 section 2.3, the TLS peer certitificate
+	 * As specified in RFC 7030 section 2.3, the TLS peer certifificate
 	 * is not necessarily the one that is being re-enrolled. Thus:
 	 * TODO generalize this invocation of the subject name match check
 	 * such that it takes into account also other sources of the previous cert.
@@ -1268,6 +1273,7 @@ static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx)
 	csr_data[ctx->server_csrattrs_len] = 0;
 	csr_len = ctx->server_csrattrs_len;
     }
+    EST_LOG_INFO("CSR attributes to be sent:\n%.*s", csr_len, csr_data);
     return (est_send_csrattr_data(ctx, csr_data, csr_len, http_ctx));
 }
 
@@ -1328,12 +1334,12 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     else if (strncmp(uri, EST_SIMPLE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strncmp(method, "POST", 4)) {
-            EST_LOG_WARN("Incoming HTTP request used wrong method\n");
+            EST_LOG_WARN("Incoming HTTP request used wrong method");
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
             return (EST_ERR_WRONG_METHOD);
         }
 	if (!ct) {
-            EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
+            EST_LOG_WARN("Incoming HTTP header has no Content-Type header");
             est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
 	    return (EST_ERR_BAD_CONTENT_TYPE); 
 	}
@@ -1349,7 +1355,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
 
         rc = est_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, 0);
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
-            EST_LOG_WARN("Enrollment failed with rc=%d (%s)\n", 
+            EST_LOG_WARN("Enrollment failed with rc=%d (%s)",
 		         rc, EST_ERR_NUM_TO_STR(rc));
 	    if (rc == EST_ERR_AUTH_FAIL) {
 		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
@@ -1366,12 +1372,12 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     else if (strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strncmp(method, "POST", 4)) {
-            EST_LOG_WARN("Incoming HTTP request used wrong method\n");
+            EST_LOG_WARN("Incoming HTTP request used wrong method");
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
             return (EST_ERR_WRONG_METHOD);
         }
 	if (!ct) {
-            EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
+            EST_LOG_WARN("Incoming HTTP header has no Content-Type header");
             est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
 	    return (EST_ERR_BAD_CONTENT_TYPE); 
 	}
@@ -1387,7 +1393,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
 
         rc = est_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, 1);
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
-            EST_LOG_WARN("Reenroll failed with rc=%d (%s)\n", 
+            EST_LOG_WARN("Re-enrollment failed with rc=%d (%s)",
 		         rc, EST_ERR_NUM_TO_STR(rc));
 	    if (rc == EST_ERR_AUTH_FAIL) {
 		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
@@ -1406,12 +1412,12 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     else if (strncmp(uri, EST_KEYGEN_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strncmp(method, "POST", 4)) {
-            EST_LOG_WARN("Incoming HTTP request used wrong method\n");
+            EST_LOG_WARN("Incoming HTTP request used wrong method");
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
             return (EST_ERR_WRONG_METHOD);
         }
 	if (!ct) {
-            EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
+            EST_LOG_WARN("Incoming HTTP header has no Content-Type header");
 	    return (EST_ERR_BAD_CONTENT_TYPE); 
 	}
         if (est_handle_keygen(ctx)) {
@@ -1427,7 +1433,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     else if (strncmp(uri, EST_CSR_ATTRS_URI, EST_URI_MAX_LEN) == 0) {
         /* Only GET is allowed */
         if (strncmp(method, "GET", 4)) {
-            EST_LOG_WARN("Incoming HTTP request used wrong method\n");
+            EST_LOG_WARN("Incoming HTTP request used wrong method");
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
             return (EST_ERR_WRONG_METHOD);
         }
@@ -1473,8 +1479,8 @@ EST_ERROR est_server_start (EST_CTX *ctx)
     }
 
     mgctx = mg_start(ctx);
+    ctx->mg_ctx = mgctx;
     if (mgctx) {
-        ctx->mg_ctx = mgctx;
         return (EST_ERR_NONE);
     } else {
         return (EST_ERR_NO_SSL_CTX);
@@ -1627,7 +1633,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
         return NULL;
     }
     if (est_load_trusted_certs(ctx, ca_chain, ca_chain_len)) {
-        EST_LOG_ERR("Failed to load trusted certficate store");
+        EST_LOG_ERR("Failed to load trusted certificate store");
 	free(ctx);
         return NULL;
     }

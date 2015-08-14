@@ -1,4 +1,3 @@
-/** @file */
 /*------------------------------------------------------------------
  * est_ossl_util.c - Interface between EST server and OpenSSL for
  *                   EST server operations.  Some of this code was taken
@@ -9,6 +8,8 @@
  * November, 2012
  *
  * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -73,6 +74,7 @@
  * and donated 'to the cause' along with lots and lots of other fixes to
  * the library. */
 
+// 2015-08-13 improved error handling and reporting
 
 #include <stdio.h>
 #include <openssl/x509v3.h>
@@ -82,6 +84,22 @@
 #include "est_ossl_util.h"
 #include "est.h"
 #include "est_locl.h"
+
+char *ossl_error_string(int err_code)
+{
+    static char *strings[] = {
+	"SSL_ERROR_NONE",
+	"SSL_ERROR_SSL",
+	"SSL_ERROR_WANT_READ",
+	"SSL_ERROR_WANT_WRITE",
+	"SSL_ERROR_WANT_X509_LOOKUP",
+	"SSL_ERROR_SYSCALL",
+	"SSL_ERROR_ZERO_RETURN",
+	"SSL_ERROR_WANT_CONNECT",
+	"SSL_ERROR_WANT_ACCEPT" };
+    return (0 <= err_code && err_code < sizeof(strings)/sizeof(*strings) ?
+	      strings[err_code] : "unknown SSL error code");
+}
 
 /*****************************************************************************************
 * Authorization routines
@@ -100,7 +118,7 @@ int ossl_verify_cb (int ok, X509_STORE_CTX *ctx)
                                   0, XN_FLAG_ONELINE);
             printf("\n");
         }
-        EST_LOG_INFO("%serror %d at %d depth lookup:%s\n",
+        EST_LOG_INFO("%serror %d at %d depth lookup: %s",
                      X509_STORE_CTX_get0_parent_ctx(ctx) ? "[CRL path]" : "",
                      cert_error,
                      X509_STORE_CTX_get_error_depth(ctx),
@@ -162,7 +180,7 @@ static int ossl_init_cert_store_from_raw (X509_STORE *store,
 
     in = BIO_new_mem_buf(raw, size);
     if (in == NULL) {
-        EST_LOG_ERR("Unable to open the raw CA cert buffer\n");
+        EST_LOG_ERR("Unable to open the raw CA cert buffer");
         return 0;
     }
 
@@ -243,7 +261,9 @@ void ossl_dump_ssl_errors ()
     ERR_print_errors(e);
     (void)BIO_flush(e);
     BIO_get_mem_ptr(e, &bptr);
-    EST_LOG_WARN("OSSL error: %s", bptr->data); 
+    if (bptr->data) {
+	EST_LOG_WARN("OpenSSL error: %s", bptr->data);
+    }
     BIO_free_all(e);
 }
 
