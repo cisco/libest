@@ -1,6 +1,6 @@
 bin_PROGRAMS = estserver
 estclient_includedir=$(includedir)/est
-estserver_SOURCES = estserver.c ossl_srv.c ../util/utils.c ../util/simple_server.c 
+estserver_SOURCES = estserver.c ../util/ossl_srv.c ../util/utils.c ../util/simple_server.c 
 AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -I$(SSL_CFLAGS) -g
 if FREEBSD 
 DL=
@@ -17,4 +17,4 @@ endif
 estserver_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto 
 estserver_DEPENDENCIES = ../../src/est/.libs/libest.la
 
-EXTRA_DIST = ossl_srv.h apps.h createCA.sh ext.cnf ESTcommon.sh runserver.sh estExampleCA.cnf extExampleCA.cnf
+EXTRA_DIST = ../util/ossl_srv.h apps.h createCA.sh ext.cnf ESTcommon.sh runserver.sh estExampleCA.cnf extExampleCA.cnf

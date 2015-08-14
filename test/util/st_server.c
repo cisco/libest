@@ -8,15 +8,20 @@
  * August, 2013
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
- *------------------------------------------------------------------
+ **------------------------------------------------------------------
  */
+
+// 2015-08-14 sharing master_thread() with unit tests, more efficient synchronization
+// 2015-08-14 using start_single_server() and stop_single_server() of simple_server.c
+
 #include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <signal.h>
-#include <pthread.h>
 #include <fcntl.h>
 #define __USE_GNU
 #include <search.h>
@@ -26,7 +31,8 @@
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
 #include <est.h>
-#include "ossl_srv.h"
+#include "../../example/util/ossl_srv.h"
+#include "../../example/util/simple_server.h"
 #include "test_utils.h"
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -35,9 +41,8 @@
 
 
 BIO *bio_err = NULL;
-static int tcp_port;
 static int manual_enroll = 0;
-volatile int stop_flag = 0;
+void *server_data = NULL;
 unsigned char *cacerts_raw = NULL;
 int cacerts_len = 0;
 EST_CTX *ectx;
@@ -205,7 +210,7 @@ static int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
 	/* We have a match, allow the enrollment */
 	rv = 1;	
 	tdelete(n, (void **)&lookup_root, compare);
-	printf("\nRemoving key from lookup table:\n");
+	printf("Removing key from lookup table:\n");
 	dumpbin((char*)n->data, n->length);
 	free(n->data);
 	free(n);
@@ -213,7 +218,7 @@ static int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
 	/* Not a match, add it to the list and return */
 	l = tsearch(n, (void **)&lookup_root, compare);
 	rv = 0;
-	printf("\nAdding key to lookup table:\n");
+	printf("Adding key to lookup table:\n");
 	dumpbin((char*)n->data, n->length);
     }
 DONE:
@@ -452,70 +457,14 @@ static void cleanup()
     //est_apps_shutdown();
 }
 
-static void* master_thread (void *arg)
-{
-    int sock;                 
-    struct sockaddr_in6 addr;
-    int on = 1;
-    int rc;
-    int flags;
-    int new;
-    socklen_t len;
-
-    memset(&addr, 0x0, sizeof(struct sockaddr_in6));
-    addr.sin6_family = AF_INET6;
-//    addr.sin6_family = AF_INET;
-    addr.sin6_port = htons((uint16_t)tcp_port);
-
-    sock = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
-    if (sock == -1) {
-        fprintf(stderr, "\nsocket call failed\n");
-        exit(1);
-    }
-    // Needs to be done to bind to both :: and 0.0.0.0 to the same port
-    int no = 0;
-    setsockopt(sock, SOL_SOCKET, IPV6_V6ONLY, (void *)&no, sizeof(no));
-
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(on));
-    setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char*)&on, sizeof(on));
-    flags = fcntl(sock, F_GETFL, 0);
-    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
-    rc = bind(sock, (const struct sockaddr*)&addr, sizeof(addr));
-    if (rc == -1) {
-        fprintf(stderr, "\nbind call failed\n");
-        exit(1);
-    }
-    listen(sock, SOMAXCONN);
-    stop_flag = 0;
-
-    while (stop_flag == 0) {
-        len = sizeof(addr);
-        new = accept(sock, (struct sockaddr*)&addr, &len);
-        if (new < 0) {
-	    /*
-	     * this is a bit cheesy, but much easier to implement than using select()
-	     */
-            usleep(100);
-        } else {
-            if (stop_flag == 0) {
-		est_server_handle_request(ectx, new);
-		close(new);
-            }
-        }
-    }
-    close(sock);
-    cleanup();
-    return NULL;
-}
-
-
 /*
  * Call this function to stop the single-threaded simple EST server
  */
 void st_stop ()
 {
-    stop_flag = 1;
-    sleep(2);
+    stop_single_server(server_data);
+    cleanup();
+    printf("Stopped EST server.\n");
 }
 
 /*
@@ -559,7 +508,9 @@ static int st_start_internal (
     BIO *certin, *keyin;
     DH *dh;
     EST_ERROR rv;
-    pthread_t thread;
+
+    est_set_log_source(EST_SERVER);
+    printf("\nLaunching EST server...\n");
 
     manual_enroll = simulate_manual_enroll;
 
@@ -569,7 +520,7 @@ static int st_start_internal (
      */
     cacerts_len = read_binary_file(ca_chain_file, &cacerts_raw);
     if (cacerts_len <= 0) {
-        printf("\nCA chain file %s file could not be read\n", ca_chain_file);
+        printf("CA chain file %s file could not be read\n", ca_chain_file);
         return (-1);
     }
     /*
@@ -579,8 +530,7 @@ static int st_start_internal (
     if (trusted_certs_file) {
         trustcerts_len = read_binary_file(trusted_certs_file, &trustcerts);
         if (trustcerts_len <= 0) {
-            printf("\nTrusted certs file %s could not be read\n", 
-		    trusted_certs_file);
+            printf("Trusted certs file %s could not be read\n", trusted_certs_file);
             return (-1);
         }
     }
@@ -599,7 +549,7 @@ static int st_start_internal (
      */
     certin = BIO_new(BIO_s_file_internal());
     if (BIO_read_filename(certin, certfile) <= 0) {
-	printf("\nUnable to read server certificate file %s\n", certfile);
+	printf("Unable to read server certificate file %s\n", certfile);
 	return (-1);
     }
     /*
@@ -608,7 +558,7 @@ static int st_start_internal (
      */
     x = PEM_read_bio_X509(certin, NULL, NULL, NULL);
     if (x == NULL) {
-	printf("\nError while reading PEM encoded server certificate file %s\n", certfile);
+	printf("Error while reading PEM encoded server certificate file %s\n", certfile);
 	return (-1);
     }
     BIO_free(certin);
@@ -619,7 +569,7 @@ static int st_start_internal (
      */
     keyin = BIO_new(BIO_s_file_internal());
     if (BIO_read_filename(keyin, keyfile) <= 0) {
-	printf("\nUnable to read server private key file %s\n", keyfile);
+	printf("Unable to read server private key file %s\n", keyfile);
 	return (-1);
     }
     /*
@@ -629,7 +579,7 @@ static int st_start_internal (
      */
     priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
     if (priv_key == NULL) {
-	printf("\nError while reading PEM encoded private key file %s\n", certfile);
+	printf("Error while reading PEM encoded private key file %s\n", certfile);
 	return (-1);
     }
     BIO_free(keyin);
@@ -640,7 +590,7 @@ static int st_start_internal (
 
     bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
     if (!bio_err) {
-        printf("\nBIO not working\n");
+        printf("BIO not working\n");
         return (-1);
     }
 
@@ -648,7 +598,7 @@ static int st_start_internal (
                            cacerts_raw, cacerts_len, 
 	                   EST_CERT_FORMAT_PEM, realm, x, priv_key);
     if (!ectx) {
-        printf("\nUnable to initialize EST context.  Aborting!!!\n");
+        printf("Unable to initialize EST context.  Aborting!!!\n");
         return (-1);
     }
 
@@ -661,19 +611,19 @@ static int st_start_internal (
     }
 
     if (est_set_ca_enroll_cb(ectx, &process_pkcs10_enrollment)) {
-        printf("\nUnable to set EST pkcs10 enrollment callback.  Aborting!!!\n");
+        printf("Unable to set EST pkcs10 enrollment callback.  Aborting!!!\n");
         return (-1);
     }
     if (est_set_ca_reenroll_cb(ectx, &process_pkcs10_enrollment)) {
-        printf("\nUnable to set EST pkcs10 enrollment callback.  Aborting!!!\n");
+        printf("Unable to set EST pkcs10 enrollment callback.  Aborting!!!\n");
         return (-1);
     }
     if (est_set_csr_cb(ectx, &process_csrattrs_request)) {
-        printf("\nUnable to set EST CSR Attributes callback.  Aborting!!!\n");
+        printf("Unable to set EST CSR Attributes callback.  Aborting!!!\n");
         return (-1);
     }
     if (est_set_http_auth_cb(ectx, &process_http_auth)) {
-        printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");
+        printf("Unable to set EST HTTP AUTH callback.  Aborting!!!\n");
         return (-1);
     }    
 
@@ -692,39 +642,35 @@ static int st_start_internal (
     if (enable_srp) {
 	srp_db = SRP_VBASE_new(NULL);
 	if (!srp_db) {
-	    printf("\nUnable allocate SRP verifier database.  Aborting!!!\n");
+	    printf("Unable allocate SRP verifier database.  Aborting!!!\n");
 	    return(-1); 
 	}
 	if (SRP_VBASE_init(srp_db, srp_vfile) != SRP_NO_ERROR) {
-	    printf("\nUnable initialize SRP verifier database %s.  Aborting!!!\n", srp_vfile);
+	    printf("Unable initialize SRP verifier database %s.  Aborting!!!\n", srp_vfile);
 	    return(-1); 
 	}
 	
 	if (est_server_enable_srp(ectx, &ssl_srp_server_param_cb)) { 
-	    printf("\nUnable to enable SRP.  Aborting!!!\n");
+	    printf("Unable to enable SRP.  Aborting!!!\n");
 	    return(-1);
 	}
     }
 
-    printf("\nLaunching EST server...\n");
-
     rv = est_server_start(ectx);
     if (rv != EST_ERR_NONE) {
-        printf("\nFailed to init mg\n");
+        printf("Failed to init mg\n");
         return (-1);
     }
 
     // Start master (listening) thread
-    tcp_port = listen_port;
-    pthread_create(&thread, NULL, master_thread, NULL);
-
-    sleep(2);
+    server_data = start_single_server (ectx, listen_port, 0/* better IP v4, not v6 */);
     /*
      * clean up
      */
     EVP_PKEY_free(priv_key);
     X509_free(x);
 
+    est_set_log_source(EST_CLIENT);
     return 0;
 }
 
