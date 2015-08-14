@@ -564,9 +564,7 @@ void us1883_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
  * - application layer DOES NOT register its callback
  * - EST Client gets the challenge, finds no callback registered and goes with
  *   the credentials it has stored in the Context, which is nothing.
- *   NOTE: This is the way the preloaded credential flow has always worked.
- * - enroll is sent with no token credentials
- * - server fails and does not give a certificate
+ *   It ends up with EST_ERR_HTTP_CANNOT_BUILD_HEADER
  */
 static void us1883_test2 (void) 
 {
@@ -613,11 +611,7 @@ static void us1883_test2 (void)
  * In this test,
  * - application layer registers its callback
  * - EST Client gets the challenge, calls the callback, gets back an 
- *   empty credential structure and ends up sending an HTTP auth header
- *   with no credentials.
- *   NOTE: This is the way the preloaded credential flow has always worked.
- * - enroll is sent with no token credentials
- * - server fails and does not give a certificate
+ *   empty credential structure and ends up with EST_ERR_HTTP_CANNOT_BUILD_HEADER
  */
 static void us1883_test3 (void) 
 {

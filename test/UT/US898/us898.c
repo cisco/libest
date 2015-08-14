@@ -677,7 +677,7 @@ static void us898_test5 (void)
     CU_ASSERT(rv == EST_ERR_NONE);
 
     /*
-     * Enroll an expired cert that contains x509 extensions.
+     * Enroll a cert with wrong signature that contains x509 extensions.
      */
     rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
     CU_ASSERT(rv == EST_ERR_CLIENT_INVALID_KEY);
@@ -1228,13 +1228,13 @@ static void us898_test11 (void)
      * Get the latest CSR attributes
      */
     rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
-    CU_ASSERT(rv == EST_ERR_SSL_CONNECT);
+    CU_ASSERT(rv == EST_ERR_AUTH_CERT);
 
     /*
      * Re-Enroll the cert 
      */
     rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
-    CU_ASSERT(rv == EST_ERR_SSL_CONNECT);
+    CU_ASSERT(rv == EST_ERR_AUTH_CERT);
 
     est_destroy(ectx);
 }

@@ -1205,13 +1205,13 @@ static void us899_test17 (void)
      * Get the latest CSR attributes
      */
     rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
-    CU_ASSERT(rv == EST_ERR_SSL_CONNECT);
+    CU_ASSERT(rv == EST_ERR_AUTH_CERT);
 
     /*
      * Use the simplified API to enroll a CSR
      */
     rv = est_client_enroll(ectx, "TEST17-CN", &pkcs7_len, key);
-    CU_ASSERT(rv == EST_ERR_SSL_CONNECT);
+    CU_ASSERT(rv == EST_ERR_AUTH_CERT);
 
     /*
      * Cleanup

@@ -641,7 +641,7 @@ static void us897_test11 (void)
      */    
     if (retrieved_cacerts) {
 
-        printf("\nRetrieved CA Certs buffer:\n %s\n", retrieved_cacerts);
+        printf("\nRetrieved CA Certs buffer:\n %.*s\n", retrieved_cacerts_len, retrieved_cacerts);
         printf("Retrieved CA certs buffer length: %d\n", retrieved_cacerts_len);    
     }
     free(retrieved_cacerts);

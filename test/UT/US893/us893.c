@@ -4,9 +4,14 @@
  * October, 2013
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  *------------------------------------------------------------------
  */
+
+// 2015-08-11 corrected some assertions and comments on expected behavior
+
 #include <stdio.h>
 #include <unistd.h>
 #include <est.h>
@@ -486,7 +491,7 @@ static void us893_test4 (void)
 }
 
 /*
- * This test attempts to re-enroll an expired cert
+ * This test attempts to re-enroll without PoP
  * while the EST server is configured with PoP
  * enabled, but the proxy server is using a cert
  * that doesn't contain id-kp-cmcRA.  This should
@@ -564,11 +569,12 @@ static void us893_test5 (void)
 }
 
 /*
- * This test attempts to re-enroll an expired cert
+ * This test attempts to re-enroll without PoP
  * while the EST server is configured with PoP
  * disabled, but the proxy server is using a cert
  * that doesn't contain id-kp-cmcRA.  This should
- * result in a successful reenroll.
+ * result in a failure because the subjects
+ * of the proxy cert and the client do not agree.
  */
 static void us893_test6 (void) 
 {
@@ -613,9 +619,9 @@ static void us893_test6 (void)
 	                US893_UIDPWD_GOOD, US893_CACERTS, CURLAUTH_BASIC, 
 			NULL, NULL, NULL);
     /* 
-     * The reenroll should work since PoP is not enabled anywhere.
+     * The reenroll should not work since id-kp-cmcRA is not set and the subjects do not agree.
      */
-    CU_ASSERT(rv == 200);
+    CU_ASSERT(rv == 400);
 
 
     /*
@@ -647,7 +653,7 @@ static void us893_test6 (void)
 }
 
 /*
- * This test attempts to re-enroll an expired cert
+ * This test attempts to re-enroll with PoP
  * while the EST server is configured with PoP
  * disabled, but the proxy server is using a cert
  * that doesn't contain id-kp-cmcRA.  The CSR will
@@ -752,9 +758,6 @@ static void us893_test7 (void)
     rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
     CU_ASSERT(rv == EST_ERR_NONE);
 
-    /*
-     * Enroll an expired cert that contains x509 extensions.
-     */
     ectx->csr_pop_required = 1;  //This is a hack for testing only, do not attempt this 
                                  //We need to force the challengePassword into the CSR
     rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
@@ -880,8 +883,7 @@ static void us893_test8 (void)
 }
 
 /*
- * This test case uses an existing expired cert and
- * attempts to re-enroll it.  PoP is disabled on
+ * This test case attempts to re-enroll.  PoP is disabled on
  * the EST server.  The CSR does not contain a PoP. 
  */
 static void us893_test9 (void) 
@@ -978,6 +980,7 @@ static void us893_test10 (void)
     CU_ASSERT(rv == 0);
 }
 
+// untrusted (self-signed) identity cert
 static void us893_test11 (void) 
 {
     int rv;
@@ -1139,9 +1142,9 @@ int us893_add_suite (void)
        (NULL == CU_add_test(pSuite, "ReEnroll no proxy id-kp-cmcRA w/o srv PoP", us893_test6)) || 
        (NULL == CU_add_test(pSuite, "ReEnroll no proxy id-kp-cmcRA w/o srv PoP CSR PoP", us893_test7)) || 
        (NULL == CU_add_test(pSuite, "ReEnroll expired cert w/o srv PoP CSR PoP", us893_test8)) || 
-       (NULL == CU_add_test(pSuite, "ReEnroll expired cert w/o srv PoP no CSR PoP", us893_test9)) || 
+       (NULL == CU_add_test(pSuite, "ReEnroll cert w/o srv PoP no CSR PoP", us893_test9)) || 
        (NULL == CU_add_test(pSuite, "ReEnroll proxy misconfigured HTTP auth", us893_test10)) || 
-       (NULL == CU_add_test(pSuite, "ReEnroll proxy untrusted identity cert", us893_test11)) || 
+       (NULL == CU_add_test(pSuite, "ReEnroll proxy untrusted (self-signed) identity cert", us893_test11)) || 
        (NULL == CU_add_test(pSuite, "ReEnroll PoP enabled proxy no CSR PoP", us893_test12))) 
    {
       CU_cleanup_registry();
