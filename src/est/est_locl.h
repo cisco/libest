@@ -4,9 +4,14 @@
  * November, 2012
  *
  * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
+
+// 2015-08-07 added est_set_log_source() and est_log_prefixed() differentiating log source
+// 2015-08-07 simplified logging macros
 
 #ifndef HEADER_EST_LOCL_H
 #define HEADER_EST_LOCL_H
@@ -92,12 +97,12 @@
 /*
  * HTTP error responses
  */
-#define EST_BODY_BAD_PKCS10     "Invalid or corrupted pkcs10 request.\n"
-#define EST_BODY_UNAUTHORIZED   "The server was unable to authorize the request.\n"
-#define EST_BODY_BAD_METH       "Invalid HTTP method used.  Either GET or POST required depending on the request type.\n"
-#define EST_BODY_BAD_SSL        "An unknown TLS error has occured.\n"
-#define EST_BODY_UNKNOWN_ERR    "An unknown error has occured.\n"
-#define EST_BODY_NOT_FOUND      "Requested content is currently not available on the server.\n"
+#define EST_BODY_BAD_PKCS10     "Invalid or corrupted pkcs10 request."
+#define EST_BODY_UNAUTHORIZED   "The server was unable to authorize the request."
+#define EST_BODY_BAD_METH       "Invalid HTTP method used.  Either GET or POST required depending on the request type."
+#define EST_BODY_BAD_SSL        "An unknown TLS error has occured."
+#define EST_BODY_UNKNOWN_ERR    "An unknown error has occured."
+#define EST_BODY_NOT_FOUND      "Requested content is currently not available on the server."
 
 
 /*
@@ -256,31 +261,22 @@ typedef struct est_oid_list {
 int e_ctx_ssl_exdata_index;
 
 
-void est_log (EST_LOG_LEVEL lvl, char *format, ...);
-void est_log_backtrace (void);
-
 #ifndef EST_LOG_INFO
 #define EST_LOG_INFO(...) do { \
-        est_log(EST_LOG_LVL_INFO, "\n***EST [INFO][%s:%d]--> ", \
-                __FUNCTION__, __LINE__); \
-        est_log(EST_LOG_LVL_INFO, __VA_ARGS__); \
+        est_log_prefixed(EST_LOG_LVL_INFO, __FUNCTION__, __LINE__, __VA_ARGS__); \
 } while (0)
 #endif
 
 #ifndef EST_LOG_WARN
 #define EST_LOG_WARN(...) do { \
-        est_log(EST_LOG_LVL_WARN, "\n***EST [WARNING][%s:%d]--> ", \
-                __FUNCTION__, __LINE__); \
-        est_log(EST_LOG_LVL_WARN, __VA_ARGS__); \
+        est_log_prefixed(EST_LOG_LVL_WARN, __FUNCTION__, __LINE__, __VA_ARGS__); \
         est_log_backtrace(); \
 } while (0)
 #endif
 
 #ifndef EST_LOG_ERR
 #define EST_LOG_ERR(...) do { \
-        est_log(EST_LOG_LVL_ERR, "\n***EST [ERROR][%s:%d]--> ", \
-                __FUNCTION__, __LINE__); \
-        est_log(EST_LOG_LVL_ERR, __VA_ARGS__); \
+        est_log_prefixed(EST_LOG_LVL_ERR, __FUNCTION__, __LINE__, __VA_ARGS__); \
         est_log_backtrace(); \
 } while (0)
 #endif
@@ -291,7 +287,9 @@ char * est_get_tls_uid(SSL *ssl, int is_client);
 EST_ERROR est_load_ca_certs(EST_CTX *ctx, unsigned char *raw, int size);
 
 EST_ERROR est_load_trusted_certs(EST_CTX *ctx, unsigned char *certs, int certs_len);
-void est_log(EST_LOG_LEVEL lvl, char *format, ...);
+void est_log (EST_LOG_LEVEL lvl, const char *format, ...);
+void est_log_prefixed (EST_LOG_LEVEL lvl, const char *func, int line, const char *format, ...);
+void est_log_backtrace (void);
 void est_log_version(void);
 void est_hex_to_str(char *dst, unsigned char *src, int len);
 void est_base64_encode(const unsigned char *src, int src_len, char *dst);

@@ -1,4 +1,3 @@
-/** @file */
 /*------------------------------------------------------------------
  * est/est.c - EST implementation
  *
@@ -10,12 +9,21 @@
  * November, 2012
  *
  * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
+
+// 2015-08-07 added est_set_log_source() and est_log_prefixed() differentiating log source
+// 2015-08-07 simplified logging macros
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#ifndef DISABLE_PTHREADS
+#include <pthread.h>
+#endif
 #ifndef DISABLE_BACKTRACE 
 #include <execinfo.h>
 #endif
@@ -50,29 +58,10 @@ static void est_logger_stderr (char *format, va_list l)
     funlockfile(stderr);
 }
 
-#ifndef DISABLE_BACKTRACE
-static void est_log_msg (char *format, ...)
-{
-    va_list arguments;
-
-    /*
-     * Pull the arguments from the stack and invoke
-     * the logger function
-     */
-    va_start(arguments, format);
-    if (est_log_func != NULL) {
-        (*est_log_func)(format, arguments);
-    } else {
-        est_logger_stderr(format, arguments);
-    }
-    va_end(arguments);
-}
-#endif
-
 /*
- * Global function to be called to log something
+ * Global low-level function to be called to log something
  */
-void est_log (EST_LOG_LEVEL lvl, char *format, ...)
+void est_log (EST_LOG_LEVEL lvl, const char *format, ...)
 {
     va_list arguments;
 
@@ -89,17 +78,77 @@ void est_log (EST_LOG_LEVEL lvl, char *format, ...)
      */
     va_start(arguments, format);
     if (est_log_func != NULL) {
-        (*est_log_func)(format, arguments);
+        (*est_log_func)((char *)format, arguments);
     } else {
-        est_logger_stderr(format, arguments);
+        est_logger_stderr((char *)format, arguments);
     }
     va_end(arguments);
 
 }
 
+static unsigned long log_source[EST_PROXY]; // thread ID
+EST_ERROR est_set_log_source (EST_MODE source)
+{
+    if (EST_SERVER <= source && source <= EST_PROXY) {
+#ifndef DISABLE_PTHREADS
+	log_source[source-1] = (unsigned long)pthread_self();
+#endif
+	return EST_ERR_NONE;
+    }
+    else
+	return EST_ERR_INVALID_PARAMETERS;
+}
+
 /*
- * Global function to be called to log something
+ * Global high-level function to be called to log something
  */
+void est_log_prefixed (EST_LOG_LEVEL lvl, const char *func, int line, const char *format, ...)
+{
+#define LOG_BUF_MAX 10000
+    static char log_buf[LOG_BUF_MAX];
+    va_list arguments;
+
+    /*
+     * check if user is interested in this log message
+     */
+    if (lvl > est_desired_log_lvl) {
+        return;
+    }
+
+    char *prefix = "***EST";
+    unsigned long self = -1;
+#ifndef DISABLE_PTHREADS
+    self = (unsigned long)pthread_self();
+#endif
+    if (self == log_source[EST_CLIENT-1]) prefix = "CLIENT";
+    if (self == log_source[EST_SERVER-1]) prefix = "SERVER";
+    if (self == log_source[EST_PROXY -1]) prefix = "PROXY ";
+
+    if (line != 0) {
+	snprintf(log_buf, sizeof(log_buf), "%s [%s][%s:%d]--> ", prefix,
+		lvl == EST_LOG_LVL_INFO ? "INFO" :
+		lvl == EST_LOG_LVL_WARN ? "WARNING" :
+		lvl == EST_LOG_LVL_ERR  ? "ERROR"   : "UNKNOWN",
+		func, line);
+    } else {
+	snprintf(log_buf, sizeof(log_buf), "%s ", prefix);
+    }
+    int len = strlen(log_buf);
+    va_start(arguments, format); // Pull the arguments from the stack
+    vsnprintf(log_buf+len, LOG_BUF_MAX-2-len, format, arguments);
+    va_end(arguments);
+    strcat(log_buf,"\n");
+
+    // mask non-printable garbage
+    char *p = log_buf+len-1;
+    while(*(++p) != '\0') {
+	if (*p >= 0x80 || (*p < ' ' && *p != '\r' && *p != '\n'))
+	    *p = '?';
+    }
+
+    est_log(lvl, log_buf);
+}
+
 void est_log_backtrace (void)
 {
 #ifndef DISABLE_BACKTRACE
@@ -114,10 +163,10 @@ void est_log_backtrace (void)
         frames = backtrace(callstack, 128);
         strs = backtrace_symbols(callstack, frames);
         for (i = 0; i < frames; ++i) {
-	    est_log_msg("\n%s", strs[i]);
+	    est_log(0, "%s\n", strs[i]);
             //fprintf(stderr, "%s\n", strs[i]);
         }
-	est_log_msg("\n\n");
+	est_log(0, "\n\n");
         free(strs);
     }
 #endif
