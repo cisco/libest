@@ -278,6 +278,7 @@ int main (int argc, char **argv)
         {"srp-user", 1, 0, 0},
         {"srp-password", 1, 0, 0},
         {"auth-token", 1, 0, 0},
+        {"help", 0, NULL, 0},
         {NULL, 0, NULL, 0}
     };
     int option_index = 0;
@@ -287,22 +288,22 @@ int main (int argc, char **argv)
     est_http_uid[0] = 0x0;
     est_http_pwd[0] = 0x0;
 
-    while ((c = getopt_long(argc, argv, "s:p:u:h:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "?s:p:u:h:", long_options, &option_index)) != -1) {
         switch (c) {
             case 0:
 		if (!strncmp(long_options[option_index].name,"srp", strlen("srp"))) {
 		    srp = 1;
-		}
+		} else
 		if (!strncmp(long_options[option_index].name,"srp-user", strlen("srp-user"))) {
 		    strncpy(est_srp_uid, optarg, MAX_UID_LEN);
-		}
+		} else
 		if (!strncmp(long_options[option_index].name,"srp-password", strlen("srp-password"))) {
 		    strncpy(est_srp_pwd, optarg, MAX_PWD_LEN);
-		}
+		} else
 		if (!strncmp(long_options[option_index].name,"auth-token", strlen("auth-token"))) {
 		    strncpy(est_auth_token, optarg, MAX_AUTH_TOKEN_LEN);
                     token_auth_mode = 1;
-		}
+		} else show_usage_and_exit();
                 break;
             case 'u':
 		strncpy(est_http_uid, optarg, MAX_UID_LEN);
@@ -316,6 +317,7 @@ int main (int argc, char **argv)
             case 'p':
 		est_port = atoi(optarg);
                 break;
+            case '?':
             default:
                 show_usage_and_exit();
                 break;

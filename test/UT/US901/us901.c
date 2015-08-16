@@ -337,7 +337,7 @@ static void us901_test9 (void)
 
 /*
  * This test attempts to use a client certificate to
- * verify the TLS client authentiaiton is working.  
+ * verify the TLS client authentication is working.  
  * The certificate used is signed by the explicit cert
  * chain. This should succeed.
  */
@@ -364,7 +364,7 @@ static void us901_test10 (void)
 
 /*
  * This test attempts to use a client certificate to
- * verify the TLS client authentiaiton is working.  
+ * verify the TLS client authentication is working.  
  * The certificate used is signed by the implicit cert
  * chain. This should succeed.
  */
@@ -725,7 +725,7 @@ static void us901_test20 (void)
 
 /*
  * This test attempts to use a client certificate to
- * verify the TLS client authentiaiton is working.  
+ * verify the TLS client authentication is working.  
  * The certificate used is signed by the explicit cert
  * chain. Valid HTTP authentication credentials are
  * also provided.  This should succeed.
@@ -754,7 +754,7 @@ static void us901_test21 (void)
 
 /*
  * This test attempts to use a client certificate to
- * verify the TLS client authentiaiton is working.  
+ * verify the TLS client authentication is working.  
  * The certificate used is signed by the explicit cert
  * chain. Invalid HTTP authentication credentials are
  * also provided.  This should fail with a 401 response.
@@ -784,7 +784,7 @@ static void us901_test22 (void)
 /*
  * This test attempts to enroll without using a certificate
  * to identity the client, while using a good user ID/pwd.
- * However, the EST server is setup to only perform
+ * However, the EST server is set up to only perform
  * certificate authentication (HTTP auth disabled). 
  * This should fail with a 401 response.
  */
@@ -802,10 +802,7 @@ static void us901_test23 (void)
 			US901_CACERTS, 
 			CURLAUTH_BASIC, 
 			NULL, NULL, NULL);
-    /* 
-     * Since we passed in an invalid userID/password,
-     * we expect the server to respond with 401
-     */
+
     CU_ASSERT(rv == 401);
 }
 

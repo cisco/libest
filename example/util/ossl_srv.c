@@ -15,9 +15,15 @@
  * November, 2012
  *
  * Copyright (c) 2012 by cisco Systems, Inc.
+ * Copyright (c) 2014 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  *------------------------------------------------------------------
  */
+
+// 2015-08-14 removed duplication of ossl_srv.{c,h}, moving them to example/util
+// 2014-04-23 added read_cert_pkcs7; improved logging; minor spell corrections
+
 /* Copyright (C) 1995-1998 Eric Young (eay@cryptsoft.com)
  * All rights reserved.
  *
@@ -1166,7 +1172,7 @@ int rotate_index(const char *dbfile, const char *new_suffix, const char *old_suf
 	if (i > j) j = i;
 	if (j + 6 >= BSIZE)
 		{
-		BIO_printf(bio_err, "ile name too long\n");
+		BIO_printf(bio_err, "File name too long\n");
 		goto err;
 		}
 
@@ -1982,7 +1988,7 @@ again2:
 		if (!X509_set_subject_name(ret,dn_subject)) goto err;
 		}
 
-	if (!default_op)
+	if (!default_op && (verbose || !batch))
 		{
 		BIO_printf(bio_err, "Certificate Details:\n");
 		/* Never print signature details because signature not present */
@@ -1990,10 +1996,12 @@ again2:
 		X509_print_ex(bio_err, ret, nameopt, certopt); 
 		}
 
-	BIO_printf(bio_err, "Certificate valid until ");
-	ASN1_TIME_print(bio_err,X509_get_notAfter(ret));
-	if (days) BIO_printf(bio_err, " (%ld days)",days);
-	BIO_printf(bio_err, "\n");
+	if (verbose || !batch) {
+		BIO_printf(bio_err, "Certificate it to be certified until ");
+		ASN1_TIME_print(bio_err,X509_get_notAfter(ret));
+		if (days) BIO_printf(bio_err, " (%ld days)",days);
+		BIO_printf(bio_err, "\n");
+	}
 
 	if (!batch)
 		{
@@ -2063,7 +2071,7 @@ again2:
 
 	if (!TXT_DB_insert(db->db,irow))
 		{
-		BIO_printf(bio_err, "ailed to update database\n");
+		BIO_printf(bio_err, "Failed to update database\n");
 		BIO_printf(bio_err, "TXT_DB error number %ld\n", db->db->error);
 		goto err;
 		}
@@ -2121,7 +2129,7 @@ static int certify (X509 **xret, char *inptr, EVP_PKEY *pkey, X509 *x509,
 	if (verbose)
 		X509_REQ_print(bio_err,req);
 
-	BIO_printf(bio_err, "Check that the request matches the signature\n");
+	if (verbose) BIO_printf(bio_err, "Check that the request matches the signature\n");
 
 	if (selfsign && !X509_REQ_check_private_key(req,pkey))
 		{
@@ -2149,7 +2157,7 @@ static int certify (X509 **xret, char *inptr, EVP_PKEY *pkey, X509 *x509,
 		goto err;
 		}
 	else
-		// BIO_printf(bio_err, "Signature ok\n");
+		if (verbose) BIO_printf(bio_err, "Signature ok\n");
 
 	ok=do_body(xret,pkey,x509,dgst,sigopts, policy,db,serial,subj,chtype,
 		multirdn, email_dn,
@@ -2257,15 +2265,35 @@ static int check_time_format(const char *str)
 
 /****************************************************************************
  * 
- * Functions above this point are mostly taken directly from OpenSLL
+ * Functions above this point are mostly taken directly from OpenSSL
  * without modifications. Below this point are the new functions added
  * to interface with the EST stack.
  *
  ****************************************************************************/
 
 
+/* read a certificate file and embed it in PKCS7 */
+BIO *read_cert_pkcs7(char *cert_file) {
+	BIO *Cout = NULL;
+	BIO *retval = NULL;
+
+	Cout = BIO_new(BIO_s_file_internal());
+	if (BIO_read_filename(Cout, cert_file) <= 0) {
+		printf("\nUnable to read certificate file %s which should contain the signed CSR\n", cert_file);
+		return retval;
+	}
+	//At this point we're not pkcs7, convert to pkcs7
+	retval = ossl_get_certs_pkcs7(Cout);
+	if (!retval) {
+		printf("\nossl_get_certs_pkcs7 failed");
+	}
+
+	//if (Cout) BIO_free_all(Cout);  // causes segmentation fault
+	return retval;
+}
+
 /*
- * This function is used to statisfy the callback request from the EST
+ * This function is used to satisfy the callback request from the EST
  * stack when a simple enrollment request needs to be serviced.
  * The EST stack will receive PKCS10 data from the HTTP layer and
  * forward it to this function.  This function returns the signed
@@ -2372,7 +2400,7 @@ BIO * ossl_simple_enroll (const char *p10buf, int p10len, char *configfile)
 	    return NULL;
 	}
 
-	BIO_printf(bio_err, "Using configuration from %s\n",configfile);
+	if (verbose) BIO_printf(bio_err, "Using configuration from %s\n",configfile);
 	conf = NCONF_new(NULL);
 	if (NCONF_load(conf,configfile,&errorline) <= 0) {
 		if (errorline <= 0)
@@ -2785,7 +2813,7 @@ BIO * ossl_simple_enroll (const char *p10buf, int p10len, char *configfile)
 			if (j <= 0) goto err;
 			if (j > 0) {
 				total_done++;
-				BIO_printf(bio_err, "\n");
+				if (verbose) BIO_printf(bio_err, "\n");
 				if (!BN_add_word(serial,1)) goto err;
 				if (!sk_X509_push(cert_sk,x)) {
 					BIO_printf(bio_err, "Memory allocation failure\n");

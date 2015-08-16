@@ -328,34 +328,27 @@ int main (int argc, char **argv)
         {"srp", 1, NULL, 0},
         {"token", 1, 0, 0},
         {"auth-token", 1, 0, 0},
+        {"help", 0, NULL, 0},
         {NULL, 0, NULL, 0}
     };
     
-    /* Show usage if -? or --help options are specified or if no parameters have
-     * been specified.  Upstream server and port are required.
-     */
-    if ((argc == 1) ||
-        (argc == 2 && (!strcmp(argv[1], "-?") || !strcmp(argv[1], "--help")))) {
-        show_usage_and_exit();
-    }
-
     strncpy(est_server, "127.0.0.1", MAX_SERVER_LEN);
 
-    while ((c = getopt_long(argc, argv, "vt6nhfr:c:k:s:p:l:d:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "?vt6nhfr:c:k:s:p:l:d:", long_options, &option_index)) != -1) {
         switch (c) {
 	case 0:
             if (!strncmp(long_options[option_index].name,"srp", strlen("srp"))) {
 		srp = 1;
                 strncpy(vfile, optarg, 255);
-            }
+            } else
             if (!strncmp(long_options[option_index].name,"token", strlen("token"))) {
 		server_http_token_auth = 1;
                 strncpy(&(valid_token_value[0]), optarg, MAX_AUTH_TOKEN_LEN);
-            }
+            } else
             if (!strncmp(long_options[option_index].name,"auth-token", strlen("auth-token"))) {
                 strncpy(est_auth_token, optarg, MAX_AUTH_TOKEN_LEN);
                 client_token_auth_mode = 1;
-            }
+            } else show_usage_and_exit();
 	    break;
         case 'v':
             verbose = 1;
@@ -411,6 +404,7 @@ int main (int argc, char **argv)
               printf("Running EST Sample Proxy with FIPS MODE = ON !\n");
             };
             break;
+        case '?':
         default:
             show_usage_and_exit();
             break;
@@ -498,8 +492,8 @@ int main (int argc, char **argv)
     }
     BIO_free(keyin);
 
-    est_init_logger(EST_LOG_LVL_INFO, NULL);
     if (verbose) {
+	est_init_logger(EST_LOG_LVL_INFO, NULL);
 	est_enable_backtrace(1);
     }
 

@@ -919,8 +919,8 @@ static void us893_test9 (void)
 
 /*
  * This test case uses a bad password configured on
- * the EST proxy context.  This should cause the EST
- * server to reject the reenroll request.
+ * the EST proxy context.  This should cause the EST server to
+ * reject an enrollment request, but not the reenroll request.
  */
 static void us893_test10 (void) 
 {
@@ -935,7 +935,7 @@ static void us893_test10 (void)
     st_proxy_stop();
 
     /*
-     * Restart the proxy server using the other cert
+     * Restart the proxy server using the other cert and a bogus password
      */
     rv = st_proxy_start(US893_TCP_PROXY_PORT, 
 	          US893_PROXY_CERT,
@@ -951,11 +951,17 @@ static void us893_test10 (void)
 		  0);
     CU_ASSERT(rv == 0);
 
-    rv = curl_http_post(US893_REENROLL_URL_BA, US893_PKCS10_CT, 
+    rv = curl_http_post("https://127.0.0.1:29093/.well-known/est/simpleenroll", US893_PKCS10_CT, 
 	                US893_PKCS10_RSA2048, 
 	                US893_UIDPWD_GOOD, US893_CACERTS, CURLAUTH_BASIC, 
 			NULL, NULL, NULL);
     CU_ASSERT(rv == 401);
+
+    rv = curl_http_post(US893_REENROLL_URL_BA, US893_PKCS10_CT, 
+	                US893_PKCS10_RSA2048, 
+	                US893_UIDPWD_GOOD, US893_CACERTS, CURLAUTH_BASIC, 
+			NULL, NULL, NULL);
+    CU_ASSERT(rv == 200);
 
     /*
      * Stop the proxy server
@@ -963,7 +969,7 @@ static void us893_test10 (void)
     st_proxy_stop();
 
     /*
-     * Restart the proxy server using the other cert
+     * Restart the proxy server using the other cert and the correct password
      */
     rv = st_proxy_start(US893_TCP_PROXY_PORT, 
 	          US893_PROXY_CERT,

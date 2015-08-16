@@ -9,10 +9,9 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
-// Copyright (c) Siemens AG, 2014
+
 // 2014-04-23 extended documentation of callback functions
 // 2014-06-26 reduced value of EST_RETRY_PERIOD_MIN
-
 // 2015-08-07 added est_set_log_source() and est_log_prefixed() differentiating log source
 // 2015-08-07 simplified logging macros
 
