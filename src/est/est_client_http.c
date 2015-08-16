@@ -54,7 +54,6 @@
 #include "est_server_http.h"
 #include "est_ossl_util.h"
 
-
 #ifdef RETRY_AFTER_DELAY_TIME_SUPPORT
 
 /* 

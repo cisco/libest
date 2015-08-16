@@ -550,10 +550,12 @@ int ossl_name_entries_inclusion (X509_NAME *name1, X509_NAME *name2)
 	int found = 0;
 	for (pos2 = 0; pos2 < X509_NAME_entry_count(name2); pos2++) {
 	    X509_NAME_ENTRY *ne2 = X509_NAME_get_entry(name2, pos2);
+	    ASN1_STRING *s1 = X509_NAME_ENTRY_get_data(ne1);
+	    ASN1_STRING *s2 = X509_NAME_ENTRY_get_data(ne2);
 	    if (OBJ_obj2nid(X509_NAME_ENTRY_get_object(ne1)) == 
 		OBJ_obj2nid(X509_NAME_ENTRY_get_object(ne2)) &&
-		!ASN1_STRING_cmp(X509_NAME_ENTRY_get_data(ne1), 
-				 X509_NAME_ENTRY_get_data(ne2))) {
+		s1->length == s2->length && !memcmp(s1->data, s2->data, s1->length)) {
+		// This goes wrong if the string types do not match: !ASN1_STRING_cmp(s1, s1)
 		found = 1;
 		break;
 	    }
@@ -571,8 +573,8 @@ EST_ERROR ossl_check_subjects_agree(const X509_REQ *csr, const X509 *cer)
     X509_NAME *subj2 = X509_get_subject_name    ((X509     *)cer);
     EST_ERROR rv = EST_ERR_SUBJECT_MISMATCH;
 
-    char *csr_subject = X509_NAME_oneline(X509_REQ_get_subject_name((X509_REQ *)csr), NULL, 0);
-    char *cer_subject = X509_NAME_oneline(X509_get_subject_name    ((X509     *)cer), NULL, 0);
+    char *csr_subject = X509_NAME_oneline(subj1, NULL, 0);
+    char *cer_subject = X509_NAME_oneline(subj2, NULL, 0);
 
     if (!(ossl_name_entries_inclusion (subj1, subj2) &&
 	  ossl_name_entries_inclusion (subj2, subj1))) {
@@ -596,7 +598,9 @@ EST_ERROR ossl_check_subjects_agree(const X509_REQ *csr, const X509 *cer)
     }
     if (rv != EST_ERR_NONE) {
         EST_LOG_ERR("Subject Alternative Names disagree for CSR ('%s') and cert ('%s') with common Subject '%s'", 
-		    csr_subject_alt, cer_subject_alt, csr_subject ? csr_subject : "(none)");
+		    csr_subject_alt ? csr_subject_alt : "(none)",
+		    cer_subject_alt ? cer_subject_alt : "(none)",
+		    csr_subject ? csr_subject : "(none)");
     }
     if (csr_subject_alt) free (csr_subject_alt);
     if (cer_subject_alt) free (cer_subject_alt);

@@ -12,6 +12,8 @@
 
 // 2015-08-07 added est_set_log_source() differentiating log prefixes for client/server/proxy
 // 2015-08-07 simplified declaration of error codes and related strings, now less error-prone
+// 2014-04-23 added EST_ERR_NO_CERT
+// 2014-04-26 extended EST_SSL_READ_TIMEOUT_MAX
 
 #ifndef HEADER_EST_H
 #define HEADER_EST_H

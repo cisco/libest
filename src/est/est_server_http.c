@@ -17,6 +17,9 @@
  * All rights reserved.
  ***------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-06-25 improved logging of server main activity
+
 // Copyright (c) 2004-2012 Sergey Lyubka
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -1632,6 +1635,7 @@ static EST_ERROR process_new_connection (struct mg_connection *conn)
     // Important: on new connection, reset the receiving buffer. Credit goes to crule42.
     conn->data_len = 0;
     do {
+        EST_LOG_INFO("\n\nProcessing HTTP request...");
         reset_per_request_attributes(conn);
         conn->request_len = read_request(NULL, conn, conn->buf, conn->buf_size,
                                          &conn->data_len);
@@ -1832,11 +1836,11 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
 		break;
 	    case 1:
 		/* Nothing to do, shutdown worked */
-		EST_LOG_INFO("SSL_shutdown succeeded in one phase");
+		EST_LOG_INFO("SSL_shutdown succeeded");
 		break;
 	    default:
 		/* Log an error */
-		EST_LOG_WARN("SSL_shutdown failed");
+		EST_LOG_WARN("SSL_shutdown failed\n");
 		break;
 	    }
             SSL_free(conn->ssl);

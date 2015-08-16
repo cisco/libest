@@ -13,9 +13,9 @@
  */
 
 // 2015-08-14 made server code re-entrant, allowing for any number of instancesc
-// 2015-08-14 extended logging of simple server main activity
 // 2015-08-14 sharing master_thread() with unit tests, more efficient synchronization
 // 2015-08-14 added start_single_server() and stop_single_server() for unit tests
+// 2014-06-25 extended logging of server main activity
 
 #include <stdio.h>
 #include <unistd.h>
@@ -209,7 +209,8 @@ static void *master_thread (struct server_data *data)
         exit(1);
     }
 
-    printf("%s awaiting first connection on socket %d...\n", agent, sock);
+    printf("%s awaiting first connection on socket %d...\n", agent, sock); fflush(stdout);
+
     while (stop_flag == 0 && data->running != 0 && data->num_threads != 0) {
         len = sizeof(struct sockaddr);
         new = accept(sock, (struct sockaddr*)addr, &len);
@@ -235,7 +236,7 @@ static void *master_thread (struct server_data *data)
 		    process_socket_request(data->ctx, new);
 		else
 		    process_socket(data, new);
-		printf("%s awaiting further connection on socket %d...\n", agent, sock);
+		printf("%s awaiting further connection on socket %d...\n", agent, sock); fflush(stdout);
             } else {
                	close(new);
             }

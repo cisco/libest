@@ -4,7 +4,7 @@
  *	       Assumptions:  - Web server using this module utilizes
  *	                       OpenSSL for HTTPS services.
  *	                     - OpenSSL is linked along with this
- *	                       modulue.
+ *	                       module.
  *
  * May, 2013
  *
@@ -12,6 +12,9 @@
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// Copyright (c) Siemens AG, 2014
+// 2014-04-23 just spelling correction
+
 #include <string.h>
 #include <stdlib.h>
 #ifndef DISABLE_PTHREADS

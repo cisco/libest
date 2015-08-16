@@ -16,6 +16,9 @@
  */
 
 // 2015-08-13 improved TLS error handling and reporting, introducing general_ssl_error()
+// 2014-04-23 est_client_enroll_csr: priv_key can be NULL if CSR is signed
+// 2014-04-23 added EST_ERR_NO_CERT; slightly improved logging and spelling
+// 2014-06-30 further minor improvements of logging: retry-after is no error
 
 #include <string.h>
 #include <stdlib.h>
@@ -56,7 +59,7 @@ int est_client_set_cert_and_key (SSL_CTX *ctx, X509 *cert, EVP_PKEY *key)
         return 1;
     }
 
-    if (SSL_CTX_use_PrivateKey(ctx, key) <= 0) {
+    if (SSL_CTX_use_PrivateKey(ctx, key) <= 0) { // TODO bug: for RSA key, OpenSSL yields: error code 42 (EST_ERR_CLIENT_INVALID_KEY) ] [ossl_dump_ssl_errors:245]--> OSSL error: 2147860600:error:0B080074:x509 certificate routines:X509_check_private_key:key values mismatch:x509_cmp.c:344:
 
         EST_LOG_ERR("Unable to set private key");
         ossl_dump_ssl_errors();
@@ -1563,8 +1566,11 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
         case EST_ERR_AUTH_FAIL:
             EST_LOG_WARN("HTTP auth failure");
             break;
+        case EST_ERR_CA_ENROLL_RETRY:
+            EST_LOG_INFO("EST request failed with a RETRY AFTER resp");
+            break;
         default:
-            EST_LOG_ERR("EST request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
+	    EST_LOG_ERR("EST request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
             break;
         }
         free(enroll_buf);
@@ -1763,10 +1769,12 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
         EST_LOG_INFO("HTTP Authorization failed. Requested auth mode = %d", ctx->auth_mode);
         break;
 
+    case EST_ERR_CA_ENROLL_RETRY:
+        EST_LOG_INFO("EST enrollment failed with a RETRY AFTER resp");
+        break;
+
     default:
-        
-        EST_LOG_ERR("EST enrollment failed, error code is %d (%s)", rv,
-                    EST_ERR_NUM_TO_STR(rv));
+        EST_LOG_ERR("EST enrollment failed, error code is %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
         break;
     }
 
@@ -2436,7 +2444,7 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
     memset(&hints, '\0', sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_ADDRCONFIG;  
+    hints.ai_flags = AI_ADDRCONFIG;
     if ((rc = getaddrinfo(ctx->est_server, portstr, &hints, &aiptr))) {
         EST_LOG_ERR("Unable to lookup hostname %s. %s", 
 		ctx->est_server, gai_strerror(rc));
@@ -2713,10 +2721,10 @@ static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
             EST_LOG_ERR("HTTP auth failure");
             break;
         case EST_ERR_CA_ENROLL_RETRY:
-            EST_LOG_INFO("HTTP request failed with a RETRY AFTER resp");
+            EST_LOG_INFO("EST CACerts request failed with a RETRY AFTER resp");
             break;
         default:
-            EST_LOG_ERR("EST request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
+            EST_LOG_ERR("EST CACerts request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
             break;
         }
     }
@@ -2965,7 +2973,7 @@ EST_ERROR est_client_enroll (EST_CTX *ctx, char *cn, int *pkcs7_len,
             goto err;
         }
         rv = est_client_enroll_cn(ctx, ssl, cn, pkcs7_len, new_public_key);
-        if (rv != EST_ERR_NONE) {
+        if (rv != EST_ERR_NONE && rv != EST_ERR_CA_ENROLL_RETRY) {
             EST_LOG_ERR("Enroll failed on second attempt during basic/digest authentication");
 
             /*
@@ -3225,7 +3233,7 @@ EST_ERROR est_client_reenroll (EST_CTX *ctx, X509 *cert, int *pkcs7_len, EVP_PKE
     if (!req) {
 	EST_LOG_ERR("X509 to CSR conversion failed.");
         ossl_dump_ssl_errors();
-        return (EST_ERR_NO_CSR);
+        return (EST_ERR_NO_CERT);
     }
 
     /*
@@ -3709,7 +3717,7 @@ EST_ERROR est_client_enable_srp (EST_CTX *ctx, int strength, char *uid, char *pw
     @return EST_ERROR.  If error, NULL.
 */
 EST_ERROR est_client_set_auth (EST_CTX *ctx, const char *uid, const char *pwd,
-                               X509 *client_cert, EVP_PKEY *private_key)
+                               X509 *client_cert, EVP_PKEY *client_key)
 {
     EST_ERROR rv = EST_ERR_NONE;
     
@@ -3729,7 +3737,7 @@ EST_ERROR est_client_set_auth (EST_CTX *ctx, const char *uid, const char *pwd,
      * cache away the client cert and the associated private key, then
      * get them loaded into the SSL context so that they'll be used.
      */
-    ctx->client_key = private_key;
+    ctx->client_key = client_key;
     ctx->client_cert = client_cert;
     
     /*

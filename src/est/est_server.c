@@ -4,7 +4,7 @@
  *	       Assumptions:  - Web server using this module utilizes
  *	                       OpenSSL for HTTPS services.
  *	                     - OpenSSL is linked along with this
- *	                       modulue.
+ *	                       module.
  *
  * April, 2013
  *
@@ -16,6 +16,9 @@
  */
 
 // 2015-08-13 improved logging and error handling, preventing NULL pointer access
+// 2014-04-23 added est_set_http_auth_required to prevent forcing http auth
+// 2014-04-23 improved error return codes; minor spell corrections
+// 2014-04-23 corrected documentation of callback functions
 
 #include <string.h>
 #include <stdlib.h>
@@ -335,19 +338,19 @@ EST_AUTH_STATE est_enroll_auth (EST_CTX *ctx, void *http_ctx, SSL *ssl,
 	    }
 	    break;
         case EST_AUTH_HDR_MISSING:
-            // ask client to send us authorization headers
-            mg_send_authorization_request(conn);
-	    EST_LOG_INFO("HTTP auth headers missing, sending HTTP auth request to client.");
-            rv = EST_HTTP_AUTH_PENDING;
+	    if (reenroll && rv == EST_CERT_AUTH) {
+		EST_LOG_INFO("Client cert was authenticated, HTTP auth not required for reenroll");
+	    } else {
+		// ask client to send us authorization headers
+		mg_send_authorization_request(conn);
+		EST_LOG_INFO("HTTP auth headers missing, sending HTTP auth request to client.");
+		rv = EST_HTTP_AUTH_PENDING;
+	    }
 	    break;
         case EST_AUTH_HDR_BAD:
 	default:
-            EST_LOG_WARN("Client sent incomplete HTTP authorization header"); 
-	    if (reenroll && rv == EST_CERT_AUTH) {
-		EST_LOG_INFO("Client cert was authenticated, HTTP auth not required for reenroll"); 
-	    } else {
-		rv = EST_UNAUTHORIZED;
-	    }
+            EST_LOG_ERR("Client sent bad or incomplete HTTP authorization header"); 
+	    rv = EST_UNAUTHORIZED;
 	    break;
 	}
 	est_destroy_ah(ah);
@@ -1086,7 +1089,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
 
     if (reenroll && !client_is_ra && peer_cert) {
 	/*
-	 * As specified in RFC 7030 section 2.3, the TLS peer certifificate
+	 * As specified in RFC 7030 section 2.3, the TLS peer certificate
 	 * is not necessarily the one that is being re-enrolled. Thus:
 	 * TODO generalize this invocation of the subject name match check
 	 * such that it takes into account also other sources of the previous cert.
@@ -1095,7 +1098,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
 	if (rv != EST_ERR_NONE) {
 	    X509_REQ_free(csr);
 	    X509_free(peer_cert);
-	    return (EST_ERR_SUBJECT_MISMATCH);
+	    return (rv);
 	}	
     }
 
@@ -1167,7 +1170,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
          * the CA is not configured for automatic enrollment.
          * Send the HTTP retry response to the client.
          */
-        EST_LOG_INFO("CA server requests retry, possibly it's not setup for auto-enroll");
+        EST_LOG_INFO("CA server requests retry, possibly it's not set up for auto-enroll");
         if (EST_ERR_NONE != est_server_send_http_retry_after(ctx, http_ctx, ctx->retry_period)) { 
 	    X509_REQ_free(csr);
             return (EST_ERR_HTTP_WRITE);
@@ -1357,11 +1360,10 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
             EST_LOG_WARN("Enrollment failed with rc=%d (%s)",
 		         rc, EST_ERR_NUM_TO_STR(rc));
-	    if (rc == EST_ERR_AUTH_FAIL) {
-		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
-	    } else {
-		est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
+	    if (rc != EST_ERR_AUTH_FAIL && rc != EST_ERR_CA_ENROLL_FAIL) {
+		rc = EST_ERR_BAD_PKCS10;
 	    }
+	    est_send_http_error(ctx, http_ctx, rc);
             return rc;
         }
     }
@@ -1703,6 +1705,7 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
 	return (EST_ERR_BAD_MODE);
 	break;
     }
+	return (EST_ERR_NONE); // just to prevent compiler warning on missing function return
 }
 
 /*! @brief est_set_ca_enroll_cb() is used by an application to install
@@ -1711,10 +1714,10 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
-    This function must be called prior to starting the EST server.  The
-    callback function must match the following prototype:
+    This function must be called prior to starting the EST server.
+    The callback function must match the following prototype:
 
-        int func(unsigned char*, int, unsigned char**, int*, char*, X509*)
+        int func(unsigned char*, int, unsigned char**, int*, char*, X509*, void *)
 
     This function is called by libest when a certificate request
     needs to be signed by the CA server.  The application will need
@@ -1747,7 +1750,7 @@ EST_ERROR est_set_ca_enroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10, i
     This function must be called prior to starting the EST server.  The
     callback function must match the following prototype:
 
-        int func(unsigned char*, int, unsigned char**, int*, char*, X509*)
+        int func(unsigned char*, int, unsigned char**, int*, char*, X509*, void *)
 
     This function is called by libest when a certificate 
     needs to be renewed by the CA server.  The application will need
@@ -1778,10 +1781,10 @@ EST_ERROR est_set_ca_reenroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10,
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
-    This function must be called prior to starting the EST server.  The
-    callback function must match the following prototype:
+    This function must be called prior to starting the EST server.
+    The callback function must match the following prototype:
 
-        unsigned char *(*cb)(int*csr_len, void *ex_data)
+        unsigned char * func(int *, void *)
 
     This function is called by libest when a CSR attributes 
     request is received.  The attributes are provided by the CA
@@ -1817,7 +1820,7 @@ EST_ERROR est_set_csr_cb (EST_CTX *ctx, unsigned char *(*cb)(int*csr_len, void *
     This function must be called prior to starting the EST server.  The
     callback function must match the following prototype:
 
-    int (*cb)(EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert, void *ex_data)
+        int func(EST_CTX *, EST_HTTP_AUTH_HDR *, X509 *, void *)
 
     This function is called by libest when a performing HTTP authentication.
     libest will pass the EST_HTTP_AUTH_HDR struct to the application,
