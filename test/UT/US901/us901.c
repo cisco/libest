@@ -23,7 +23,7 @@
 #define US901_PKCS10_REQ    "MIIChjCCAW4CAQAwQTElMCMGA1UEAxMccmVxIGJ5IGNsaWVudCBpbiBkZW1vIHN0\nZXAgMjEYMBYGA1UEBRMPUElEOldpZGdldCBTTjoyMIIBIjANBgkqhkiG9w0BAQEF\nAAOCAQ8AMIIBCgKCAQEA/6JUWpXXDwCkvWPDWO0yANDQzFMxroLEIh6/vdNwfRSG\neNGC0efcL5L4NxHZOmO14yqMEMGpCyHz7Ob3hhNPu0K81gMUzRqzwmmJHXwRqobA\ni59OQEkHaPhI1T4RkVnSYZLOowSqonMZjWbT0iqZDY/RD8l3GjH3gEIBMQFv62NT\n1CSu9dfHEg76+DnJAhdddUDJDXO3AWI5s7zsLlzBoPlgd4oK5K1wqEE2pqhnZxei\nc94WFqXQ1kyrW0POVlQ+32moWTQTFA7SQE2uEF+GBXsRPaEO+FLQjE8JHOewLf/T\nqX0ngywnvxKRpKguSBic31WVkswPs8E34pjjZAvdxQIDAQABoAAwDQYJKoZIhvcN\nAQEFBQADggEBAAZXVoorRxAvQPiMNDpRZHhiD5O2Yd7APBBznVgRll1HML5dpgnu\nXY7ZCYwQtxwNGYVtKJaZCiW7dWrZhvnF5ua3wUr9R2ZNoLwVR0Z9Y5wwn1cJrdSG\ncUuBN/0XBGI6g6fQlDDImQoPSF8gygcTCCHba7Uv0i8oiCiwf5UF+F3NYBoBL/PP\nlO2zBEYNQ65+W3YgfUyYP0Cr0NyXgkz3Qh2Xa2eRFeW56oejmcEaMjq6yx7WAC2X\nk3w1G6Le1UInzuenMScNgnt8FaI43eAILMdLQ/Ekxc30fjxA12RDh/YzDYiExFv0\ndPd4o5uPKt4jRitvGiAPm/OCdXiYAwqiu2w=\n"
 #define US901_ENROLL_URL_DA "https://127.0.0.1:8087/.well-known/est/simpleenroll"
 #define US901_ENROLL_URL_BA "https://127.0.0.1:8088/.well-known/est/simpleenroll"
-#define US901_ENROLL_URL_NA "https://127.0.0.1:8086/.well-known/est/simpleenroll"
+#define US901_ENROLL_URL_NA "https://127.0.0.1:8084/.well-known/est/simpleenroll"
 #define US901_CACERT_URL_BA "https://127.0.0.1:8088/.well-known/est/cacerts"
 #define US901_ENROLL_URL_RA "https://127.0.0.1:8089/.well-known/est/simpleenroll"
 #define US901_PKCS10_CT	    "Content-Type: application/pkcs10" 
@@ -47,6 +47,9 @@ static char test5_outfile[FILENAME_MAX] = "US901/test5.crt";
 
 static void us901_clean (void)
 {
+    system("killall estserver");
+    system("killall estserver.exe");
+
     char cmd[200];
     sprintf(cmd, "rm %s", test5_outfile);
     system(cmd);
@@ -66,16 +69,19 @@ static int us901_init_suite (void)
     //      test.
 
     /* Start a server configured for HTTP Basic Auth */
-    system("US901/runserver_DA.sh &");
+    if (system("US901/runserver_DA.sh &")) return 1;
 
     /* Start a server configured for HTTP Digest Auth */
-    system("US901/runserver_BA.sh &");
+    if (system("US901/runserver_BA.sh &")) return 1;
 
     /* Start server that uses CRL for checking revoked certs */
-    system("US901/runserver_RA.sh &");
+    if (system("US901/runserver_RA.sh &")) return 1;
 
     /* Start server that uses no HTTP auth */
-    system("US901/runserver_NA.sh &");
+    if (system("US901/runserver_NA.sh &")) return 1;
+
+    // TODO: Note that the above shell scripts may fail, which is not checked.
+    sleep(1); // Helpful to prevent us901_test1() to fail with rv=0, at least on some systems when doing the tests offline
 
     return 0;
 }
