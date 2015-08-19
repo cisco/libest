@@ -601,6 +601,7 @@ static void retry_enroll_delay (int retry_delay, time_t retry_time)
         if (verbose) {
             printf("Waiting for %d seconds. Retry period is specified by EST server.\n", retry_delay);
             printf("Duration can be set on estserver with -m <retry-period> or -e <retry-period> (min is 6 seconds).\n\n");  // EST_RETRY_PERIOD_MIN
+            fflush(stdout);
         }
         sleep(retry_delay);
     } else {
@@ -627,6 +628,7 @@ static void retry_enroll_delay (int retry_delay, time_t retry_time)
             } else if (secs_to_wait <= 60 * 2) {
                 if (verbose) {
                     printf("Specified delay time is 2 minutes or less. Wait the specified time before retry\n");
+                    fflush(stdout);
                 }
                 sleep(secs_to_wait);
             } else {
