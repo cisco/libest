@@ -9,9 +9,13 @@
  * May, 2013
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2014 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
+
+// 2015-08-07 completed use of DISABLE_PTHREADS
 
 /* Main routine */
 #include <stdio.h>
@@ -19,7 +23,9 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <signal.h>
+#ifndef DISABLE_PTHREADS
 #include <pthread.h>
+#endif
 //#include <fcntl.h>
 #include <getopt.h>
 #include <openssl/ssl.h>
@@ -265,6 +271,7 @@ static int process_ssl_srp_auth (SSL *s, int *ad, void *arg) {
     return SSL_ERROR_NONE;
 }
 
+#ifndef DISABLE_PTHREADS
 /*
  * We're using OpenSSL, both as the CA and libest
  * requires it.  OpenSSL requires these platform specific
@@ -285,9 +292,11 @@ static unsigned long ssl_id_callback (void)
 {
     return (unsigned long)pthread_self();
 }
+#endif
 
 void cleanup (void)
 {
+#ifndef DISABLE_PTHREADS
     int i;
 
     /*
@@ -300,6 +309,7 @@ void cleanup (void)
     CRYPTO_set_locking_callback(NULL);
     CRYPTO_set_id_callback(NULL);
     free(ssl_mutexes);
+#endif
 
     est_proxy_stop(ectx);
     est_destroy(ectx);
@@ -316,7 +326,6 @@ void cleanup (void)
 int main (int argc, char **argv)
 {
     char c;
-    int i, size;
     EVP_PKEY *priv_key;
     BIO *certin, *keyin;
     X509 *x;
@@ -570,20 +579,23 @@ int main (int argc, char **argv)
         }        
     }            
     
+#ifndef DISABLE_PTHREADS
     /*
      * Install thread locking mechanism for OpenSSL
      */
-    size = sizeof(pthread_mutex_t) * CRYPTO_num_locks();
+    int size = sizeof(pthread_mutex_t) * CRYPTO_num_locks();
     if ((ssl_mutexes = (pthread_mutex_t*)malloc((size_t)size)) == NULL) {
         printf("\nCannot allocate mutexes\n");
 	exit(1);
     }   
 
+    int i;
     for (i = 0; i < CRYPTO_num_locks(); i++) {
         pthread_mutex_init(&ssl_mutexes[i], NULL);
     }
     CRYPTO_set_locking_callback(&ssl_locking_callback);
     CRYPTO_set_id_callback(&ssl_id_callback);
+#endif
 
     printf("Launching EST proxy...\n");
 
