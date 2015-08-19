@@ -15,6 +15,7 @@
  **------------------------------------------------------------------
  */
 
+// 2015-08-19 added missing cleanup for search tree
 // 2015-08-07 re-added -e option; fixed potential NULL free()
 // 2015-08-07 completed use of DISABLE_PTHREADS; improved diagnostic output
 // 2014-06-26 improved -e option; enhanced code for -m and -o options
@@ -210,6 +211,13 @@ typedef struct {
     int		    length;
 } LOOKUP_ENTRY;
 LOOKUP_ENTRY *lookup_root = NULL;
+
+static void free_lookup (void *node)
+{
+    LOOKUP_ENTRY *n = (LOOKUP_ENTRY *)node;
+    if (n->data) free(n->data);
+    free(n);
+}
 
 /*
  * Used to compare two entries in the lookup table to correlate
@@ -735,6 +743,17 @@ void cleanup (void)
 {
     est_server_stop(ectx);
     est_destroy(ectx);
+
+#ifndef DISABLE_TSEARCH
+    /*
+     * Free the lookup table used to simulate
+     * manual cert approval
+     */
+    if (lookup_root) {
+        tdestroy((void *)lookup_root, free_lookup);
+	lookup_root = NULL;
+    }
+#endif
 
     if (srp_db) {
 	SRP_VBASE_free(srp_db);
