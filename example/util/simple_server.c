@@ -12,7 +12,7 @@
  **------------------------------------------------------------------
  */
 
-// 2015-08-14 made server code re-entrant, allowing for any number of instancesc
+// 2015-08-14 made server code re-entrant, allowing for any number of instances
 // 2015-08-14 sharing master_thread() with unit tests, more efficient synchronization
 // 2015-08-14 added start_single_server() and stop_single_server() for unit tests
 // 2014-06-25 extended logging of server main activity
@@ -358,6 +358,11 @@ void start_simple_server (EST_CTX *ectx, int port, int delay, int v6)
 
     while (stop_flag == 0) {
         sleep(1); // some usleep() implementations appear to cause high CPU load
+    }
+
+ // must not auto-free the data struct before all threads have finished
+    while (data.num_threads > 0) {
+        sleep(1);
     }
 }
 
