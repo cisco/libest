@@ -9,9 +9,6 @@
  */
 #include <stdio.h>
 #include <unistd.h>
-#ifdef __MINGW32__
-#define sleep(x) Sleep((x) * 1000)
-#endif
 #include <string.h>
 #include <stdlib.h>
 #include <openssl/bio.h>
