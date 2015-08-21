@@ -9,11 +9,13 @@
  * May, 2013
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2014 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
-// Copyright (c) Siemens AG, 2014
-// 2014-04-23 just spelling correction
+
+// 2014-12-17 improved error handling of est_proxy_http_request() and diagnostic messages
 
 #include <string.h>
 #include <stdlib.h>
@@ -109,7 +111,7 @@ static EST_CTX *get_client_ctx (EST_CTX *p_ctx)
         c_ctx = est_client_init(p_ctx->ca_chain_raw, p_ctx->ca_chain_raw_len,
                                 EST_CERT_FORMAT_PEM, NULL);
         if (c_ctx == NULL) {
-            EST_LOG_ERR("Unable to allocate and initialize EST client context for Proxy use");
+            EST_LOG_ERR("Unable to allocate and initialize EST client context for proxy use");
             return (NULL);
         }
 
@@ -123,7 +125,7 @@ static EST_CTX *get_client_ctx (EST_CTX *p_ctx)
         rv = est_client_set_auth(c_ctx, p_ctx->userid, p_ctx->password,
                                  p_ctx->server_cert, p_ctx->server_priv_key);
         if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Unable to set authentication configuration in the client context for Proxy use");
+            EST_LOG_ERR("Unable to set authentication configuration in the client context for proxy use");
 	    est_destroy(c_ctx);
             return (NULL);
 	}        
@@ -136,7 +138,7 @@ static EST_CTX *get_client_ctx (EST_CTX *p_ctx)
 
 	rv = est_client_set_server(c_ctx, p_ctx->est_server, p_ctx->est_port_num);
         if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Unable to set the upstream server configuration in the client context for Proxy use");
+            EST_LOG_ERR("Unable to set the upstream server configuration in the client context for proxy use");
 	    est_destroy(c_ctx);
             return (NULL);
 	}
@@ -195,8 +197,7 @@ static EST_CTX *get_client_ctx (EST_CTX *p_ctx)
               bsearch_compare);
     } else {
         /*
-         * the entry was found in the tree, return the client context for this
-         * pid
+         * the entry was found in the tree, return the client context for this pid
          */
         c_ctx = found_node->client_ctx;
     }
@@ -372,8 +373,8 @@ EST_ERROR est_proxy_retrieve_cacerts (EST_CTX *ctx, unsigned char **cacerts_rtn,
 /*
  * This routine will connect to the EST server and attempt
  * to enroll the CSR in the *pkcs10 buffer. Upon success
- * it will return the X509 cert in the *pkcs7 buffer.  The
- * length of the returned cert will be in *pkcs7_len.  
+ * it will return the X509 cert in the *pkcs7 buffer.
+ * The length of the returned cert will be in *pkcs7_len.
  * The *pkcs7 buffer should be allocated by the caller.
  */
 static EST_ERROR est_proxy_send_enroll_request (EST_CTX *clnt_ctx, 
@@ -679,95 +680,49 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
         return (EST_ERR_BAD_MODE);
     }
 
+    EST_LOG_INFO("Proxy started handling %s %s", method, uri);
+
     /*
      * See if this is a cacerts request
      */
     if (strncmp(uri, EST_CACERTS_URI, EST_URI_MAX_LEN) == 0) {
         /* Only GET is allowed */
         if (strcmp(method, "GET")) {
-            est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
-            return (EST_ERR_WRONG_METHOD);
-        }
-
-        rc = est_handle_cacerts(ctx, http_ctx);
-        if (rc != EST_ERR_NONE) {
-            est_send_http_error(ctx, http_ctx, rc);
-            return (rc);
-        }
+	    rc = EST_ERR_WRONG_METHOD;
+        } else {
+	    rc = est_handle_cacerts(ctx, http_ctx);
+	}
     }
 
     /*
-     * See if this is a simple enrollment request
+     * See if this is a simple (re-)enrollment request
      */
-    else if (strncmp(uri, EST_SIMPLE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
+    else if (strncmp(uri, EST_SIMPLE_ENROLL_URI, EST_URI_MAX_LEN) == 0
+          || strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strcmp(method, "POST")) {
-            est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
-            return (EST_ERR_WRONG_METHOD);
+            rc = EST_ERR_WRONG_METHOD;
         }
-	if (!ct) {
+	else if (!ct) {
             EST_LOG_WARN("Incoming HTTP header has no Content-Type header");
-            est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
-	    return (EST_ERR_BAD_CONTENT_TYPE); 
-	}
-        /*
-         * Get the SSL context, which is required for authenticating
-         * the client.
-         */
-        ssl = (SSL*)mg_get_conn_ssl(http_ctx);
-        if (!ssl) {
-            est_send_http_error(ctx, http_ctx, EST_ERR_NO_SSL_CTX);
-            return (EST_ERR_NO_SSL_CTX);
-        }
-
-        rc = est_proxy_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, 0);
-        if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
-            EST_LOG_WARN("Enrollment failed with rc=%d (%s)", 
-		         rc, EST_ERR_NUM_TO_STR(rc));
-	    if (rc == EST_ERR_AUTH_FAIL) {
-		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
+	    rc = EST_ERR_BAD_CONTENT_TYPE;
+	} else {
+	    /*
+	     * Get the SSL context, which is required for authenticating the client.
+	     */
+	    ssl = (SSL*)mg_get_conn_ssl(http_ctx);
+	    if (!ssl) {
+		rc = EST_ERR_NO_SSL_CTX;
 	    } else {
-		est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
+		rc = est_proxy_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, 
+						    strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0);
+		if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING && rc != EST_ERR_AUTH_FAIL) {
+#if 0 // I see no reason for hiding real cause of error from clients
+		    rc = EST_ERR_BAD_PKCS10;
+#endif
+		}
 	    }
-            return (EST_ERR_BAD_PKCS10);
-        }
-    }
-
-    /*
-     * See if this is a re-enrollment request
-     */
-    else if (strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
-        /* Only POST is allowed */
-        if (strcmp(method, "POST")) {
-            est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
-            return (EST_ERR_WRONG_METHOD);
-        }
-	if (!ct) {
-            EST_LOG_WARN("Incoming HTTP header has no Content-Type header");
-            est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
-	    return (EST_ERR_BAD_CONTENT_TYPE); 
 	}
-        /*
-         * Get the SSL context, which is required for authenticating
-         * the client.
-         */
-        ssl = (SSL*)mg_get_conn_ssl(http_ctx);
-        if (!ssl) {
-            est_send_http_error(ctx, http_ctx, EST_ERR_NO_SSL_CTX);
-            return (EST_ERR_NO_SSL_CTX);
-        }
-
-        rc = est_proxy_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, 1);
-        if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
-            EST_LOG_WARN("Reenroll failed with rc=%d (%s)", 
-		         rc, EST_ERR_NUM_TO_STR(rc));
-	    if (rc == EST_ERR_AUTH_FAIL) {
-		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
-	    } else {
-		est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
-	    }
-            return (EST_ERR_BAD_PKCS10);
-        }
     }
 
 #if 0
@@ -779,16 +734,14 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
 
         /* Only POST is allowed */
         if (strcmp(method, "POST")) {
-            est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
-            return (EST_ERR_WRONG_METHOD);
+            rc = EST_ERR_WRONG_METHOD;
         }
-	if (!ct) {
+	else if (!ct) {
             EST_LOG_WARN("Incoming HTTP header has no Content-Type header");
-	    return (EST_ERR_BAD_CONTENT_TYPE); 
+	    rc = EST_ERR_BAD_CONTENT_TYPE;
 	}
-        if (est_proxy_handle_keygen(ctx)) {
-            est_send_http_error(ctx, http_ctx, 0); //FIXME: last param should not be zero
-            return (EST_ERR_HTTP_WRITE);           //FIXME: need the appropriate return code
+        else if (est_proxy_handle_keygen(ctx)) {
+            rc = EST_ERR_HTTP_WRITE;             //FIXME: need the appropriate return code
         }
     }
 #endif
@@ -799,13 +752,9 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
     else if (strncmp(uri, EST_CSR_ATTRS_URI, EST_URI_MAX_LEN) == 0) {
         /* Only GET is allowed */
         if (strcmp(method, "GET")) {
-            est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
-            return (EST_ERR_WRONG_METHOD);
-        }
-         rc = est_proxy_handle_csr_attrs(ctx, http_ctx);
-	 if (rc != EST_ERR_NONE) {
-            est_send_http_error(ctx, http_ctx, rc); 
-            return (rc);
+            rc = EST_ERR_WRONG_METHOD;
+        } else {
+           rc = est_proxy_handle_csr_attrs(ctx, http_ctx);
         }
     }
 
@@ -813,10 +762,15 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
      * Send a 404 error if the URI didn't match 
      */
     else {
-        est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NOT_FOUND);
+        rc = EST_ERR_HTTP_NOT_FOUND;
     }
 
-    return (EST_ERR_NONE);
+    EST_LOG_INFO("Proxy finished handling %s %s with rv = %d (%s)", method, uri, rc, EST_ERR_NUM_TO_STR(rc));
+
+    if (rc != EST_ERR_NONE) {
+	est_send_http_error(ctx, http_ctx, rc);
+    }
+    return (rc);
 }
 
 /*
