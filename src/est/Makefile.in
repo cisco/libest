@@ -125,7 +125,7 @@ LTLIBRARIES = $(lib_LTLIBRARIES)
 libest_la_LIBADD =
 am_libest_la_OBJECTS = est.lo est_client.lo est_server.lo \
 	est_server_http.lo est_proxy.lo est_client_http.lo \
-	est_ossl_util.lo
+	est_ossl_util.lo NonPosix.lo
 libest_la_OBJECTS = $(am_libest_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -316,11 +316,11 @@ lib_LTLIBRARIES = libest.la
 AM_CFLAGS = -I$(SSL_CFLAGS) -I../.. 
 libest_la_LDFLAGS = -release $(PACKAGE_VERSION) 
 libest_la_SOURCES = est.c est_client.c est_server.c est_server_http.c \
-		    	est_proxy.c est_client_http.c est_ossl_util.c 
+			est_proxy.c est_client_http.c est_ossl_util.c NonPosix.c
 
 library_includedir = $(includedir)/est
 library_include_HEADERS = est.h
-EXTRA_DIST = est_locl.h est_ossl_util.h est_server.h est_server_http.h 
+EXTRA_DIST = est_locl.h est_ossl_util.h est_server.h est_server_http.h NonPosix.h
 all: all-am
 
 .SUFFIXES:
@@ -407,6 +407,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/est_proxy.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/est_server.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/est_server_http.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/NonPosix.Plo@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\
