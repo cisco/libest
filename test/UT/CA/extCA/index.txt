@@ -1,0 +1,5 @@
+V	140702173223Z		01	unknown	/CN=implicit-cert-test
+V	140702173250Z		02	unknown	/CN=revoked-cert-test
+V	260615123432Z		03	unknown	/CN=implicit-cert-test
+V	260615125028Z		04	unknown	/CN=implicit-cert-test
+V	260615134942Z		05	unknown	/CN=implicit-cert-test

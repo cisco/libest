@@ -1148,18 +1148,14 @@ static void us899_test17 (void)
      * Revoke the server cert, generate a CRL and append it to the CA chain
      * we're using on the client side.
      */
-    system("cp CA/estCA/index.txt CA/estCA/index.txt.save");
-    sleep(1);
-    system("openssl ca -config CA/estExampleCA.cnf -revoke CA/estCA/private/estservercertandkey.pem");
-    sleep(1);
-    system("openssl ca -config CA/estExampleCA.cnf -gencrl -out US899/test17_crl.pem");
-    sleep(1);
-    system("cat CA/trustedcerts.crt > US899/test17trust.crt");
-    sleep(1);
-    system("cat US899/test17_crl.pem >> US899/test17trust.crt");
-    sleep(1);
-    system("cp CA/estCA/index.txt.save CA/estCA/index.txt");
-    sleep(1);
+    if (system("cp CA/estCA/index.txt CA/estCA/index.txt.save && "
+	       "openssl ca -config CA/estExampleCA.cnf -revoke CA/estCA/private/estservercertandkey.pem && "
+	       "openssl ca -config CA/estExampleCA.cnf -gencrl -out US899/test17_crl.pem && "
+	       "cat CA/trustedcerts.crt US899/test17_crl.pem > US899/test17trust.crt && "
+	       "cp CA/estCA/index.txt.save CA/estCA/index.txt")) {
+	printf("\nUnable to locally revoke CA/estCA/private/estservercertandkey.pem\n");
+	exit(1);
+    }
 
     /*
      * Read in the CA certificates
