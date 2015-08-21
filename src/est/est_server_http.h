@@ -38,9 +38,8 @@
 #include <stdio.h>
 #include <stddef.h>
 #include "est_locl.h"
-#if defined(_WIN32) && !defined(__SYMBIAN32__) // Windows specific
+#if defined(_WIN32) && !defined(_WIN32_WINNT) && !defined(__SYMBIAN32__) // Windows specific
 #define _WIN32_WINNT 0x0400                    // To make it link in VS2005
-#include <windows.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX MAX_PATH
@@ -156,13 +155,15 @@ typedef struct DIR {
 #include <sys/types.h>
 #include <sys/socket.h>
 #endif
+#ifndef __MINGW32__
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <pwd.h>
+#endif
 #include <sys/time.h>
 #include <stdint.h>
 #include <inttypes.h>
 
-#include <pwd.h>
 #include <unistd.h>
 #include <dirent.h>
 #if defined(__MACH__)
@@ -185,9 +186,11 @@ typedef struct DIR {
 #define mg_rename(x, y) rename(x, y)
 #define mg_sleep(x) usleep((x) * 1000)
 #define ERRNO errno
+#ifndef __MINGW32__
 #define INVALID_SOCKET (-1)
-#define INT64_FMT PRId64
 typedef int SOCKET;
+#endif
+#define INT64_FMT PRId64
 #define WINCDECL
 
 #endif // End of Windows and UNIX specific includes

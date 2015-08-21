@@ -17,7 +17,9 @@
  * All rights reserved.
  ***------------------------------------------------------------------
  */
-// Copyright (c) Siemens AG, 2014
+
+// 2015-08-13 improved TLS error handling and reporting, introducing general_ssl_error()
+// 2015-08-13 improved logging; extracted wait_for_read() also used by simple_server.c
 // 2014-06-25 improved logging of server main activity
 
 // Copyright (c) 2004-2012 Sergey Lyubka
@@ -40,9 +42,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// 2015-08-13 improved TLS error handling and reporting, introducing general_ssl_error()
-// 2015-08-13 improved logging; extracted wait_for_read() also used by simple_server.c
-
+#include "est.h"
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
@@ -70,7 +70,9 @@
 
 #ifndef _WIN32_WCE // Some ANSI #includes are not available on Windows CE
 #include <sys/types.h>
+#ifndef __MINGW32__
 #include <sys/socket.h>
+#endif
 #include <sys/stat.h>
 #include <errno.h>
 #include <signal.h>
@@ -86,7 +88,6 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdio.h>
-#include "est.h"
 #include "est_locl.h"
 #include "est_ossl_util.h"
 
@@ -99,16 +100,6 @@
 #define MG_BUF_LEN 8192
 #define MAX_REQUEST_SIZE 16384
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
-
-#ifdef _WIN32
-static CRITICAL_SECTION global_log_file_lock;
-#ifndef DISABLE_PTHREADS
-static pthread_t pthread_self (void)
-{
-    return GetCurrentThreadId();
-}
-#endif
-#endif // _WIN32
 
 // Darwin prior to 7.0 and Win32 do not have socklen_t
 #ifdef NO_SOCKLEN_T
@@ -219,7 +210,7 @@ struct mg_request_info *mg_get_request_info (struct mg_connection *conn)
     return &conn->request_info;
 }
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32) && !defined(__MINGW32__) && !defined(__SYMBIAN32__)
 static void mg_strlcpy (register char *dst, register const char *src, size_t n)
 {
     for (; *src != '\0' && n > 1; n--) {
@@ -443,7 +434,7 @@ void mg_send_http_error (struct mg_connection *conn, int status,
     conn->num_bytes_sent += mg_printf(conn, "%s\r\n", buf);
 }
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32) && !defined(__MINGW32__) && !defined(__SYMBIAN32__)
 // For Windows, change all slashes to backslashes in path names.
 static void change_slashes_to_backslashes (char *path)
 {
@@ -1868,10 +1859,6 @@ void mg_stop (struct mg_context *ctx)
     ctx->stop_flag = 1;
 
     free_context(ctx);
-
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
-    (void)WSACleanup();
-#endif // _WIN32
 }
 
 struct mg_context *mg_start (void *user_data)
@@ -1886,12 +1873,6 @@ struct mg_context *mg_start (void *user_data)
      * TODO: this code will likely not work on Windows
      */
     signal(SIGPIPE, SIG_IGN);
-
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
-    WSADATA data;
-    WSAStartup(MAKEWORD(2, 2), &data);
-    InitializeCriticalSection(&global_log_file_lock);
-#endif // _WIN32
 
     // Allocate context and initialize reasonable general case defaults.
     // TODO(lsm): do proper error handling here.

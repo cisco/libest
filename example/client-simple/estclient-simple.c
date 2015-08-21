@@ -11,6 +11,7 @@
  *------------------------------------------------------------------
  */
 
+#include <est.h>
 #include "stdio.h"
 #include <getopt.h>
 
@@ -19,7 +20,6 @@
 #include <openssl/crypto.h>
 #include <strings.h>
 #include <stdlib.h>
-#include <est.h>
 #include "../util/utils.h"
 
 #define MAX_SERVER_LEN 32

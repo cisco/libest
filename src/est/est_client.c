@@ -20,19 +20,21 @@
 // 2014-04-23 added EST_ERR_NO_CERT; slightly improved logging and spelling
 // 2014-06-30 further minor improvements of logging: retry-after is no error
 
+#include "est.h"
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <stdint.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 #include <sys/types.h>
+#ifndef __MINGW32__
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#endif
 #include <openssl/ssl.h>
 #include <openssl/rand.h>
-#include "est.h"
 #include "est_locl.h"
 #include "est_ossl_util.h"
 #include <openssl/x509v3.h>
@@ -2351,7 +2353,9 @@ static EST_ERROR general_ssl_error(int ssl_err)
 	    rv = EST_ERR_SOCKET_STOP;
 	}
 	if (ssl_err == -1) {
-	    EST_LOG_WARN("SSL_connect resulted in ERRNO %d (%s)", errno, strerror(errno));
+	    if (errno != 0) {
+		EST_LOG_WARN("SSL_connect resulted in ERRNO %d (%s)", errno, strerror(errno));
+	    }
 	    if (errno == 104) {
 		EST_LOG_WARN("Most likely the server did not accept our authentication");
 		rv = EST_ERR_AUTH_FAIL; // EST_ERR_SSL_CONNECT

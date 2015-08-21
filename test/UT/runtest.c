@@ -14,11 +14,11 @@
 // 2015-08-11 added clear delimiters between test cases making output more readable
 // 2015-08-11 improved log output with prefix differentiating client/server/proxy
 
+#include <est.h>
 #include <stdio.h>
 #include <openssl/err.h>
 #include <openssl/engine.h>
 #include <openssl/conf.h>
-#include <est.h>
 #include <pthread.h>
 #ifdef HAVE_CUNIT
 #include "CUnit/Basic.h"
@@ -48,7 +48,11 @@ static void ssl_locking_callback (int mode, int mutex_num, const char *file,
 }
 static unsigned long ssl_id_callback (void)
 {
+#ifndef __MINGW32__
     return (unsigned long)pthread_self();
+#else
+    return (unsigned long)pthread_self().p;
+#endif
 }
 
 void test_start(const CU_pTest pTest, const CU_pSuite pSuite)

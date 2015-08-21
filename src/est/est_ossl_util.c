@@ -76,13 +76,13 @@
 
 // 2015-08-13 improved error handling and reporting
 
+#include "est.h"
 #include <stdio.h>
 #include <openssl/x509v3.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
 #include <openssl/x509.h>
 #include "est_ossl_util.h"
-#include "est.h"
 #include "est_locl.h"
 
 char *ossl_error_string(int err_code)

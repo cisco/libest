@@ -23,6 +23,7 @@
 // 2014-04-23 added -o option for not requring HTTP authentication
 // 2014-04-23 improved usage hints; corrected and extended logging
 
+#include <est.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -40,7 +41,6 @@
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
 #include <openssl/crypto.h>
-#include <est.h>
 #include "../util/ossl_srv.h"
 #include "../util/utils.h"
 #include "../util/simple_server.h"
@@ -200,11 +200,6 @@ static void show_usage_and_exit (void)
  * The functions in this section implement a simple lookup table
  * to correlate incoming cert requests after a retry operation.
  * We use this for (simulation of) manual-enrollment mode on the CA.
- *
- * FIXME: we need a cleanup routine to clear the tree when this
- *        server shuts down.  Currently any remaining entries
- *        in the table will not be released, resulting in a memory
- *        leak in the valgrind output.
  */
 typedef struct {
     unsigned char  *data;  //this will hold the pub key from the cert request
@@ -731,7 +726,11 @@ static void ssl_locking_callback (int mode, int mutex_num, const char *file,
 }
 static unsigned long ssl_id_callback (void)
 {
+#ifndef __MINGW32__
     return (unsigned long)pthread_self();
+#else
+    return (unsigned long)pthread_self().p;
+#endif
 }
 #endif
 

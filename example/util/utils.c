@@ -4,10 +4,11 @@
  * August, 2013
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
+// Copyright (c) 2014 Siemens AG, 2014
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  *------------------------------------------------------------------
  */
-// Copyright (c) Siemens AG, 2014
 // 2014-06-25 improved logging of server main activity
 
 #include <stdio.h>

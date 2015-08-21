@@ -17,6 +17,9 @@
 
 #ifndef HEADER_EST_H
 #define HEADER_EST_H
+
+#include "NonPosix.h"
+
 #include <openssl/ssl.h>
 #include <openssl/engine.h>
 #include <openssl/conf.h>
@@ -396,7 +399,19 @@ int est_convert_p7b64_to_pem(unsigned char *certs_p7, int certs_len, unsigned ch
  
     @return void.
  */
+#if (defined(__MINGW32__) || defined(_WIN32)) && !defined(__SYMBIAN32__)
 #define est_apps_startup() \
+    WSADATA wsaData; \
+    int rc = WSAStartup(MAKEWORD(2, 2), &wsaData); \
+    if (rc != 0) { \
+        printf("WSAStartup could not find a usable Winsock DLL, error: %d\n", rc); \
+	exit(1); \
+    } \
+    est_ssl_startup()
+#else
+#define est_apps_startup() est_ssl_startup()
+#endif
+#define est_ssl_startup() \
     do { CRYPTO_malloc_init(); \
          ERR_load_crypto_strings(); OpenSSL_add_all_algorithms(); \
          ENGINE_load_builtin_engines(); \
@@ -412,7 +427,14 @@ int est_convert_p7b64_to_pem(unsigned char *certs_p7, int certs_len, unsigned ch
  
     @return void.
  */
+#if (defined(__MINGW32__) || defined(_WIN32)) && !defined(__SYMBIAN32__)
 #define est_apps_shutdown() \
+    (void)WSACleanup(); \
+    est_ssl_shutdown()
+#else
+#define est_apps_shutdown() est_ssl_shutdown()
+#endif
+#define est_ssl_shutdown() \
     do { CONF_modules_unload(1); \
          OBJ_cleanup(); EVP_cleanup(); ENGINE_cleanup(); \
          CRYPTO_cleanup_all_ex_data(); ERR_remove_thread_state(NULL); \

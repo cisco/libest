@@ -9,14 +9,20 @@
  */
 #include <stdio.h>
 #include <unistd.h>
+#ifdef __MINGW32__
+#define sleep(x) Sleep((x) * 1000)
+#endif
 #include <string.h>
 #include <stdlib.h>
 #include <openssl/bio.h>
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#include "NonPosix.h"
+#ifndef __MINGW32__
 #include <sys/socket.h>
 #include <netdb.h>
+#endif
 
 /*
  * Reads a file into an unsigned char array.

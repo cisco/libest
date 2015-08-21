@@ -17,6 +17,7 @@
 // 2015-08-14 added start_single_server() and stop_single_server() for unit tests
 // 2014-06-25 extended logging of server main activity
 
+#include <est.h>
 #include <stdio.h>
 #include <unistd.h>
 #ifndef DISABLE_PTHREADS
@@ -24,12 +25,13 @@
 #endif
 #include <fcntl.h>
 #include <sys/types.h>
+#ifndef __MINGW32__
 #include <sys/socket.h>
 #include <netdb.h>
 #include <sys/select.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <est.h>
+#endif
 #include <est_locl.h>
 #include <signal.h>
 
@@ -146,7 +148,6 @@ static void *master_thread (struct server_data *data)
     char portstr[12];
     int on = 1;
     int rc;
-    int flags;
     int sock, new;
     socklen_t len;
 
@@ -186,11 +187,20 @@ static void *master_thread (struct server_data *data)
             printf("setsockopt KEEPALIAVE call failed\n");
             exit(1);
         }
-        flags = fcntl(sock, F_GETFL, 0);
+#ifndef __MINGW32__
+        int flags = fcntl(sock, F_GETFL, 0);
         if (fcntl(sock, F_SETFL, flags | O_NONBLOCK)) {
             printf("fcntl SETFL call failed\n");
             exit(1);
         }
+#else
+        // http://stackoverflow.com/questions/9534088/using-winsock-for-socket-programming-in-c
+        unsigned long on = 1;
+        if (0 != ioctlsocket(sock, FIONBIO, &on)) {
+            printf("ioctlsocket non-block call failed\n");
+            exit(1);
+        }
+#endif
 	/*
 	 * Bind to the socket 
 	 */

@@ -17,6 +17,7 @@
 // 2015-08-14 sharing master_thread() with unit tests, more efficient synchronization
 // 2015-08-14 using start_single_server() and stop_single_server() of simple_server.c
 
+#include <est.h>
 #include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
@@ -29,14 +30,15 @@
 #include <openssl/conf.h>
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
-#include <est.h>
 #include "../../example/util/ossl_srv.h"
 #include "../../example/util/simple_server.h"
 #include "test_utils.h"
 #include <sys/types.h>
+#ifndef __MINGW32__
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
+#endif
 #include "st_proxy.h"
 
 void *proxy_data = NULL;

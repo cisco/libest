@@ -4,7 +4,6 @@
  * November, 2012
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
- * All rights reserved.
  * Copyright (c) 2015 Siemens AG
  * License: 3-clause ("New") BSD License
  * All rights reserved.
@@ -43,13 +42,13 @@
 
 // 2015-08-13 improved error reporting and handling
 
+#include "est.h"
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <limits.h>
 #include <openssl/ssl.h>
 #include <assert.h>
-#include "est.h"
 #include "est_locl.h"
 #include "est_server_http.h"
 #include "est_ossl_util.h"
@@ -1002,7 +1001,7 @@ static EST_ERROR est_io_parse_http_retry_after_resp (EST_CTX *ctx,
              * or is an integer representing the number of seconds
              * that the client must wait.
              */
-            if (isalpha(*(char *)hdrs[i].value)) {
+            if (isalpha((int)*(hdrs[i].value))) {
 #ifdef RETRY_AFTER_DELAY_TIME_SUPPORT
                 int rc;
                 /*

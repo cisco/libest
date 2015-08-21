@@ -17,12 +17,12 @@
 
 // 2014-12-17 improved error handling of est_proxy_http_request() and diagnostic messages
 
+#include "est.h"
 #include <string.h>
 #include <stdlib.h>
 #ifndef DISABLE_PTHREADS
 #include <pthread.h>
 #endif
-#include "est.h"
 #include "est_server_http.h"
 #include "est_locl.h"
 #include "est_server.h"
@@ -83,9 +83,7 @@ static EST_CTX *get_client_ctx (EST_CTX *p_ctx)
     int empty_index;
 
     /*
-     * Windows TODO: This will likely need to be replaced with
-     * GetCurrentThreadId()
-     * In addition, this is really returning a pointer to an opaque value, so
+     * TODO: This is really returning a pointer to an opaque value, so
      * what's being used here is typically a pointer in pthread based
      * environments and not the actual pthread id.  The only helper API to
      * access the actual id is pthread_equal().  If this must be used, then
@@ -94,7 +92,11 @@ static EST_CTX *get_client_ctx (EST_CTX *p_ctx)
      * case the application is forking new processes (e.g. NGINX).  
      */
 #ifndef DISABLE_PTHREADS
+#ifdef __MINGW32__
+    cur_threadid = (unsigned long) GetCurrentThreadId();
+#else
     cur_threadid = (unsigned long) pthread_self();
+#endif
 #endif
     cur_threadid += cur_pid;
 

@@ -24,6 +24,8 @@
 #include <stdarg.h>
 #ifndef DISABLE_PTHREADS
 #include <pthread.h>
+#else
+typedef int pthread_t;
 #endif
 #ifndef DISABLE_BACKTRACE 
 #include <execinfo.h>
@@ -87,12 +89,12 @@ void est_log (EST_LOG_LEVEL lvl, const char *format, ...)
 
 }
 
-static unsigned long log_source[EST_PROXY]; // thread ID
+static pthread_t log_source[EST_PROXY+1]; // thread ID
 EST_ERROR est_set_log_source (EST_MODE source)
 {
     if (EST_SERVER <= source && source <= EST_PROXY) {
 #ifndef DISABLE_PTHREADS
-	log_source[source-1] = (unsigned long)pthread_self();
+	log_source[source] = pthread_self();
 #endif
 	return EST_ERR_NONE;
     }
@@ -117,13 +119,21 @@ void est_log_prefixed (EST_LOG_LEVEL lvl, const char *func, int line, const char
     }
 
     char *prefix = "***EST";
-    unsigned long self = -1;
+    pthread_t self;
 #ifndef DISABLE_PTHREADS
-    self = (unsigned long)pthread_self();
+    self = pthread_self();
+#else
+    self = -1;
 #endif
-    if (self == log_source[EST_CLIENT-1]) prefix = "CLIENT";
-    if (self == log_source[EST_SERVER-1]) prefix = "SERVER";
-    if (self == log_source[EST_PROXY -1]) prefix = "PROXY ";
+#ifndef __MINGW32__
+    if (self == log_source[EST_CLIENT]) prefix = "CLIENT";
+    if (self == log_source[EST_SERVER]) prefix = "SERVER";
+    if (self == log_source[EST_PROXY ]) prefix = "PROXY ";
+#else
+    if (self.p == log_source[EST_CLIENT].p) prefix = "CLIENT";
+    if (self.p == log_source[EST_SERVER].p) prefix = "SERVER";
+    if (self.p == log_source[EST_PROXY ].p) prefix = "PROXY ";
+#endif
 
     if (line != 0) {
 	snprintf(log_buf, sizeof(log_buf), "%s [%s][%s:%d]--> ", prefix,

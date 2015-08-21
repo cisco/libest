@@ -18,6 +18,7 @@
 // 2015-08-07 completed use of DISABLE_PTHREADS
 
 /* Main routine */
+#include <est.h>
 #include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
@@ -30,9 +31,7 @@
 #include <getopt.h>
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
-#include <est.h>
 #include <sys/types.h>
-#include <netinet/in.h>
 #include "../util/utils.h"
 #include "../util/simple_server.h"
 
@@ -290,7 +289,11 @@ static void ssl_locking_callback (int mode, int mutex_num, const char *file,
 }
 static unsigned long ssl_id_callback (void)
 {
+#ifndef __MINGW32__
     return (unsigned long)pthread_self();
+#else
+    return (unsigned long)pthread_self().p;
+#endif
 }
 #endif
 
@@ -325,7 +328,7 @@ void cleanup (void)
 
 int main (int argc, char **argv)
 {
-    char c;
+    signed char c;
     EVP_PKEY *priv_key;
     BIO *certin, *keyin;
     X509 *x;

@@ -22,6 +22,7 @@
 // 2014-04-23 added -y option for using existing CSR
 
 /* Main routine */
+#include <est.h>
 #include "stdio.h"
 #include <getopt.h>
 #include <sys/types.h>
@@ -34,7 +35,6 @@
 #include <errno.h>
 #include <unistd.h>
 
-#include <est.h>
 #include "../util/utils.h"
 
 #define EST_UT_MAX_CMD_LEN 255

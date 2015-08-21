@@ -586,6 +586,7 @@ int rotate_serial(char *serialfile, char *new_suffix, char *old_suffix)
 	j = BIO_snprintf(buf[1], sizeof buf[1], "%s.%s",
 		serialfile, old_suffix);
 	// BIO_printf(bio_err, "DEBUG: renaming \"%s\" to \"%s\"\n", serialfile, buf[1]);
+	(void)remove(buf[1]);
 	if (rename(serialfile,buf[1]) < 0 && errno != ENOENT
 #ifdef ENOTDIR
 			&& errno != ENOTDIR
@@ -1186,6 +1187,7 @@ int rotate_index(const char *dbfile, const char *new_suffix, const char *old_suf
 	j = BIO_snprintf(buf[3], sizeof buf[3], "%s.attr.%s",
 		dbfile, old_suffix);
 	// BIO_printf(bio_err, "DEBUG: renaming \"%s\" to \"%s\"\n", dbfile, buf[1]);
+	(void)remove(buf[1]);
 	if (rename(dbfile,buf[1]) < 0 && errno != ENOENT
 #ifdef ENOTDIR
 		&& errno != ENOTDIR
@@ -1206,6 +1208,7 @@ int rotate_index(const char *dbfile, const char *new_suffix, const char *old_suf
 		goto err;
 		}
 	// BIO_printf(bio_err, "DEBUG: renaming \"%s\" to \"%s\"\n", buf[4],buf[3]);
+	(void)remove(buf[3]);
 	if (rename(buf[4],buf[3]) < 0 && errno != ENOENT
 #ifdef ENOTDIR
 		&& errno != ENOTDIR
