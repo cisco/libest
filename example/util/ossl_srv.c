@@ -1154,7 +1154,7 @@ int save_index(const char *dbfile, const char *suffix, CA_DB *db)
 		BIO_printf(bio_err, "Unable to open '%s'\n", buf[2]);
 		goto err;
 		}
-	BIO_printf(out, "Unique_subject = %s\n",
+	BIO_printf(out, "unique_subject = %s\n",
 		db->attributes.unique_subject ? "yes" : "no");
 	BIO_free(out);
 
