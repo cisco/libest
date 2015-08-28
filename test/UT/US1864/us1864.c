@@ -8,7 +8,6 @@
  *------------------------------------------------------------------
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -65,7 +64,7 @@ static size_t curl_data_cb (void *ptr, size_t size, size_t nmemb, void *userdata
          * strings.  In this case the http headers came from EST server and we
          * know they are null terminated
          */
-        rc = strstr(ptr, "WWW-Authenticate: Bearer");
+        rc = strstr((char *)ptr, "WWW-Authenticate: Bearer");
         if (rc) {
             bearer_found = 1;
         }
@@ -201,7 +200,7 @@ static void us1864_test1 (void)
     CU_ASSERT(est_rv == EST_ERR_NONE);
     est_rv = est_server_set_auth_mode(ctx, AUTH_TOKEN);
     CU_ASSERT(est_rv == EST_ERR_NONE);
-    est_rv = est_server_set_auth_mode(ctx, 0xffffffff);
+    est_rv = est_server_set_auth_mode(ctx, (EST_HTTP_AUTH_MODE)0xffffffff);
     CU_ASSERT(est_rv == EST_ERR_BAD_MODE);
 
 #if 0

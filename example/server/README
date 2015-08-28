@@ -79,7 +79,7 @@ the CRL records appended to it. To generate the CRL, follow this example:
 
 TLS-SRP support
 ---------------------
-To enable TLS-SRP use the -s switch when starting estserver.  You'll
+To enable TLS-SRP use the --srp switch when starting estserver.  You'll
 need to provide the SRP verifier file to be used.  This can be generated
 using OpenSSL.  An example follows:
 

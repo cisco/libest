@@ -362,13 +362,13 @@ EST_ERROR est_client_enable_srp(EST_CTX *ctx, int strength, char *uid, char *pwd
  * The following callback entry points must be set by the application
  * when acting as an EST server or proxy.
  */
-EST_ERROR est_set_ca_enroll_cb(EST_CTX *ctx, int (*cb)(unsigned char * pkcs10, 
+EST_ERROR est_set_ca_enroll_cb(EST_CTX *ctx, EST_ERROR (*cb)(unsigned char * pkcs10, 
 	                       int p10_len, unsigned char **pkcs7, int *pkcs7_len, 
 			       char *user_id, X509 *peer_cert, void *ex_data));
-EST_ERROR est_set_ca_reenroll_cb(EST_CTX *ctx, int (*cb)(unsigned char * pkcs10, 
+EST_ERROR est_set_ca_reenroll_cb(EST_CTX *ctx, EST_ERROR (*cb)(unsigned char * pkcs10, 
 	                         int p10_len, unsigned char **pkcs7, int *pkcs7_len, 
 				 char *user_id, X509 *peer_cert, void *ex_data));
-EST_ERROR est_set_csr_cb(EST_CTX * ctx, unsigned char *(*cb)(int*csr_len, void *ex_data));
+EST_ERROR est_set_csr_cb(EST_CTX * ctx, unsigned char *(*cb)(int *csr_len, void *ex_data));
 EST_ERROR est_set_http_auth_cb(EST_CTX * ctx, int (*cb)(EST_CTX*, EST_HTTP_AUTH_HDR*, X509*, void*));
 
     

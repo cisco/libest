@@ -7,8 +7,8 @@
  * All rights reserved.
  *------------------------------------------------------------------
  */
+
 #include <stdio.h>
-#include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
 #include <openssl/bio.h>
@@ -16,7 +16,7 @@
 #include <openssl/pem.h>
 #include <openssl/err.h>
 #include "NonPosix.h"
-#ifndef __MINGW32__
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <netdb.h>
 #endif
@@ -45,7 +45,7 @@ int read_binary_file (char *filename, unsigned char **contents)
     len = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
-    *contents = malloc(len + 1);
+    *contents = (unsigned char *)malloc(len + 1);
     if (!*contents) {
 	fprintf(stderr, "\nmalloc fail\n");
         fclose(fp);
@@ -87,6 +87,7 @@ int write_binary_file (char *filename, unsigned char *contents, int len)
  * This function simply opens a TCP connection using
  * the BIO interface.
  */
+// TODO merge this with EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
 BIO *open_tcp_socket (char *ipaddr, char *port)
 {
     BIO *tcp;
@@ -143,7 +144,7 @@ BIO *open_tcp_socket (char *ipaddr, char *port)
          * Connection has been established. No need to try
          * any more addresses.
          */
-        printf("established connection");
+        // printf("established connection");
         break;
     }
     freeaddrinfo(aiptr);
@@ -178,6 +179,7 @@ BIO *open_tcp_socket (char *ipaddr, char *port)
  * This function simply opens a TCP connection using
  * the BIO interface. This only works for IPv4
  */
+// TODO merge this with EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
 BIO *open_tcp_socket_ipv4 (char *ipaddr, char *port)
 {
     BIO *b;
@@ -235,7 +237,7 @@ void dumpbin (char *buf, size_t len)
 
     fflush(stdout);
     printf("\ndumpbin (%d bytes):\n", (int)len);
-    for (i = 0; i < len; i++) {
+    for (i = 0; i < (int)len; i++) {
         /*if (buf[i] >= 0xA)*/ printf("%c", buf[i]);
         //if (i%32 == 31) printf("\n");
     }

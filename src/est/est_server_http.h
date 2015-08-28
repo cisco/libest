@@ -110,7 +110,7 @@ typedef long off_t;
 #define funlockfile(x) LeaveCriticalSection(&global_log_file_lock)
 #define sleep(x) Sleep((x) * 1000)
 
-#if !defined(fileno)
+#if !defined(__MINGW32__)
 #define fileno(x) _fileno(x)
 #endif // !fileno MINGW #defines fileno
 
@@ -155,17 +155,21 @@ typedef struct DIR {
 #include <sys/types.h>
 #include <sys/socket.h>
 #endif
-#ifndef __MINGW32__
+#ifndef _WIN32
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pwd.h>
 #endif
-#include <sys/time.h>
 #include <stdint.h>
+#ifdef _MSC_VER
+#include <time.h>
+#else
+#include <sys/time.h>
 #include <inttypes.h>
 
 #include <unistd.h>
 #include <dirent.h>
+#endif
 #if defined(__MACH__)
 #define SSL_LIB   "libssl.dylib"
 #define CRYPTO_LIB  "libcrypto.dylib"
@@ -186,7 +190,7 @@ typedef struct DIR {
 #define mg_rename(x, y) rename(x, y)
 #define mg_sleep(x) usleep((x) * 1000)
 #define ERRNO errno
-#ifndef __MINGW32__
+#ifndef _WIN32
 #define INVALID_SOCKET (-1)
 typedef int SOCKET;
 #endif

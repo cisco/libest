@@ -18,7 +18,6 @@
  *  
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -1082,7 +1081,7 @@ static void us894_test25 (void)
     CU_ASSERT(est_rv == EST_ERR_NONE);
     est_rv = est_proxy_set_auth_mode(ctx, AUTH_DIGEST);
     CU_ASSERT(est_rv == EST_ERR_NONE);
-    est_rv = est_proxy_set_auth_mode(ctx, 0xffffffff);
+    est_rv = est_proxy_set_auth_mode(ctx, (EST_HTTP_AUTH_MODE)0xffffffff);
     CU_ASSERT(est_rv == EST_ERR_BAD_MODE);
 
     est_rv = est_proxy_set_auth_mode(NULL, AUTH_BASIC);
@@ -1105,7 +1104,6 @@ static void us894_test26 (void)
     LOG_FUNC_NM;
     
     st_proxy_stop();
-    sleep(1);
 
     /*
      * restart the proxy without passing the ca certs response change parameter
@@ -1123,7 +1121,6 @@ static void us894_test26 (void)
                         US894_TCP_SERVER_PORT,
                         0,  // disable PoP
                         0);  // ecdhe nid info
-    sleep(1);
 
     outfile = fopen(test26_outfile, "w");
     rv = curl_http_get(US894_CACERT_URL, US894_CACERTS, &write_func);
@@ -1142,7 +1139,6 @@ static void us894_test26 (void)
      * restart the proxy and include the CA Cert response chain
      */
     st_proxy_stop();
-    sleep(1);
     rv = st_proxy_start(US894_TCP_PROXY_PORT, 
                         US894_PROXY_CERT,
                         US894_PROXY_KEY,
@@ -1155,7 +1151,6 @@ static void us894_test26 (void)
                         US894_TCP_SERVER_PORT,
                         0,  // disable PoP
                         0);  // ecdhe nid info
-    sleep(1);
 }
 
 

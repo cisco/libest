@@ -9,7 +9,6 @@
  *------------------------------------------------------------------
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -233,7 +232,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb(EST_HTTP_AUTH_HDR *auth_credenti
                 printf("\nError determining length of token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
             }   
-            token_ptr = malloc(token_len+1);
+            token_ptr = (char *)malloc(token_len+1);
             if (token_ptr == NULL){
                 printf("\nError allocating token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
@@ -276,9 +275,9 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_basic_cb(EST_HTTP_AUTH_HDR *auth_credenti
     
     if (auth_credentials->mode == AUTH_BASIC) {
 
-        auth_credentials->user = malloc(sizeof("estuser"));
+        auth_credentials->user = (char *)malloc(sizeof("estuser"));
         strncpy(auth_credentials->user, "estuser", sizeof("estuser"));
-        auth_credentials->pwd = malloc(sizeof("estpwd"));
+        auth_credentials->pwd = (char *)malloc(sizeof("estpwd"));
         strncpy(auth_credentials->pwd, "estpwd", sizeof("estpwd"));
         
         return (EST_HTTP_AUTH_CRED_SUCCESS);
@@ -311,9 +310,9 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_digest_cb(EST_HTTP_AUTH_HDR *auth_credent
     
     if (auth_credentials->mode == AUTH_DIGEST) {
 
-        auth_credentials->user = malloc(sizeof("estuser"));
+        auth_credentials->user = (char *)malloc(sizeof("estuser"));
         strncpy(auth_credentials->user, "estuser", sizeof("estuser"));
-        auth_credentials->pwd = malloc(sizeof("estpwd"));
+        auth_credentials->pwd = (char *)malloc(sizeof("estpwd"));
         strncpy(auth_credentials->pwd, "estpwd", sizeof("estpwd"));
         
         return (EST_HTTP_AUTH_CRED_SUCCESS);
@@ -402,7 +401,7 @@ static void us1883_simple_enroll (char *cn, char *server, EST_ERROR expected_enr
      * Use the simplified API to enroll a CSR
      */
     rv = est_client_enroll(ectx, cn, &pkcs7_len, key);
-    CU_ASSERT(rv == expected_enroll_rv);
+    CU_ASSERT_NM_EQ(cn, rv, expected_enroll_rv);
 
     /*
      * Cleanup
@@ -477,7 +476,7 @@ void us1883_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ectx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);
@@ -545,7 +544,7 @@ void us1883_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
      * to be changed to a passing response.
      */
     rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
-    CU_ASSERT(rv == expected_enroll_rv);
+    CU_ASSERT_NM_EQ(cn, rv, expected_enroll_rv);
     
     /*
      * Cleanup

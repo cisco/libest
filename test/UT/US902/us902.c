@@ -8,7 +8,6 @@
  *------------------------------------------------------------------
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -330,7 +329,6 @@ static void us902_test6 (void)
     LOG_FUNC_NM;
     st_disable_http_auth();
     
-    sleep(1);
     rv = curl_http_post_cert(US902_ENROLL_URL_BA, 
 	US902_PKCS10_CT, 
 	US902_PKCS10_CERTAUTH, 
@@ -361,7 +359,6 @@ static void us902_test7 (void)
     LOG_FUNC_NM;
     st_disable_http_auth();
     
-    sleep(1);
     rv = curl_http_post_cert(US902_ENROLL_URL_BA, 
 	US902_PKCS10_CT, 
 	US902_PKCS10_BADSUBJECT, 

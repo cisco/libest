@@ -18,6 +18,6 @@
 #define HEADER_OSSL_SRV_H 
 
 BIO * read_cert_pkcs7(char *cert_file);
-BIO * ossl_simple_enroll(unsigned char *p10buf, int p10len, char *configfile);
+BIO * ossl_simple_enroll(const unsigned char *p10buf, int p10len, const char *configfile);
 
 #endif

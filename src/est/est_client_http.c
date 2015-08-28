@@ -690,7 +690,7 @@ static char * HTNextField (char ** pstr)
  */
 static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
 {
-    int rv = EST_ERR_NONE;
+    EST_ERROR rv = EST_ERR_NONE;
     char *p = hdr;
     char *token = NULL;
     char *value = NULL;
@@ -791,14 +791,14 @@ typedef struct {
     char *value;         // HTTP header value
 } HTTP_HEADER;
 #define MAX_HEADERS 16
-static HTTP_HEADER * parse_http_headers (unsigned char **buf, int *num_headers)
+static HTTP_HEADER * parse_http_headers (char **buf, int *num_headers)
 {
     int i;
     HTTP_HEADER *hdrs;
     char *hdr_end;
 
     *num_headers = 0;
-    hdrs = malloc(sizeof(HTTP_HEADER) * MAX_HEADERS);
+    hdrs = (HTTP_HEADER *)malloc(sizeof(HTTP_HEADER) * MAX_HEADERS);
     if (!hdrs) {
         EST_LOG_ERR("malloc failure");
         return (NULL);
@@ -807,7 +807,7 @@ static HTTP_HEADER * parse_http_headers (unsigned char **buf, int *num_headers)
     /*
      * Find offset of header delimiter
      */
-    hdr_end = strstr((const char *)*buf, "\r\n\r\n");
+    hdr_end = strstr(*buf, "\r\n\r\n");
 
     /*
      * Skip the first line
@@ -822,7 +822,7 @@ static HTTP_HEADER * parse_http_headers (unsigned char **buf, int *num_headers)
             break;
         }
         *num_headers = i + 1;
-        if ((*buf) > (unsigned char *)hdr_end) {
+        if ((*buf) > hdr_end) {
             break;
         }
     }
@@ -1162,7 +1162,7 @@ static int est_ssl_read (SSL *ssl, unsigned char *buf, int buf_max,
  * This function extracts data from the SSL context and puts
  * it into a buffer.
  */
-static int est_io_read_raw (SSL *ssl, unsigned char *buf, int buf_max,
+static EST_ERROR est_io_read_raw (SSL *ssl, unsigned char *buf, int buf_max,
                             int *read_cnt, int sock_read_timeout)
 {
     int cur_cnt;
@@ -1212,7 +1212,7 @@ static int est_io_read_raw (SSL *ssl, unsigned char *buf, int buf_max,
 EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
                                unsigned char **buf, int *payload_len)
 {
-    int rv = EST_ERR_NONE;
+    EST_ERROR rv = EST_ERR_NONE;
     HTTP_HEADER *hdrs;
     int hdr_cnt;
     int http_status;
@@ -1220,7 +1220,7 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
     int raw_len = 0;
     
 
-    raw_buf = malloc(EST_CA_MAX);
+    raw_buf = (unsigned char *)malloc(EST_CA_MAX);
     if (raw_buf == NULL) {
         EST_LOG_ERR("Unable to allocate memory");
         return EST_ERR_MALLOC;
@@ -1249,7 +1249,7 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
      * Look for status 200 for success
      */
     http_status = est_io_parse_response_status_code(raw_buf);
-    hdrs = parse_http_headers(&payload, &hdr_cnt);
+    hdrs = parse_http_headers((char **)&payload, &hdr_cnt);
     EST_LOG_INFO("HTTP status %d received", http_status);
 
     /*
@@ -1317,7 +1317,7 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
          */
         *payload_len = est_io_check_http_hdrs(hdrs, hdr_cnt, op);
 	if (*payload_len < 0) {
-	    rv = -*payload_len;
+	    rv = (EST_ERROR)-*payload_len;
 	} else {
 	    EST_LOG_INFO("HTTP Content len=%d", *payload_len);
 	}
@@ -1335,7 +1335,7 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
             /*
              * Allocate the buffer to hold the payload to be passed back
              */
-            payload_buf = malloc(*payload_len);   
+            payload_buf = (unsigned char *)malloc(*payload_len);
             if (!payload_buf) {
                 EST_LOG_ERR("Unable to allocate memory");
                 free(raw_buf);

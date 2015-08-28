@@ -16,13 +16,11 @@
 // 2015-08-28 minor bug corrections w.r.t long options and stability improvements
 
 #include <est.h>
-#include "stdio.h"
-#include <getopt.h>
+#include <stdio.h>
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
-#include <strings.h>
 #include <stdlib.h>
 #include "../util/utils.h"
 
@@ -108,7 +106,7 @@ static EVP_PKEY * generate_private_key (void)
     PEM_write_bio_ECPKParameters(out, group);
     PEM_write_bio_ECPrivateKey(out, eckey, NULL, NULL, 0, NULL, NULL);
     key_len = BIO_get_mem_data(out, &tdata);
-    key_data = malloc(key_len+1);
+    key_data = (unsigned char *)malloc(key_len+1);
     memcpy(key_data, tdata, key_len);
     EC_KEY_free(eckey);
     BIO_free(out);
@@ -182,7 +180,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb(EST_HTTP_AUTH_HDR *auth_credenti
                 printf("\nError determining length of token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
             }   
-            token_ptr = malloc(token_len+1);
+            token_ptr = (char *)malloc(token_len+1);
             if (token_ptr == NULL){
                 printf("\nError allocating token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
@@ -398,7 +396,7 @@ int main (int argc, char **argv)
     /*
      * Retrieve a copy of the cert
      */
-    new_client_cert = malloc(p7_len);
+    new_client_cert = (unsigned char *)malloc(p7_len);
     if (new_client_cert == NULL){
 	printf("\nFailed to allocate memory for the newly provisioned cert\n");
 	exit(1);
@@ -421,7 +419,7 @@ int main (int argc, char **argv)
     /*
      * Retrieve a copy of the new trust anchor
      */
-    new_certs = malloc(ca_certs_len);
+    new_certs = (unsigned char *)malloc(ca_certs_len);
     rv = est_client_copy_cacerts(ectx, new_certs);
     if (rv != EST_ERR_NONE) {
         printf("\nFailed to copy new CA certs with code %d (%s)\n", 

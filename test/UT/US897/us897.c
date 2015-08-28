@@ -8,7 +8,6 @@
  *------------------------------------------------------------------
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #ifdef HAVE_CUNIT
 #include "CUnit/Basic.h"
@@ -61,7 +60,6 @@ static int us897_start_server (int manual_enroll, int nid)
 		  0,
 		  nid);
     
-    sleep(1);
     return rv;
 }
 
@@ -95,7 +93,6 @@ static int us897_init_suite (void)
      * Start an instance of the EST server
      */
     rv = us897_start_server(0, 0);
-    sleep(2);
     
     return rv;
 }
@@ -162,8 +159,8 @@ static void us897_test1 (void)
     EST_ERROR rc;
     EVP_PKEY *priv_key;
     
-    sleep(1);
-    
+    LOG_FUNC_NM;
+
     /*
      * Read in the CA certificates
      */
@@ -213,7 +210,7 @@ static void us897_test2 (void)
     int cacerts_len = 0;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    LOG_FUNC_NM;
     
     /*
      * Read in the CA certificates
@@ -259,7 +256,7 @@ static void us897_test3 (void)
     EST_ERROR rc;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    LOG_FUNC_NM;
     
     /*
      * Read in the CA certificates
@@ -308,6 +305,8 @@ static void us897_test3 (void)
     int cacerts_len = 0;
     EST_ERROR rc;
     EVP_PKEY *priv_key;
+
+    LOG_FUNC_NM;
 
     /*
      * Read in the CA certificates
@@ -358,7 +357,7 @@ static void us897_test6 (void)
     EST_ERROR rc;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    LOG_FUNC_NM;
     
     /*
      * Read in the CA certificates
@@ -408,7 +407,7 @@ static void us897_test7 (void)
     EST_ERROR rc;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    LOG_FUNC_NM;
     
     /*
      * Read in the CA certificates
@@ -467,7 +466,7 @@ static void us897_test9 (void)
     EST_ERROR rc = EST_ERR_NONE;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    LOG_FUNC_NM;
     
     /*
      * Read in the CA certificates
@@ -521,7 +520,7 @@ static void us897_test10 (void)
         "1234567890123456789012345678901234567890123456789012345";
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    LOG_FUNC_NM;
     
     /*
      * Read in the CA certificates
@@ -595,7 +594,7 @@ static void us897_test11 (void)
     int  retrieved_cacerts_len = 0;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    LOG_FUNC_NM;
     
     /*
      * Read in the CA certificates
@@ -632,7 +631,7 @@ static void us897_test11 (void)
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(retrieved_cacerts_len > 0);
 
-    retrieved_cacerts = malloc(retrieved_cacerts_len);
+    retrieved_cacerts = (unsigned char *)malloc(retrieved_cacerts_len);
     
     rc = est_client_copy_cacerts(ectx, retrieved_cacerts);
     
@@ -678,7 +677,7 @@ static void us897_test12 (void)
     EST_ERROR rc = EST_ERR_NONE;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    LOG_FUNC_NM;
 
     /*
      * Read in the CA certificates
@@ -741,29 +740,26 @@ static void us897_test13 (void)
     unsigned char *retrieved_cacerts = NULL;
     int  retrieved_cacerts_len = 0;    
 
+    LOG_FUNC_NM;
+
     /*
      * Stop the existing server.  Need to ensure that the server
      * is using a specific CA cert chain.
      */
     st_stop();
-    sleep(2);
 
     /*
      * Spin up a new instance of the EST server
      * using a CA cert chain that contains just one cert
      */
-    rc = st_start(US897_SERVER_PORT, 
+    CU_ASSERT_FATAL(0 == st_start(US897_SERVER_PORT, 
 	          US897_SERVER_CERTKEY,
 	          US897_SERVER_CERTKEY,
 	          "US897 test realm",
 	          US897_CACERTS,
 	          US897_TRUST_CERTS,
 	          "CA/estExampleCA.cnf",
-		  0, 0, 0);
-
-    CU_ASSERT(rc == 0);
-    if (rc) return;
-    sleep(1);
+		  0, 0, 0));
 
     /*
      * Read in thestartup  CA certificates
@@ -801,7 +797,7 @@ static void us897_test13 (void)
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(retrieved_cacerts_len > 0);
 
-    retrieved_cacerts = malloc(retrieved_cacerts_len);
+    retrieved_cacerts = (unsigned char *)malloc(retrieved_cacerts_len);
     
     rc = est_client_copy_cacerts(ectx, retrieved_cacerts);
     
@@ -810,7 +806,7 @@ static void us897_test13 (void)
      */    
     if (retrieved_cacerts) {
 
-        printf("\nRetrieved CA Certs buffer:\n %s\n", retrieved_cacerts);
+        printf("\nRetrieved CA Certs buffer:\n %.*s\n", retrieved_cacerts_len, retrieved_cacerts);
         printf("Retrieved CA certs buffer length: %d\n", retrieved_cacerts_len);    
     }
     free(retrieved_cacerts);
@@ -842,29 +838,26 @@ static void us897_test14 (void)
     unsigned char *retrieved_cacerts = NULL;
     int  retrieved_cacerts_len = 0;    
 
+    LOG_FUNC_NM;
+
     /*
      * Stop the existing server.  Need to ensure that the server
      * is using a specific CA cert chain.
      */
     st_stop();
-    sleep(2);
 
     /*
      * Spin up a new instance of the EST server
      * using a CA cert chain that contains just one cert
      */
-    rc = st_start(US897_SERVER_PORT, 
+    CU_ASSERT_FATAL(0 == st_start(US897_SERVER_PORT, 
 	          US897_SERVER_CERTKEY,
 	          US897_SERVER_CERTKEY,
 	          "US897 test realm",
                   US897_CACERTS_SINGLE_CHAIN_MULT_CERTS,
 	          US897_TRUST_CERTS,
 	          "CA/estExampleCA.cnf",
-		  0, 0, 0);
-
-    CU_ASSERT(rc == 0);
-    if (rc) return;
-    sleep(1);
+		  0, 0, 0));
 
     /*
      * Read in thestartup  CA certificates
@@ -902,7 +895,7 @@ static void us897_test14 (void)
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(retrieved_cacerts_len > 0);
 
-    retrieved_cacerts = malloc(retrieved_cacerts_len);
+    retrieved_cacerts = (unsigned char *)malloc(retrieved_cacerts_len);
     
     rc = est_client_copy_cacerts(ectx, retrieved_cacerts);
     
@@ -911,7 +904,7 @@ static void us897_test14 (void)
      */    
     if (retrieved_cacerts) {
 
-        printf("\nRetrieved CA Certs buffer:\n %s\n", retrieved_cacerts);
+        printf("\nRetrieved CA Certs buffer:\n %.*s\n", retrieved_cacerts_len, retrieved_cacerts);
         printf("Retrieved CA certs buffer length: %d\n", retrieved_cacerts_len);    
     }
     free(retrieved_cacerts);
@@ -944,29 +937,26 @@ static void us897_test15 (void)
     unsigned char *retrieved_cacerts = NULL;
     int  retrieved_cacerts_len = 0;    
 
+    LOG_FUNC_NM;
+
     /*
      * Stop the existing server.  Need to ensure that the server
      * is using a specific CA cert chain.
      */
     st_stop();
-    sleep(2);
 
     /*
      * Spin up a new instance of the EST server
      * using a CA cert chain that contains just one cert
      */
-    rc = st_start(US897_SERVER_PORT, 
+    CU_ASSERT_FATAL(0 == st_start(US897_SERVER_PORT, 
 	          US897_SERVER_CERTKEY,
 	          US897_SERVER_CERTKEY,
 	          "US897 test realm",
                   US897_CACERTS_SINGLE_CHAIN_MULT_CERTS_ONE_MISSING,
 	          US897_TRUST_CERTS,
 	          "CA/estExampleCA.cnf",
-		  0, 0, 0);
-
-    CU_ASSERT(rc == 0);
-    if (rc) return;
-    sleep(1);
+		  0, 0, 0));
 
     /*
      * Read in thestartup  CA certificates
@@ -1008,7 +998,7 @@ static void us897_test15 (void)
         /*
          * Shouldn't be in here, but if we are, malloc and call
          */
-        retrieved_cacerts = malloc(retrieved_cacerts_len);
+        retrieved_cacerts = (unsigned char *)malloc(retrieved_cacerts_len);
         rc = est_client_copy_cacerts(ectx, retrieved_cacerts);
 
         /*
@@ -1022,7 +1012,7 @@ static void us897_test15 (void)
      */    
     if (retrieved_cacerts) {
 
-        printf("\nRetrieved CA Certs buffer:\n %s\n", retrieved_cacerts);
+        printf("\nRetrieved CA Certs buffer:\n %.*s\n", retrieved_cacerts_len, retrieved_cacerts);
         printf("Retrieved CA certs buffer length: %d\n", retrieved_cacerts_len);    
     }
     free(retrieved_cacerts);
@@ -1055,29 +1045,26 @@ static void us897_test16 (void)
     unsigned char *retrieved_cacerts = NULL;
     int  retrieved_cacerts_len = 0;    
 
+    LOG_FUNC_NM;
+
     /*
      * Stop the existing server.  Need to ensure that the server
      * is using a specific CA cert chain.
      */
     st_stop();
-    sleep(2);
 
     /*
      * Spin up a new instance of the EST server
      * using a CA cert chain that contains just one cert
      */
-    rc = st_start(US897_SERVER_PORT, 
+    CU_ASSERT_FATAL(0 == st_start(US897_SERVER_PORT, 
 	          US897_SERVER_CERTKEY,
 	          US897_SERVER_CERTKEY,
 	          "US897 test realm",
                   US897_CACERTS_SINGLE_CHAIN_EXPIRED,
 	          US897_TRUST_CERTS,
 	          "CA/estExampleCA.cnf",
-		  0, 0, 0);
-
-    CU_ASSERT(rc == 0);
-    if (rc) return;
-    sleep(1);
+		  0, 0, 0));
 
     /*
      * Read in thestartup  CA certificates
@@ -1119,7 +1106,7 @@ static void us897_test16 (void)
         /*
          * Shouldn't be in here, but if we are, malloc and call
          */
-        retrieved_cacerts = malloc(retrieved_cacerts_len);
+        retrieved_cacerts = (unsigned char *)malloc(retrieved_cacerts_len);
         rc = est_client_copy_cacerts(ectx, retrieved_cacerts);
 
         /*
@@ -1133,7 +1120,7 @@ static void us897_test16 (void)
      */    
     if (retrieved_cacerts) {
 
-        printf("\nRetrieved CA Certs buffer:\n %s\n", retrieved_cacerts);
+        printf("\nRetrieved CA Certs buffer:\n %.*s\n", retrieved_cacerts_len, retrieved_cacerts);
         printf("Retrieved CA certs buffer length: %d\n", retrieved_cacerts_len);    
     }
     free(retrieved_cacerts);
@@ -1166,29 +1153,26 @@ static void us897_test17 (void)
     unsigned char *retrieved_cacerts = NULL;
     int  retrieved_cacerts_len = 0;    
 
+    LOG_FUNC_NM;
+    
     /*
      * Stop the existing server.  Need to ensure that the server
      * is using a specific CA cert chain.
      */
     st_stop();
-    sleep(2);
 
     /*
      * Spin up a new instance of the EST server
      * using a CA cert chain that contains just one cert
      */
-    rc = st_start(US897_SERVER_PORT, 
+    CU_ASSERT_FATAL(0 == st_start(US897_SERVER_PORT, 
 	          US897_SERVER_CERTKEY,
 	          US897_SERVER_CERTKEY,
 	          "US897 test realm",
                   US897_CACERTS_MULTI_CHAIN_CRLS,
 	          US897_TRUST_CERTS,
 	          "CA/estExampleCA.cnf",
-		  0, 0, 0);
-
-    CU_ASSERT(rc == 0);
-    if (rc) return;
-    sleep(1);
+		  0, 0, 0));
 
     /*
      * Read in the startup CA certificates
@@ -1230,7 +1214,7 @@ static void us897_test17 (void)
         /*
          * Shouldn't be in here, but if we are, malloc and call
          */
-        retrieved_cacerts = malloc(retrieved_cacerts_len);
+        retrieved_cacerts = (unsigned char *)malloc(retrieved_cacerts_len);
         rc = est_client_copy_cacerts(ectx, retrieved_cacerts);
 
         /*
@@ -1244,7 +1228,7 @@ static void us897_test17 (void)
      */    
     if (retrieved_cacerts) {
 
-        printf("\nRetrieved CA Certs buffer:\n %s\n", retrieved_cacerts);
+        printf("\nRetrieved CA Certs buffer:\n %.*s\n", retrieved_cacerts_len, retrieved_cacerts);
         printf("Retrieved CA certs buffer length: %d\n", retrieved_cacerts_len);    
     }
     free(retrieved_cacerts);
@@ -1277,6 +1261,8 @@ static void us897_test18 (void)
     unsigned char *retrieved_cacerts = NULL;
     int  retrieved_cacerts_len = 0;    
   
+    LOG_FUNC_NM;
+
     /*
      * Read in the startup CA certificates
      */
@@ -1328,7 +1314,7 @@ static void us897_test18 (void)
         /*
          * Shouldn't be in here, but if we are, malloc and call
          */
-        retrieved_cacerts = malloc(retrieved_cacerts_len);
+        retrieved_cacerts = (unsigned char *)malloc(retrieved_cacerts_len);
         rc = est_client_copy_cacerts(ectx, retrieved_cacerts);
 
         /*
@@ -1342,7 +1328,7 @@ static void us897_test18 (void)
      */    
     if (retrieved_cacerts) {
 
-        printf("\nRetrieved CA Certs buffer:\n %s\n", retrieved_cacerts);
+        printf("\nRetrieved CA Certs buffer:\n %.*s\n", retrieved_cacerts_len, retrieved_cacerts);
         printf("Retrieved CA certs buffer length: %d\n", retrieved_cacerts_len);    
     }
     free(retrieved_cacerts);

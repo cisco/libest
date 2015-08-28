@@ -34,7 +34,7 @@ typedef int pthread_t;
 #include "est_locl.h"
 #include "est_ossl_util.h"
 
-static char hex_chpw[] = {0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 
+static unsigned char hex_chpw[] = {0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 
 			  0xF7, 0x0D, 0x01, 0x09, 0x07};
 
 const char *EST_ERR_STRINGS[] = {
@@ -125,7 +125,7 @@ void est_log_prefixed (EST_LOG_LEVEL lvl, const char *func, int line, const char
 #else
     self = -1;
 #endif
-#ifndef __MINGW32__
+#ifndef _WIN32
     if (self == log_source[EST_CLIENT]) prefix = "CLIENT";
     if (self == log_source[EST_SERVER]) prefix = "SERVER";
     if (self == log_source[EST_PROXY ]) prefix = "PROXY ";
@@ -504,7 +504,7 @@ static BIO * est_get_certs_pkcs7 (BIO *in, int do_base_64)
      * Create a stack of X509 certs
      */
     if ((cert_stack = sk_X509_new_null()) == NULL) {
-        EST_LOG_ERR("stack mallock failed");
+        EST_LOG_ERR("stack malloc failed");
 	goto cleanup;
     }
 
@@ -613,7 +613,7 @@ EST_ERROR est_load_ca_certs (EST_CTX *ctx, unsigned char *raw, int size)
         return (EST_ERR_LOAD_CACERTS);
     }
 
-    ctx->ca_certs = malloc(ctx->ca_certs_len);
+    ctx->ca_certs = (unsigned char *)malloc(ctx->ca_certs_len);
     if (!ctx->ca_certs) {
         EST_LOG_ERR("malloc failed");
         BIO_free_all(cacerts);
@@ -972,7 +972,7 @@ char * est_get_tls_uid (SSL *ssl, int is_client)
         EST_LOG_WARN("TLS UID length mismatch (%d/%d)", bptr->length,
                      EST_TLS_UID_LEN);
     } else {
-        rv = malloc(EST_TLS_UID_LEN + 1);
+        rv = (char *)malloc(EST_TLS_UID_LEN + 1);
         memcpy(rv, bptr->data, EST_TLS_UID_LEN);
         rv[EST_TLS_UID_LEN-1] = '\0';
         EST_LOG_INFO("TLS UID was found");
@@ -1124,7 +1124,8 @@ EST_ERROR est_is_challengePassword_present (const char *base64_ptr, int b64_len,
 EST_ERROR est_asn1_parse_attributes (const char *p, int len, int *pop_present)
 {
     unsigned char *der_ptr;
-    int der_len, rv;
+    int der_len;
+    EST_ERROR rv;
 
     /* 
      * check smallest possible base64 case here for now 
@@ -1134,7 +1135,7 @@ EST_ERROR est_asn1_parse_attributes (const char *p, int len, int *pop_present)
         return (EST_ERR_INVALID_PARAMETERS);
     }
 
-    der_ptr = malloc(len*2);
+    der_ptr = (unsigned char *)malloc(len*2);
     if (!der_ptr) {
         return (EST_ERR_MALLOC);
     }
@@ -1167,12 +1168,12 @@ EST_ERROR est_asn1_parse_attributes (const char *p, int len, int *pop_present)
 EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len, 
 				     char **new_csr, int *pop_len)
 {
-    const unsigned char *der_ptr;
-    char *orig_ptr, *new_der = NULL, *csrattrs;
+    unsigned char *der_ptr, *orig_ptr, *new_der = NULL;
+    char *csrattrs;
     int der_len, tag, xclass, new_len;
     long len;
 
-    der_ptr = malloc(b64_len*2);
+    der_ptr = (unsigned char *)malloc(b64_len*2);
     if (!der_ptr) {
         return (EST_ERR_MALLOC);
     }
@@ -1184,10 +1185,10 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
         return (EST_ERR_MALLOC);
     }
 
-    orig_ptr = (char *)der_ptr;
+    orig_ptr = der_ptr;
 
     /* grab the first one and do the POP stuff */
-    (void)ASN1_get_object(&der_ptr, &len, &tag, &xclass, der_len);
+    (void)ASN1_get_object((const unsigned char **)&der_ptr, &len, &tag, &xclass, der_len);
 
     if (tag != V_ASN1_SEQUENCE) {
         EST_LOG_ERR("Malformed ASN.1 Hex, no leanding Sequence");
@@ -1195,14 +1196,14 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
 	return (EST_ERR_BAD_ASN1_HEX);
     }
 
-    len = (char *)der_ptr - orig_ptr;
+    len = der_ptr - orig_ptr;
     new_len = der_len - (int)len + sizeof(hex_chpw);
 	    
     /* remove leading sequence and length and copy to new buffer */
     /* if >= 256 need 4 byte Seq header */
     if ((der_len - len + sizeof(hex_chpw)) >= 256) {
         new_len += 4;
-	new_der = malloc(new_len);
+	new_der = (unsigned char *)malloc(new_len);
 	if (!new_der) {
 	    free(orig_ptr);
 	    return (EST_ERR_MALLOC);
@@ -1214,7 +1215,7 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
 	/* if <= 256, but >= 128 need 3 byte Seq header */
     } else if ((der_len - len + sizeof(hex_chpw)) >= 128) {
         new_len += 3;
-	new_der = malloc(new_len);
+	new_der = (unsigned char *)malloc(new_len);
 	if (!new_der) {
 	    free(orig_ptr);
 	    return (EST_ERR_MALLOC);
@@ -1225,7 +1226,7 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
         /* else just need 2 byte header */
     } else {
         new_len += 2;
-        new_der = malloc(new_len);
+        new_der = (unsigned char *)malloc(new_len);
 	if (!new_der) {
 	    free(orig_ptr);
 	    return (EST_ERR_MALLOC);
@@ -1239,14 +1240,14 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
     memcpy(new_der + (new_len - sizeof(hex_chpw)), 
 	     hex_chpw, sizeof(hex_chpw));
 
-    csrattrs = malloc(new_len*2);
+    csrattrs = (char *)malloc(new_len*2);
     if (!csrattrs) {
         free(orig_ptr);
         free(new_der);
 	return (EST_ERR_MALLOC);
     }
     est_base64_encode((const unsigned char *)new_der, 
- 		       new_len, (char *)csrattrs);
+ 		       new_len, csrattrs);
 
     *new_csr = csrattrs;
     *pop_len = (int) strlen(csrattrs);
@@ -1339,7 +1340,7 @@ EST_ERROR est_decode_attributes_helper (char *csrattrs, int csrattrs_len,
     }
 
 
-    der_ptr = malloc(csrattrs_len*2);
+    der_ptr = (unsigned char *)malloc(csrattrs_len*2);
     if (!der_ptr) {
         return (EST_ERR_MALLOC);
     }

@@ -27,15 +27,12 @@
 #include <est.h>
 #include <stdio.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #ifndef DISABLE_PTHREADS
 #include <pthread.h>
 #endif
-#include <stdint.h>
 #ifndef DISABLE_TSEARCH
 #include <search.h>
 #endif
-#include <getopt.h>
 #include <openssl/err.h>
 #include <openssl/engine.h>
 #include <openssl/conf.h>
@@ -284,11 +281,11 @@ int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len, int delete_on_matc
     /*
      * see if we can find a match for this public key
      */
-    n = malloc(sizeof(LOOKUP_ENTRY));
-    n->data = malloc(bptr->length);
+    n = (LOOKUP_ENTRY *)malloc(sizeof(LOOKUP_ENTRY));
+    n->data = (unsigned char *)malloc(bptr->length);
     n->length = bptr->length;
     memcpy(n->data, bptr->data, n->length);
-    l = tfind(n, (void **)&lookup_root, compare);
+    l = (LOOKUP_ENTRY *)tfind(n, (void **)&lookup_root, compare);
     if (l) {
 	/* We have a match */
 	rv = 1;	
@@ -307,7 +304,7 @@ int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len, int delete_on_matc
 	}
     } else {
 	/* Not a match, add it to the list and return */
-	l = tsearch(n, (void **)&lookup_root, compare);
+	l = (LOOKUP_ENTRY *)tsearch(n, (void **)&lookup_root, compare);
 	rv = 0;
 	if (verbose) {
 	    printf("\nAdding key to lookup table:");
@@ -328,7 +325,7 @@ DONE:
  * Trivial utility function to extract the string
  * value of the subject name from a cert.
  */
-static void extract_sub_name(X509 *cert, char *name, int len)
+static void extract_sub_name(X509 *cert, char *name, unsigned int len)
 {
     X509_NAME *subject_nm;
     BIO *out;
@@ -412,7 +409,7 @@ pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
  *              itself during the TLS handshake, this parameter will
  *              contain that certificate.
  */
-int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len, 
+EST_ERROR process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
                                unsigned char **pkcs7, int *pkcs7_len,
 			       char *user_id, X509 *peer_cert,
 			       void *app_data)
@@ -547,7 +544,7 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
      */
     *pkcs7_len = BIO_get_mem_data(result, (char**)&buf);
     if (*pkcs7_len > 0 && *pkcs7_len < MAX_CERT_LEN) {
-        *pkcs7 = malloc(*pkcs7_len);
+        *pkcs7 = (unsigned char *)malloc(*pkcs7_len);
         memcpy(*pkcs7, buf, *pkcs7_len);
     }
 
@@ -567,12 +564,12 @@ unsigned char * process_csrattrs_request (int *csr_len, void *app_data)
     t = getenv("EST_CSR_ATTR");
     if (t) {
         t_len = strlen(t);
-        csr_data = malloc(t_len + 1);
+        csr_data = (unsigned char *)malloc(t_len + 1);
         strncpy((char *)csr_data, t, t_len);
 	*csr_len = t_len;
     } else {
         *csr_len = sizeof(TEST_CSR);
-        csr_data = malloc(*csr_len + 1);
+        csr_data = (unsigned char *)malloc(*csr_len + 1);
         strcpy((char *)csr_data, TEST_CSR);
     }
     return (csr_data);
@@ -725,7 +722,7 @@ static void ssl_locking_callback (int mode, int mutex_num, const char *file,
 }
 static unsigned long ssl_id_callback (void)
 {
-#ifndef __MINGW32__
+#ifndef _WIN32
     return (unsigned long)pthread_self();
 #else
     return (unsigned long)pthread_self().p;

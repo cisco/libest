@@ -7,6 +7,8 @@
  * All rights reserved.
  *------------------------------------------------------------------
  */
+
+#include <NonPosix.h>
 #include <string.h>
 #include <curl/curl.h>
 
@@ -135,6 +137,7 @@ long curl_http_post_srp (char *url, char *ct, char *data,
     curl_easy_setopt(hnd, CURLOPT_CAINFO, cacert);
     curl_easy_setopt(hnd, CURLOPT_SSL_VERIFYPEER, 1L);
   } else {
+    curl_easy_setopt(hnd, CURLOPT_CAINFO, NULL); // this prevents Curl warning
     curl_easy_setopt(hnd, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(hnd, CURLOPT_SSL_VERIFYHOST, 0L);
   }
@@ -390,7 +393,7 @@ long curl_http_post_cert_write (char *url, char *ct, char *data,
   curl_easy_setopt(hnd, CURLOPT_NOPROGRESS, 1L);
   curl_easy_setopt(hnd, CURLOPT_POSTFIELDS, data);
   curl_easy_setopt(hnd, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)strlen(data));
-  curl_easy_setopt(hnd, CURLOPT_USERAGENT, "curl/7.27.0");
+  curl_easy_setopt(hnd, CURLOPT_USERAGENT, "curl/" LIBCURL_VERSION);
   curl_easy_setopt(hnd, CURLOPT_HTTPHEADER, slist1);
   curl_easy_setopt(hnd, CURLOPT_MAXREDIRS, 50L);
   curl_easy_setopt(hnd, CURLOPT_CAINFO, cacert);

@@ -40,7 +40,7 @@ int read_binary_file (char *filename, unsigned char **contents)
     len = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
-    *contents = malloc(len + 1);
+    *contents = (unsigned char *)malloc(len + 1);
     if (!*contents) {
 	printf("\nmalloc fail\n");
         fclose(fp);
@@ -85,7 +85,7 @@ int write_binary_file (char *filename, unsigned char *contents, int len)
  */
 void dumpbin (unsigned char *buf, size_t len)
 {
-    int i;
+    size_t i;
 
     printf("\ndumpbin (%lu bytes):\n", (long unsigned)len);
     for (i = 0; i < len; i++) {

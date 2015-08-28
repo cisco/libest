@@ -19,13 +19,12 @@
 
 #include <est.h>
 #include <stdio.h>
-#include <unistd.h>
 #ifndef DISABLE_PTHREADS
 #include <pthread.h>
 #endif
 #include <fcntl.h>
 #include <sys/types.h>
-#ifndef __MINGW32__
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <netdb.h>
 #include <sys/select.h>
@@ -59,9 +58,9 @@ static void process_socket_request (EST_CTX *ctx, int sock)
     /*
      * Both SERVER and PROXY modes use the same entry point to hand off the socket to libest
      */
-    est_server_handle_request(ctx, sock);
+    EST_ERROR rv = est_server_handle_request(ctx, sock);
     const char *agent = ctx->est_mode == EST_SERVER ? "Server" : "Proxy";
-    printf("%s finished processing request on socket %d\n\n", agent, sock);
+    printf("%s finished processing request on socket %d, rv=%d (%s)\n\n", agent, sock, rv, EST_ERR_NUM_TO_STR(rv));
     close(sock);
 }
 
@@ -148,7 +147,7 @@ static void *master_thread (struct server_data *data)
     char portstr[12];
     int on = 1;
     int rc;
-    int sock, new;
+    int sock, new_sock;
     socklen_t len;
 
     data->running = 1; // used as signal for start_single_server()
@@ -187,7 +186,7 @@ static void *master_thread (struct server_data *data)
             printf("setsockopt KEEPALIAVE call failed\n");
             exit(1);
         }
-#ifndef __MINGW32__
+#ifndef _WIN32
         int flags = fcntl(sock, F_GETFL, 0);
         if (fcntl(sock, F_SETFL, flags | O_NONBLOCK)) {
             printf("fcntl SETFL call failed\n");
@@ -223,10 +222,10 @@ static void *master_thread (struct server_data *data)
 
     while (stop_flag == 0 && data->running != 0 && data->num_threads != 0) {
         len = sizeof(struct sockaddr);
-        new = accept(sock, (struct sockaddr*)addr, &len);
-        if (new < 0) {
-	    if (new != -1) {
-		printf("Error accepting new connection on socket %d: %d", sock, new);
+        new_sock = accept(sock, (struct sockaddr*)addr, &len);
+        if (new_sock < 0) {
+	    if (new_sock != -1) {
+		printf("Error accepting new connection on socket %d: %d", sock, new_sock);
 	    }
             if (stop_flag != 0) {
 		break;
@@ -241,14 +240,15 @@ static void *master_thread (struct server_data *data)
 #endif
         } else {
             if (stop_flag == 0) {
-		printf("%s accepted new connection on socket %d\n", agent, new);
+		printf("%s accepted new TCP connection on socket %d\n", agent, new_sock);
+		fflush(stdout);
 		if (data->num_threads == -1) // single-threaded
-		    process_socket_request(data->ctx, new);
+		    process_socket_request(data->ctx, new_sock);
 		else
-		    process_socket(data, new);
+		    process_socket(data, new_sock);
 		printf("%s awaiting further connection on socket %d...\n", agent, sock); fflush(stdout);
             } else {
-               	close(new);
+                close(new_sock);
             }
         }
     }
@@ -390,7 +390,7 @@ void start_simple_server (EST_CTX *ectx, int port, int delay, int v6)
  */
 void *start_single_server (EST_CTX *ectx, int port, int v6)
 {
-    struct server_data *data = malloc(sizeof (struct server_data));
+    struct server_data *data = (struct server_data *)malloc(sizeof (struct server_data));
     if (data == NULL) {
 	return NULL;
     }

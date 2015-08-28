@@ -1,6 +1,6 @@
 bin_PROGRAMS = estproxy
 estproxy_SOURCES = estproxy.c ../util/utils.c ../util/simple_server.c 
-AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -I$(SSL_CFLAGS) -g
+AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -g
 if FREEBSD 
 DL=
 else

@@ -48,7 +48,7 @@ static void ssl_locking_callback (int mode, int mutex_num, const char *file,
 }
 static unsigned long ssl_id_callback (void)
 {
-#ifndef __MINGW32__
+#ifndef _WIN32
     return (unsigned long)pthread_self();
 #else
     return (unsigned long)pthread_self().p;

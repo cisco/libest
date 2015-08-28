@@ -24,17 +24,14 @@
 
 /* Main routine */
 #include <est.h>
-#include "stdio.h"
-#include <getopt.h>
+#include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
-#include <strings.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <unistd.h>
 
 #include "../util/utils.h"
 
@@ -151,7 +148,7 @@ static unsigned char * generate_private_key (int *key_len)
     out = BIO_new(BIO_s_mem());
     PEM_write_bio_RSAPrivateKey(out, rsa, NULL, NULL, 0, NULL, NULL);
     *key_len = BIO_get_mem_data(out, &tdata);
-    key_data = malloc(*key_len + 1);
+    key_data = (unsigned char *)malloc(*key_len + 1);
     memcpy(key_data, tdata, *key_len);
     BIO_free(out);
     RSA_free(rsa);
@@ -224,7 +221,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
                 printf("\nError determining length of token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
             }   
-            token_ptr = malloc(token_len+1);
+            token_ptr = (char *)malloc(token_len+1);
             if (token_ptr == NULL) {
                 printf("\nError allocating token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
@@ -319,10 +316,10 @@ static X509_REQ *read_csr (char *csr_file)
     return (csr);
 }
 
-static int simple_enroll_attempt (EST_CTX *ectx)
+static EST_ERROR simple_enroll_attempt (EST_CTX *ectx)
 {
     int pkcs7_len = 0;
-    int rv;
+    EST_ERROR rv;
     char file_name[MAX_FILENAME_LEN];
     unsigned char *new_client_cert;
     X509_REQ *csr = NULL;
@@ -357,7 +354,7 @@ static int simple_enroll_attempt (EST_CTX *ectx)
          * client library has obtained the new client certificate.
          * now retrieve it from the library
          */
-        new_client_cert = malloc(pkcs7_len);
+        new_client_cert = (unsigned char *)malloc(pkcs7_len);
         if (new_client_cert == NULL) {
             if (verbose) {
                 printf("\nmalloc of destination buffer for enrollment cert failed\n");
@@ -452,9 +449,9 @@ static EVP_PKEY *read_private_key (char *key_file)
     return (priv_key);
 }
 
-static int regular_csr_attempt (EST_CTX *ectx)
+static EST_ERROR regular_csr_attempt (EST_CTX *ectx)
 {
-    int rv;
+    EST_ERROR rv;
     unsigned char *attr_data = NULL;
     int attr_len;
     char file_name[MAX_FILENAME_LEN];
@@ -474,10 +471,10 @@ static int regular_csr_attempt (EST_CTX *ectx)
     return (rv);
 }
 
-static int regular_enroll_attempt (EST_CTX *ectx)
+static EST_ERROR regular_enroll_attempt (EST_CTX *ectx)
 {
     int pkcs7_len = 0;
-    int rv;
+    EST_ERROR rv;
     char file_name[MAX_FILENAME_LEN];
     unsigned char *new_client_cert;
     unsigned char *attr_data = NULL;
@@ -568,7 +565,7 @@ static int regular_enroll_attempt (EST_CTX *ectx)
          * client library has obtained the new client certificate.
          * now retrieve it from the library
          */
-        new_client_cert = malloc(pkcs7_len);
+        new_client_cert = (unsigned char *)malloc(pkcs7_len);
         if (new_client_cert == NULL) {
             if (verbose) {
                 printf("\nmalloc of destination buffer for enrollment cert failed\n");
@@ -719,7 +716,7 @@ static void do_operation ()
              * allocate a buffer to retrieve the CA certs
              * and get them copied in
              */
-            pkcs7 = malloc(pkcs7_len);
+            pkcs7 = (unsigned char*)malloc(pkcs7_len);
             rv = est_client_copy_cacerts(ectx, pkcs7);
 
 #if 0
@@ -837,7 +834,7 @@ static void do_operation ()
              * client library has obtained the new client certificate.
              * now retrieve it from the library
              */
-            new_client_cert = malloc(pkcs7_len);
+            new_client_cert = (unsigned char*)malloc(pkcs7_len);
             if (new_client_cert == NULL) {
                 if (verbose) {
                     printf("\nmalloc of destination buffer for reenroll cert failed\n");

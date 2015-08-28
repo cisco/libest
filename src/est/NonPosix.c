@@ -1,6 +1,6 @@
 /*------------------------------------------------------------------
- * est/NonPosix.c - POSIX compensation layer for, e.g., QNX and MinGW
- * Copyright (c) Siemens AG, 2014
+ * est/NonPosix.c - POSIX compensation layer for, e.g., Windows and QNX
+ * Copyright (c) 2014 Siemens AG
  * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
@@ -9,7 +9,11 @@
 #include "NonPosix.h"
 #include <stdio.h>
 
-#ifdef __MINGW32__
+#ifdef _WIN32
+
+#include <openssl/../../ms/applink.c> // prevents runtime error OPENSSL_Uplink(10111000,08): no OPENSSL_Applink
+
+#ifndef DISABLE_TSEARCH
 
 //https://chromium.googlesource.com/native_client/nacl-newlib/+/master/newlib/libc/search/tdestroy.c
 #ifndef _SEARCH_PRIVATE
@@ -20,9 +24,7 @@ typedef struct node {
 #endif
 
 /* Walk the nodes of a tree */
-static void trecurse(root, free_action)
-	node_t *root;	/* Root of the tree to be walked */
-	void (*free_action)(void *);
+static void trecurse(node_t *root, void (*free_action)(void *))
 {
   if (root->llink != NULL)
     trecurse(root->llink, free_action);
@@ -36,6 +38,132 @@ void tdestroy (void *vrootp, void (*freefct)(void *))
   node_t *root = (node_t *) vrootp;
   if (root != NULL)
     trecurse(root, freefct);
+}
+
+#ifdef _MSC_VER
+//adapted from https://sourceforge.net/p/vapor/git/ci/master/tree/lib/udunits2/tsearch.c
+/*
+ * Tree search generalized from Knuth (6.2.2) Algorithm T just like
+ * the AT&T man page says.
+ *
+ * The node structure is for internal use only, lint doesn't grok it.
+ *
+ * Written by reading the System V Interface Definition, not the code.
+ *
+ * Totally public domain.
+ */
+/*LINTLIBRARY*/
+
+/* find or insert datum into search tree */
+void *tsearch(const void *vkey, void **vrootp,
+    int (*compar)(const void *, const void *))
+{
+    node_t *q;
+    char *key = (char *)vkey;
+    node_t **rootp = (node_t **)vrootp;
+
+    if (rootp == (node_t **)0)
+	return ((void *)0);
+    while (*rootp != (node_t *)0) {	/* Knuth's T1: */
+	int r;
+
+	if ((r = (*compar)(key, (*rootp)->key)) == 0)	/* T2: */
+	    return ((void *)*rootp);		/* we found it! */
+	rootp = (r < 0) ?
+	    &(*rootp)->llink :		/* T3: follow left branch */
+	    &(*rootp)->rlink;		/* T4: follow right branch */
+    }
+    q = (node_t *) malloc(sizeof(node));/* T5: key not found */
+    if (q != (node_t *)0) {		/* make new node */
+	*rootp = q;			/* link new node to old */
+	q->key = key;			/* initialize new node */
+	q->llink = q->rlink = (node_t *)0;
+    }
+    return ((void *)q);
+}
+
+/* find datum in search tree */
+void *tfind(const void *vkey, void **vrootp,
+    int (*compar)(const void *, const void *))
+{
+
+    char *key = (char *)vkey;
+    node_t **rootp = (node_t **)vrootp;
+
+    if (rootp == (node_t **)0)
+	return ((void *)0);
+    while (*rootp != (node_t *)0) {		/* Knuth's T1: */
+	int r;
+
+	if ((r = (*compar)(key, (*rootp)->key)) == 0)	/* T2: */
+	    return ((void *)*rootp);		/* we found it! */
+	rootp = (r < 0) ?
+	    &(*rootp)->llink :			/* T3: follow left branch */
+	    &(*rootp)->rlink;			/* T4: follow right branch */
+    }
+    return ((void *)0);	/* T5: key not found */
+}
+
+/* delete node with given key */
+void *
+tdelete(const void *vkey, void **vrootp,
+    int (*compar)(const void *, const void *))
+{
+    node_t **rootp = (node_t **)vrootp;
+    char *key = (char *)vkey;
+    node_t *p = (node_t *)1;
+    node_t *q;
+    node_t *r;
+    int cmp;
+
+    if (rootp == (node_t **)0 || *rootp == (node_t *)0)
+	return ((node_t *)0);
+    while ((cmp = (*compar)(key, (*rootp)->key)) != 0) {
+	p = *rootp;
+	rootp = (cmp < 0) ?
+	    &(*rootp)->llink :		/* follow left branch */
+	    &(*rootp)->rlink;		/* follow right branch */
+	if (*rootp == (node_t *)0)
+	    return ((void *)0);		/* key not found */
+    }
+    r = (*rootp)->rlink;			/* D1: */
+    if ((q = (*rootp)->llink) == (node_t *)0)	/* Left (node_t *)0? */
+	q = r;
+    else if (r != (node_t *)0) {		/* Right link is null? */
+	if (r->llink == (node_t *)0) {		/* D2: Find successor */
+	    r->llink = q;
+	    q = r;
+	} else {				/* D3: Find (node_t *)0 link */
+	    for (q = r->llink; q->llink != (node_t *)0; q = r->llink)
+		r = q;
+	    r->llink = q->rlink;
+	    q->llink = (*rootp)->llink;
+	    q->rlink = (*rootp)->rlink;
+	}
+    }
+    free((node_t *) *rootp);		/* D4: Free node */
+    *rootp = q;				/* link parent to new node */
+    return(p);
+}
+#endif // _MSC_VER
+
+#endif // DISABLE_TSEARCH
+
+#include <ctype.h>
+int strncasecmp (const char *s1, const char *s2, size_t n)
+{
+  if (n == 0)
+    return 0;
+
+  while (n-- != 0 && tolower(*s1) == tolower(*s2))
+    {
+      if (n == 0 || *s1 == '\0' || *s2 == '\0')
+    break;
+      s1++;
+      s2++;
+    }
+
+  return tolower(*(unsigned char *) s1) - tolower(*(unsigned char *) s2);
 }
 
 char* strtok_r(
@@ -71,6 +199,28 @@ char* strtok_r(
     return ret;
 }
 
+#if defined(__MINGW32__) // || defined(_MSC_VER)
+//http://stackoverflow.com/questions/13731243/what-is-the-windows-xp-equivalent-of-inet-pton-or-inetpton
+int inet_pton(int af, const char *src, void *dst)
+{
+  struct sockaddr_storage ss;
+  int size = sizeof(ss);
+
+  ZeroMemory(&ss, sizeof(ss));
+
+  if (WSAStringToAddress((LPTSTR)src, af, NULL, (struct sockaddr *)&ss, &size) == 0) {
+    switch(af) {
+      case AF_INET:
+    *(struct in_addr *)dst = ((struct sockaddr_in *)&ss)->sin_addr;
+    return 1;
+      case AF_INET6:
+    *(struct in6_addr *)dst = ((struct sockaddr_in6 *)&ss)->sin6_addr;
+    return 1;
+    }
+  }
+  return 0;
+}
+
 //http://memset.wordpress.com/2010/10/09/inet_ntop-for-win32/
 //http://msdn.microsoft.com/en-us/library/windows/desktop/ms742213%28v=vs.85%29.aspx
 const char* inet_ntop(int af, const void* src, char* dst, DWORD cnt) {
@@ -101,6 +251,7 @@ const char* inet_ntop(int af, const void* src, char* dst, DWORD cnt) {
     //WSACleanup();
     return dst;
 }
+#endif
 
 //http://code.ohloh.net/file?fid=LSpuD5qHojGNKIErA1OPY3EMW_I&cid=XvB8n8Wal3c&s=
 /*
@@ -117,7 +268,7 @@ const char* inet_ntop(int af, const void* src, char* dst, DWORD cnt) {
 int memset_s(void *v, int c, size_t n)
 {
     int ret = 0;
-    volatile unsigned char *s = v;
+    volatile unsigned char *s = (volatile unsigned char *)v;
 
     /* Fatal runtime-constraint violations. */
     if (s == NULL) {
@@ -130,13 +281,14 @@ int memset_s(void *v, int c, size_t n)
 done:
     return ret;
 }
-#endif
+#endif // defined(_WIN32)
 
 
-#ifndef QNX650_
+#if defined(_WIN32) || defined (QNX650_)
 
-/*#include <backtrace.h> //DvO
-//unused: print_backtrace(); //DvO
+#if 0
+#include <backtrace.h>
+//unused: print_backtrace();
 void print_backtrace (void) {
 
   char out[1024];
@@ -159,12 +311,12 @@ void print_backtrace (void) {
   bt_unload_memmap(&memmap);
   bt_release_accessor(&acc);
 }
-*/
+#endif
 
 
 #include <stdlib.h>
 #include <string.h>
-// DvO: QNX 6.5 needs a definition, taken from http://unixpapa.com/incnote/string.html
+// QNX 6.5 needs a definition, taken from http://unixpapa.com/incnote/string.html
   #ifndef HAVE_STRNDUP
   #define HAVE_STRNDUP
   char *strndup(const char *str, size_t len)
@@ -178,7 +330,7 @@ void print_backtrace (void) {
    }
    #endif
 
-// DvO: QNX 6.5 needs a definition, taken from http://unixpapa.com/incnote/string.html
+// QNX 6.5 needs a definition, taken from http://unixpapa.com/incnote/string.html
        #ifndef HAVE_STRNLEN
        #define HAVE_STRNLEN
        size_t strnlen(const char *s, size_t maxlen)
@@ -190,9 +342,10 @@ void print_backtrace (void) {
     	return i;
        }
        #endif
-#endif
+#endif // defined(_MINWG) || defined (QNX650_)
 
-#ifndef QNX65_
+
+#ifdef _MSC_VER
 // from http://cvsweb.netbsd.org/bsdweb.cgi/~checkout~/pkgsrc/devel/libgetopt/files/getopt_long.c?rev=1.4&content-type=text/plain
 
 /*	$NetBSD: getopt_long.c,v 1.4 2011/09/07 00:56:17 joerg Exp $	*/
@@ -232,7 +385,6 @@ void print_backtrace (void) {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "getopt.h"
 
 #ifndef _DIAGASSERT
 #define _DIAGASSERT(e)
@@ -655,4 +807,4 @@ int getopt_long(int nargc, char * const *nargv, const char *options, const struc
 	return retval;
 }
 
-#endif // QNX65_
+#endif // _MSC_VER

@@ -22,14 +22,10 @@
 #include <est.h>
 #include <stdio.h>
 #include <errno.h>
-#include <unistd.h>
-#include <stdint.h>
 #include <signal.h>
 #ifndef DISABLE_PTHREADS
 #include <pthread.h>
 #endif
-//#include <fcntl.h>
-#include <getopt.h>
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
 #include <sys/types.h>
@@ -211,7 +207,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
                 printf("\nError determining length of token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
             }   
-            token_ptr = malloc(token_len+1);
+            token_ptr = (char *)malloc(token_len+1);
             if (token_ptr == NULL){
                 printf("\nError allocating token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
@@ -297,7 +293,7 @@ static void ssl_locking_callback (int mode, int mutex_num, const char *file,
 }
 static unsigned long ssl_id_callback (void)
 {
-#ifndef __MINGW32__
+#ifndef _WIN32
     return (unsigned long)pthread_self();
 #else
     return (unsigned long)pthread_self().p;

@@ -8,7 +8,6 @@
  *------------------------------------------------------------------
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -56,8 +55,6 @@ static int us896_start_server (int manual_enroll, int nid)
 		  0,
 		  nid);
 
-
-    sleep(1);
     return rv;
 }
 
@@ -104,7 +101,6 @@ static int us896_init_suite (void)
 static int us896_destroy_suite (void)
 {
     st_stop();
-    sleep(2);
     return 0;
 }
 
@@ -182,8 +178,6 @@ static void us896_test2 (void)
     int  retrieved_cacerts_len = 0;
     EVP_PKEY *priv_key;
 
-    sleep(1);
-    
     LOG_FUNC_NM;
 
     /*
@@ -221,7 +215,7 @@ static void us896_test2 (void)
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(retrieved_cacerts_len > 0);
 
-    retrieved_cacerts = malloc(retrieved_cacerts_len);
+    retrieved_cacerts = (unsigned char *)malloc(retrieved_cacerts_len);
     
     rc = est_client_copy_cacerts(ctx, retrieved_cacerts);
     

@@ -74,6 +74,7 @@
  * and donated 'to the cause' along with lots and lots of other fixes to
  * the library. */
 
+// 2015-08-28 stability and readabilitly improvement on logging of ossl_verify_cb() 
 // 2015-08-13 improved error handling and reporting
 
 #include "est.h"
@@ -112,17 +113,13 @@ int ossl_verify_cb (int ok, X509_STORE_CTX *ctx)
     EST_LOG_INFO("enter function: ok=%d cert_error=%d", ok, cert_error);
 
     if (!ok) {
-        if (current_cert) {
-            X509_NAME_print_ex_fp(stdout,
-                                  X509_get_subject_name(current_cert),
-                                  0, XN_FLAG_ONELINE);
-            printf("\n");
-        }
-        EST_LOG_INFO("%serror %d at %d depth lookup: %s",
-                     X509_STORE_CTX_get0_parent_ctx(ctx) ? "[CRL path]" : "",
-                     cert_error,
-                     X509_STORE_CTX_get_error_depth(ctx),
-                     X509_verify_cert_error_string(cert_error));
+        EST_LOG_WARN("%svalidation error=%d (%s) at depth=%d; cert subject='%s', issuer='%s", 
+		     X509_STORE_CTX_get0_parent_ctx(ctx) ? "[CRL path] " : "",
+		     cert_error, 
+		     cert_error == 3 ? "no CRL" : X509_verify_cert_error_string(cert_error),
+		     X509_STORE_CTX_get_error_depth(ctx),
+		     current_cert ? current_cert->name : "(no cert)" ,
+		     current_cert ? X509_NAME_oneline(X509_get_issuer_name(current_cert), NULL, 0) : "(no cert)");
         switch (cert_error) {
         case X509_V_ERR_UNABLE_TO_GET_CRL:
             /*
@@ -311,7 +308,7 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
 	return (-1);
     }
     in = BIO_push(b64, in);    
-    cacerts_decoded = malloc(certs_len);
+    cacerts_decoded = (unsigned char *)malloc(certs_len);
     if (!cacerts_decoded) {
 	EST_LOG_ERR("malloc failed");
 	return (-1);
@@ -385,7 +382,7 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
 	return (-1);
     }
 
-    *pem = malloc(pem_len + 1);
+    *pem = (unsigned char *)malloc(pem_len + 1);
     if (!*pem) {
         EST_LOG_ERR("malloc failed");
 	PKCS7_free(p7);
@@ -414,7 +411,7 @@ unsigned char *est_ossl_BIO_copy_data(BIO *out, int *data_lenp) {
     int data_len;
 
     data_len = BIO_get_mem_data(out, &tdata);
-    data = malloc(data_len+1);
+    data = (unsigned char *)malloc(data_len+1);
     if (data) {
         memcpy(data, tdata, data_len);
 	data[data_len]='\0';  // Make sure it's \0 terminated, in case used as string
