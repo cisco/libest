@@ -7,9 +7,13 @@
  * October, 2013
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  *------------------------------------------------------------------
  */
+
+// 2015-08-28 minor bug corrections w.r.t long options and stability improvements
 
 #include <est.h>
 #include "stdio.h"
@@ -114,7 +118,9 @@ static EVP_PKEY * generate_private_key (void)
      * We'll write this out to a local file called new_key.pem.
      * Your application should persist the key somewhere safe.
      */
-    write_binary_file(file_name, key_data, key_len);
+    if (write_binary_file(file_name, key_data, key_len) < 0) {
+	exit(1);
+    }
     free(key_data);
     
     /*
@@ -291,16 +297,17 @@ int main (int argc, char **argv)
     while ((c = getopt_long(argc, argv, "?s:p:u:h:", long_options, &option_index)) != -1) {
         switch (c) {
             case 0:
-		if (!strncmp(long_options[option_index].name,"srp", strlen("srp"))) {
+		// the following uses of strncmp() MUST use strlen(...)+1, otherwise only prefix is compared.
+		if (!strncmp(long_options[option_index].name,"srp", strlen("srp")+1)) {
 		    srp = 1;
 		} else
-		if (!strncmp(long_options[option_index].name,"srp-user", strlen("srp-user"))) {
+		if (!strncmp(long_options[option_index].name,"srp-user", strlen("srp-user")+1)) {
 		    strncpy(est_srp_uid, optarg, MAX_UID_LEN);
 		} else
-		if (!strncmp(long_options[option_index].name,"srp-password", strlen("srp-password"))) {
+		if (!strncmp(long_options[option_index].name,"srp-password", strlen("srp-password")+1)) {
 		    strncpy(est_srp_pwd, optarg, MAX_PWD_LEN);
 		} else
-		if (!strncmp(long_options[option_index].name,"auth-token", strlen("auth-token"))) {
+		if (!strncmp(long_options[option_index].name,"auth-token", strlen("auth-token")+1)) {
 		    strncpy(est_auth_token, optarg, MAX_AUTH_TOKEN_LEN);
                     token_auth_mode = 1;
 		} else show_usage_and_exit();
@@ -406,7 +413,9 @@ int main (int argc, char **argv)
     /*
      * Save the cert to local storage
      */
-    write_binary_file(cert_file_name, new_client_cert, p7_len);
+    if (write_binary_file(cert_file_name, new_client_cert, p7_len) < 0) {
+	exit(1);
+    }
     free(new_client_cert);
 
     /*
@@ -424,7 +433,9 @@ int main (int argc, char **argv)
      * Your appliations should save the CA certs to local storage in case
      * they're needed for future use.
      */
-    write_binary_file(ca_file_name, new_certs, ca_certs_len); 
+    if (write_binary_file(ca_file_name, new_certs, ca_certs_len) < 0) {
+	exit(1);
+    }
     free(new_certs);
 
     // printf("\nSuccess!!!\n");
