@@ -15,6 +15,7 @@
  **------------------------------------------------------------------
  */
 
+// 2015-08-28 minor bug corrections w.r.t long options and stability improvements
 // 2015-08-19 added missing cleanup for search tree
 // 2015-08-07 re-added -e option; fixed potential NULL free()
 // 2015-08-07 completed use of DISABLE_PTHREADS; improved diagnostic output
@@ -577,7 +578,7 @@ unsigned char * process_csrattrs_request (int *csr_len, void *app_data)
     return (csr_data);
 }
 
-static char digest_user[3][32] = 
+static char digest_user[3][34] =
     {
 	"estuser", 
 	"estrealm", 
@@ -679,8 +680,6 @@ static int process_ssl_srp_auth (SSL *s, int *ad, void *arg) {
     SRP_user_pwd *user;
 
     if (!login) return (-1);
-
-    printf("SRP username = %s\n", login);
 
     user = SRP_VBASE_get_by_user(srp_db, login); 
 
@@ -825,14 +824,15 @@ int main (int argc, char **argv)
 	    }
             printf ("\n");
 #endif
-            if (!strncmp(long_options[option_index].name,"srp", strlen("srp"))) {
+	    // the following uses of strncmp() MUST use strlen(...)+1, otherwise only prefix is compared.
+            if (!strncmp(long_options[option_index].name,"srp", strlen("srp")+1)) {
 		srp = 1;
                 strncpy(vfile, optarg, 255);
             }
-            else if (!strncmp(long_options[option_index].name,"enforce-csr", strlen("enforce-csr"))) {
+            else if (!strncmp(long_options[option_index].name,"enforce-csr", strlen("enforce-csr")+1)) {
 		enforce_csr = 1;
             }
-            else if (!strncmp(long_options[option_index].name,"token", strlen("token"))) {
+            else if (!strncmp(long_options[option_index].name,"token", strlen("token")+1)) {
 		http_token_auth = 1;
                 memset(valid_token_value, 0, MAX_AUTH_TOKEN_LEN+1); 
                 strncpy(&(valid_token_value[0]), optarg, MAX_AUTH_TOKEN_LEN);
@@ -1084,7 +1084,7 @@ int main (int argc, char **argv)
     }
     if (disable_forced_http_auth) {
         if (verbose) {
-	    printf("\nNot requiring HTTP authentication when TLS client auth succeeds\n");
+	    printf("Not requiring HTTP authentication when TLS client auth succeeds\n");
 	}
 	if (est_set_http_auth_required(ectx, HTTP_AUTH_NOT_REQUIRED)) {
 	    printf("\nUnable to disable required HTTP auth.  Aborting!!!\n");
