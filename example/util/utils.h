@@ -15,7 +15,7 @@
 #define MAX_PWD_LEN 30
 
 int read_binary_file(char *filename, unsigned char **contents);
-void write_binary_file(char *filename, unsigned char *contents, int len); 
+int write_binary_file(char *filename, unsigned char *contents, int len);
 void dumpbin(unsigned char *buf, size_t len);
 #endif
 
