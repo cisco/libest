@@ -221,6 +221,7 @@ int inet_pton(int af, const char *src, void *dst)
   return 0;
 }
 
+//http://en.efreedom.net/Question/1-11067883/Can-Make-Header-Static-Library
 //http://memset.wordpress.com/2010/10/09/inet_ntop-for-win32/
 //http://msdn.microsoft.com/en-us/library/windows/desktop/ms742213%28v=vs.85%29.aspx
 const char* inet_ntop(int af, const void* src, char* dst, DWORD cnt) {

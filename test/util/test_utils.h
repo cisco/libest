@@ -18,7 +18,7 @@
     } while (0)
 
 #define CU_ASSERT_NM_EQ(name,actual,expected) \
-    CU_assertImplementation(actual==expected, actual, #actual " == " #expected "  "__FILE__, name, "unused", CU_FALSE)
+    CU_assertImplementation((actual)==(expected), actual+1/* hack: gets printed where the line number is usually shown*/, #actual " == " #expected "  "__FILE__, name, "", CU_FALSE)
 
 int read_binary_file(char *filename, unsigned char **contents);
 int write_binary_file(char *filename, unsigned char *contents, int len); 

@@ -15,6 +15,7 @@
  **------------------------------------------------------------------
  */
 
+// 2015-09-09 slightly improved conditional compilation w.r.t. DISABLE_PTHREADS
 // 2015-08-07 added est_set_log_source() and est_log_prefixed() differentiating log source
 // 2015-08-07 simplified logging macros
 // 2014-06-25 limited warning for already set ex_data; spelling correction
@@ -125,7 +126,7 @@ void est_log_prefixed (EST_LOG_LEVEL lvl, const char *func, int line, const char
 #else
     self = -1;
 #endif
-#ifndef _WIN32
+#if !defined(_WIN32) || defined(DISABLE_PTHREADS)
     if (self == log_source[EST_CLIENT]) prefix = "CLIENT";
     if (self == log_source[EST_SERVER]) prefix = "SERVER";
     if (self == log_source[EST_PROXY ]) prefix = "PROXY ";

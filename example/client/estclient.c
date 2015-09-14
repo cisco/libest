@@ -13,6 +13,7 @@
  **------------------------------------------------------------------
  */
 
+// 2015-09-09 slightly improved code re-usability for do_operation()
 // 2015-08-28 minor bug corrections w.r.t long options and stability improvements
 // 2015-08-07 added defaults for server address and port
 // 2015-08-07 corrected error handling; improved diagnostic output
@@ -62,12 +63,10 @@ static char client_cert_file[MAX_FILENAME_LEN];
 static int read_timeout = EST_SSL_READ_TIMEOUT_DEF;
 static unsigned char *new_pkey = NULL;
 static int new_pkey_len = 0;
-static unsigned char *cacerts = NULL;
-static int cacerts_len = 0;
 static char out_dir[MAX_FILENAME_LEN];
-static int enroll = 0;
 static int getcsr = 0;
 static int getcert = 0;
+static int enroll = 0;
 static int reenroll = 0;
 static int force_pop = 0;
 static unsigned char *c_cert = NULL;
@@ -262,12 +261,14 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
 
     printf("Failing ");
     X509_print_fp(stdout, cur_cert);
+#if 0
     /*
      * Next call prints out the signature which can be used as the fingerprint
      * This fingerprint can be checked against the anticipated value to determine
      * whether or not the server's cert should be approved.
      */
     X509_signature_print(bio_err, cur_cert->sig_alg, cur_cert->signature);
+#endif
 
     BIO_free(bio_err);
 
@@ -431,7 +432,7 @@ static EVP_PKEY *read_private_key (char *key_file)
     keyin = BIO_new(BIO_s_file_internal());
     if (BIO_read_filename(keyin, key_file) <= 0) {
         printf("\nUnable to read private key file %s\n", key_file);
-	exit(1);
+        return (NULL);
     }
     /*
      * This reads in the private key file, which is expected to be a PEM
@@ -442,7 +443,6 @@ static EVP_PKEY *read_private_key (char *key_file)
     if (priv_key == NULL) {
         printf("\nError while reading PEM encoded private key file %s\n", key_file);
         ERR_print_errors_fp(stderr);
-        exit(1);
     }
     BIO_free(keyin);
 
@@ -552,7 +552,7 @@ static EST_ERROR regular_enroll_attempt (EST_CTX *ectx)
         }
     }
 
-    X509_REQ_print_fp(stderr, csr);
+    // X509_REQ_print_fp(stderr, csr);
 
     rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, priv_key);
 
@@ -651,8 +651,10 @@ static void retry_enroll_delay (int retry_delay, time_t retry_time)
 }
 
 
-static void do_operation ()
+static EST_ERROR do_operation (char *trustanchor_file)
 {
+    unsigned char *cacerts;
+    int cacerts_len;
     EST_CTX *ectx;
     unsigned char *pkcs7;
     int pkcs7_len = 0;
@@ -662,6 +664,15 @@ static void do_operation ()
     int retry_delay = 0;
     time_t retry_time = 0;
     char *operation;
+
+    /*
+     * Read in the CA certificates
+     */
+    cacerts_len = read_binary_file(trustanchor_file, &cacerts);
+    if (cacerts_len <= 0) {
+	printf("\nCACERT file could not be read\n");
+	exit(1);
+    }
 
     ectx = est_client_init(cacerts, cacerts_len,
                            EST_CERT_FORMAT_PEM,
@@ -728,11 +739,8 @@ static void do_operation ()
             }
 #endif
 
-            snprintf(file_name, MAX_FILENAME_LEN, "%s/cacert.pkcs7", out_dir);
-            if (write_binary_file(file_name, pkcs7, pkcs7_len) < 0) {
-		exit(1);
-	    }
-
+            snprintf(file_name, MAX_FILENAME_LEN, "%s/cacert", out_dir);
+            save_cert(file_name, pkcs7, pkcs7_len);
             free(pkcs7);
 
         }
@@ -871,8 +879,11 @@ static void do_operation ()
     }
 
     est_destroy(ectx);
+    free(cacerts);
 
     ERR_clear_error();
+
+    return rv;
 }
 
 
@@ -1016,7 +1027,7 @@ int main (int argc, char **argv)
         case 'w':
             read_timeout = atoi(optarg);
             if (read_timeout > EST_SSL_READ_TIMEOUT_MAX) {
-                printf("\nMaxium number of seconds to wait is %d, ", EST_SSL_READ_TIMEOUT_MAX);
+                printf("\nMaximum number of seconds to wait is %d, ", EST_SSL_READ_TIMEOUT_MAX);
                 printf("please use a lower value with the -w option\n");
                 exit(1);
             }
@@ -1076,7 +1087,7 @@ int main (int argc, char **argv)
             printf("Using CSR file %s\n", csr_file);
         }
         if (priv_key_file   [0]) {
-            printf("Using identity private key file %s\n", priv_key_file);
+            printf("Using private key file %s\n", priv_key_file);
         }
         if (client_cert_file[0]) {
             printf("Using identity client cert file %s\n", client_cert_file);
@@ -1106,15 +1117,6 @@ int main (int argc, char **argv)
                 exit(1);
             }
             trustanchor_file = getenv("EST_OPENSSL_CACERT");
-        }
-
-        /*
-         * Read in the CA certificates
-         */
-        cacerts_len = read_binary_file(trustanchor_file, &cacerts);
-        if (cacerts_len <= 0) {
-            printf("\nCACERT file could not be read\n");
-            exit(1);
         }
     }
 
@@ -1200,10 +1202,13 @@ int main (int argc, char **argv)
     if (enroll && !csr_file[0]) {
 	/* Read in the private key file */
 	priv_key = read_private_key(priv_key_file);
+	if (!priv_key) {
+	    exit(1);
+	}
     }
 
 
-    do_operation();
+    (void)do_operation(trustanchor_file);
 
     if (priv_key) {
         EVP_PKEY_free(priv_key);
@@ -1215,7 +1220,6 @@ int main (int argc, char **argv)
         X509_free(client_cert);
     }
 
-    free(cacerts);
     if (c_cert_len) {
         free(c_cert);
     }
