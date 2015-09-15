@@ -526,7 +526,8 @@ unsigned char *ossl_get_csr_subject_alt_name (const X509_REQ *csr)
     STACK_OF(X509_EXTENSION) *exts;
     // would be incomplete: exts = X509_REQ_get_extensions(csr);
     const X509_EXTENSION *ext = NULL;
-    if (X509_REQ_get_extension((X509_REQ *)csr, NID_subject_alt_name, -1, &exts, 0, NULL) >= 0) {
+    if ((exts = X509_REQ_get_extensions((X509_REQ *)csr))/* TODO: The following would be more complete, but in some configurations gives SIGSEGV, maybe due to SSL version mismatch?
+        X509_REQ_get_extension((X509_REQ *)csr, NID_subject_alt_name, -1, &exts, 0, NULL) >= 0*/) {
         ext = sk_X509_EXTENSION_value(exts, X509v3_get_ext_by_NID(exts, NID_subject_alt_name, -1));
     }
     unsigned char *str = ossl_get_extension_value(ext);
@@ -608,4 +609,125 @@ EST_ERROR ossl_check_subjects_agree(const X509_REQ *csr, const X509 *cer)
     if (csr_subject) free (csr_subject);
     if (cer_subject) free (cer_subject);
     return rv;
+}
+
+/*
+ * This function does a sanity check on the X509.
+ * Used by clients prior to attempting to convert the X509
+ * to a CSR for a re-enroll operation, and after
+ * a new certificate has been received.
+ * Also used by est_check_cert() for validating identity certs.
+ *
+ * Returns an EST_ERROR code
+ */
+EST_ERROR ossl_check_x509 (const X509 *cert, const EVP_PKEY *priv_key) 
+{
+    /*
+     * Make sure the cert is signed
+     */
+    if (!cert->signature) {
+	EST_LOG_ERR("The certificate provided does not contain a signature.");
+	return (EST_ERR_BAD_X509);
+    }
+
+    /*
+     * Make sure the signature length is not invalid 
+     */
+    if (cert->signature->length <= 0) {
+	EST_LOG_ERR("The certificate provided contains an invalid signature length.");
+	return (EST_ERR_BAD_X509);
+    }
+
+    /*
+     * Check that the private key matches the public key
+     * in the cert.
+     */
+    if (X509_check_private_key((X509 *)cert, (EVP_PKEY *)priv_key) <= 0) {
+        EST_LOG_ERR("Private key does not match the certificate public key");
+        return (EST_ERR_NO_KEY);
+    }
+
+    return (EST_ERR_NONE);
+}
+
+/*
+ * This function checks the given certificate for consistency with
+ * the given private key (if any) and the given cert chain (if any).
+ *
+ * Parameters:
+ *      cert:	Pointer to a X509 structure representing the certificate
+ *      priv_key: Pointer to EVP_PKEY structure, or NULL
+ *      ssl_ctx: Pointer to the ssl_ctx
+ *
+ * Returns:
+ *	EST_ERR_NONE if success
+ */
+EST_ERROR ossl_check_cert (X509 *cert, const EVP_PKEY *priv_key, SSL_CTX *ssl_ctx)
+{
+  X509_STORE_CTX *store_ctx = NULL;
+  X509_STORE *store = NULL;
+  EST_ERROR rv = EST_ERR_NONE;
+
+  if (!cert) {
+	return EST_ERR_NO_CERT;
+  }
+
+    if (priv_key) {
+        /*
+	 * Check that the private key matches the public key in the cert.
+	 */
+        rv = ossl_check_x509 (cert, priv_key);
+	if (rv != EST_ERR_NONE) {
+	    goto cleanup;
+	}
+    }
+
+    /*
+     * Get trusted certs store from SSL_CTX and add cert to the trust chain
+     */    
+    store = SSL_CTX_get_cert_store(ssl_ctx);
+
+    if (store) {
+      X509_STORE_add_cert(store, cert);
+    }
+    
+   
+    /*
+     * Optionally verify the cert relative to the given trust anchor.
+     */
+    if (store) {
+	if (X509_check_issued((X509 *)cert, (X509 *)cert) == X509_V_OK) {
+	    EST_LOG_ERR("With a trust anchor given, our identity certificate must not be self-signed");
+	    rv = EST_ERR_CERT_VERIFICATION;
+	    goto cleanup;
+	}
+	/*
+	 * Set up a X509 Store Context
+	 */
+	store_ctx= X509_STORE_CTX_new();
+	if (store_ctx == NULL) {
+	  EST_LOG_ERR("Unable to allocate a new store context");
+	  rv = EST_ERR_MALLOC;
+	  goto cleanup;
+	}
+	if (!X509_STORE_CTX_init(store_ctx, store, cert, NULL)) {
+	  EST_LOG_ERR("Unable to initialize the new store context");
+	  rv = EST_ERR_MALLOC;
+	  goto cleanup;
+	}
+  
+	if (!X509_verify_cert(store_ctx)) {
+            /*
+             * This cert failed verification.  Log this and continue on
+             */
+            EST_LOG_WARN("Certificate failed verification (%s)", cert->name);
+            rv = EST_ERR_CERT_VERIFICATION;
+	}
+    }
+    
+ cleanup:
+    if (store_ctx) {
+	X509_STORE_CTX_free(store_ctx);
+    }
+    return (rv);
 }

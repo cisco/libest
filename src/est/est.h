@@ -101,7 +101,8 @@ typedef enum {
    E(EST_ERR_CSR_ATTR_MISSING, "The CSR received from the EST client does not contain all the required CSR attributes") \
    E(EST_ERR_SUBJECT_MISMATCH, "The Subject or SubjectAltName fields of client CSR and certificate do not agree") \
    E(EST_ERR_INVALID_DIGEST, "An invalid digest type was requested") \
-   E(EST_ERR_CACERT_VERIFICATION, "Validation of certificate chain or of certificate relative to chain has failed") \
+   E(EST_ERR_CERT_VERIFICATION, "Validation of certificate chain or of certificate relative to chain has failed") \
+   E(EST_ERR_CACERT_VERIFICATION, "Validation of the CA certificate chain received from the EST server has failed") \
    E(EST_ERR_INVALID_TOKEN, "An invalid authorization token was received") \
    E(EST_ERR_INVALID_RETRY_VALUE, "An invalid or missing retry-after was received from the server") \
    E(EST_ERR_BAD_PKCS7, "An invalid or corrupted PKCS7 structure was provided") \

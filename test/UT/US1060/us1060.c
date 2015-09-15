@@ -569,7 +569,6 @@ static void us1060_test100 ()
     LOG_FUNC_NM;
 
     st_stop();
-    sleep(2);
     us1060_start_server(US1060_SERVER_CERTKEY, US1060_SERVER_CERTKEY, 0, 0, 1);
 
     us1060_easy_provision(0, 1, NULL, US1060_SERVER_PORT, EST_ERR_NONE);
@@ -603,7 +602,6 @@ static void us1060_test102 ()
      * None of the SRP cipher suites support ECDSA
      */
     st_stop();
-    sleep(2);
     us1060_start_server(US1060_RSA_CERT, US1060_RSA_KEY, 0, 0, 1);
 
     us1060_easy_provision(1, 1, "SRP-RSA-AES-128-CBC-SHA", US1060_SERVER_PORT, EST_ERR_NONE);
@@ -631,7 +629,6 @@ static void us1060_test103 ()
      * None of the SRP cipher suites support ECDSA
      */
     st_stop();
-    sleep(2);
     us1060_start_server(US1060_RSA_CERT_BAD, US1060_RSA_KEY_BAD, 0, 0, 1);
 
     /*
@@ -707,7 +704,6 @@ static void us1060_test104 ()
      * None of the SRP cipher suites support ECDSA
      */
     st_stop();
-    sleep(2);
     us1060_start_server(US1060_SERVER_CERTKEY, US1060_SERVER_CERTKEY, 0, 0, 1);
 
     /*
@@ -774,7 +770,6 @@ static void us1060_test105 ()
      * None of the SRP cipher suites support ECDSA
      */
     st_stop();
-    sleep(2);
     us1060_start_server(US1060_RSA_CERT, US1060_RSA_KEY, 0, 0, 1);
 
     /*
@@ -846,7 +841,6 @@ static void us1060_test106 ()
      * None of the SRP cipher suites support ECDSA
      */
     st_stop();
-    sleep(2);
     rv = us1060_start_server(US1060_SERVER_CERTKEY, US1060_SERVER_CERTKEY, 0, 0, 1);
 
     /*
@@ -890,7 +884,7 @@ static void us1060_test106 ()
      * Attempt to provision a new cert
      */
     rv = est_client_enroll(ectx, "US1060_TEST106a", &pkcs7_len, new_key);
-    CU_ASSERT(rv == EST_ERR_SSL_CONNECT);
+    CU_ASSERT(rv == EST_ERR_AUTH_SRP);
 
     /*
      * Enable SRP on the client
@@ -1146,7 +1140,6 @@ static void us1060_test200 ()
      * Restart the EST server with SRP disabled
      */
     st_stop();
-    sleep(2);
     rv = us1060_start_server(US1060_SERVER_CERTKEY, US1060_SERVER_CERTKEY, 0, 0, 0);
     CU_ASSERT(rv == 0);
 

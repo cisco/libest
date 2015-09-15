@@ -44,6 +44,9 @@ static int cacerts_len = 0;
 #define US898_TC11_KEY	"US898/tc11_key.pem"
 #define US898_TC11_CERT	"US898/tc11_cert.pem"
 
+#define US898_TC12_KEY  "US898/tc12_key.pem"
+#define US898_TC12_CERT "US898/tc12_cert.pem"
+
 static void us898_clean (void)
 {
     char cmd[200];
@@ -1218,7 +1221,6 @@ static void us898_test11 (void)
      */
     rv = est_client_set_auth(ectx, US898_UID, US898_PWD, cert, key);
     CU_ASSERT(rv == EST_ERR_NONE);
-
     /*
      * Set the EST server address/port
      */
@@ -1239,6 +1241,88 @@ static void us898_test11 (void)
     est_destroy(ectx);
 }
 
+
+/*
+ * Verify the client fails authentication when the
+ * client sends an identy cert which doesn't match 
+ * the trust anchor. 
+ */
+static void us898_test12 (void) 
+{
+    EST_CTX *ectx;
+    EVP_PKEY *key;
+    unsigned char *key_raw;
+    int key_len;
+    unsigned char *cert_raw;
+    int cert_len;
+    int rv;
+    int pkcs7_len = 0;
+    X509 *cert = NULL;
+    BIO *in;
+    unsigned char *attr_data = NULL;
+    int attr_len;
+
+    LOG_FUNC_NM;
+
+    /*
+     * Create a client context 
+     */
+    ectx = est_client_init(cacerts, cacerts_len, 
+                           EST_CERT_FORMAT_PEM,
+                           client_manual_cert_verify);
+    CU_ASSERT(ectx != NULL);
+
+    
+    /*
+     * Read in the private key
+     */
+    key_len = read_binary_file(US898_TC12_KEY, &key_raw);
+    CU_ASSERT(key_len > 0);
+    key = est_load_key(key_raw, key_len, EST_FORMAT_PEM);
+    CU_ASSERT(key != NULL);
+    free(key_raw);
+
+    /*
+     * Read in the old cert
+     */
+    cert_len = read_binary_file(US898_TC12_CERT, &cert_raw);
+    CU_ASSERT(cert_len > 0);
+    in = BIO_new_mem_buf(cert_raw, cert_len);
+    CU_ASSERT(in != NULL);
+    if (!in) return;
+    cert = PEM_read_bio_X509_AUX(in, NULL, NULL, NULL);
+    CU_ASSERT(cert != NULL);
+    if (!cert) return; 
+    BIO_free_all(in);
+    free(cert_raw);
+
+
+    /*
+     * Set the authentication mode to use cert for re-enroll.
+     * This should return an error since the certificate doesn't
+     * match the trust anchor. 
+     */
+    rv = est_client_set_auth(ectx, NULL, NULL, cert, key);
+    CU_ASSERT(rv == EST_ERR_CERT_VERIFICATION);
+
+    /*
+     * Set the EST server address/port
+     */
+    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
+
+    
+    /*
+     * Get the latest CSR attributes
+     */
+    rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
+    CU_ASSERT(rv == EST_ERR_NONE);
+
+    /*
+     * Enroll a bad cert. The client should reject this cert. 
+     */
+    rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
+    CU_ASSERT(rv == EST_ERR_CERT_VERIFICATION);
+}
 
 int us898_add_suite (void)
 {
@@ -1267,7 +1351,9 @@ int us898_add_suite (void)
        (NULL == CU_add_test(pSuite, "Re-enroll valid UID/PWD Digest", us898_test8)) || 
        (NULL == CU_add_test(pSuite, "Re-enroll invalid UID/PWD Digest", us898_test9)) || 
        (NULL == CU_add_test(pSuite, "Re-enroll valid certificate no HTTP auth", us898_test10)) || 
-       (NULL == CU_add_test(pSuite, "Re-enroll expired certificate with HTTP auth", us898_test11))) 
+       (NULL == CU_add_test(pSuite, "Re-enroll expired certificate with HTTP auth", us898_test11)) ||       
+       (NULL == CU_add_test(pSuite, "Re-enroll Invalid cert", us898_test12)))
+	
    {
       CU_cleanup_registry();
       return CU_get_error();
