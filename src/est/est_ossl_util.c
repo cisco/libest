@@ -523,7 +523,8 @@ unsigned char *ossl_get_csr_subject_alt_name (const X509_REQ *csr)
     STACK_OF(X509_EXTENSION) *exts;
     // would be incomplete: exts = X509_REQ_get_extensions(csr);
     const X509_EXTENSION *ext = NULL;
-    if (X509_REQ_get_extension((X509_REQ *)csr, NID_subject_alt_name, -1, &exts, 0, NULL) >= 0) {
+    if ((exts = X509_REQ_get_extensions((X509_REQ *)csr))/* TODO: The following would be more complete, but for some configurations gives SIGSEGV, maybe due to SSL version mismatch?
+        X509_REQ_get_extension((X509_REQ *)csr, NID_subject_alt_name, -1, &exts, 0, NULL) >= 0*/) {
         ext = sk_X509_EXTENSION_value(exts, X509v3_get_ext_by_NID(exts, NID_subject_alt_name, -1));
     }
     unsigned char *str = ossl_get_extension_value(ext);
