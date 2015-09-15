@@ -8,7 +8,6 @@
  *------------------------------------------------------------------
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -47,14 +46,29 @@ static char test5_outfile[FILENAME_MAX] = "US901/test5.crt";
 
 static void us901_clean (void)
 {
+#ifndef _WIN32
     system("killall estserver");
-    system("killall estserver.exe");
+#else
+    system("taskkill /F /IM estserver.exe");
+#endif
 
     char cmd[200];
-    sprintf(cmd, "rm %s", test5_outfile);
+    sprintf(cmd, "rm %.196s", test5_outfile);
     system(cmd);
 }
 
+static void launch_cmd (const char *cmd) {
+    char cmdline[200];
+#ifndef _WIN32
+    sprintf(cmdline, "%.197s &", cmd);
+#else
+    sprintf(cmdline, "start /B %.190s", cmd);
+#endif
+    if (system(cmdline)) {
+	printf("\nUnable to launch '%s'\n", cmd);
+	exit(1);
+    };
+}
 /*
  * This routine is called when CUnit initializes this test
  * suite.  This can be used to allocate data or open any
@@ -69,18 +83,18 @@ static int us901_init_suite (void)
     //      test.
 
     /* Start a server configured for HTTP Basic Auth */
-    if (system("US901/runserver_DA.sh &")) return 1;
+    launch_cmd("sh US901/runserver_BA.sh");
 
     /* Start a server configured for HTTP Digest Auth */
-    if (system("US901/runserver_BA.sh &")) return 1;
+    launch_cmd("sh US901/runserver_DA.sh");
 
     /* Start server that uses CRL for checking revoked certs */
-    if (system("US901/runserver_RA.sh &")) return 1;
+    launch_cmd("sh US901/runserver_RA.sh");
 
     /* Start server that uses no HTTP auth */
-    if (system("US901/runserver_NA.sh &")) return 1;
+    launch_cmd("sh US901/runserver_NA.sh");
 
-    // TODO: Note that the above shell scripts may fail, which is not checked.
+    // TODO: Note that the above shell scripts may fail, which is not checked properly.
     sleep(1); // Helpful to prevent us901_test1() to fail with rv=0, at least on some systems when doing the tests offline
 
     return 0;
@@ -115,7 +129,6 @@ static void us901_test1 (void)
 
     LOG_FUNC_NM;
 
-    sleep(1);
     rv = curl_http_post(US901_ENROLL_URL_BA, US901_PKCS10_CT, US901_PKCS10_REQ, 
 	                US901_UIDPWD_GOOD, US901_CACERTS, CURLAUTH_BASIC, 
 			NULL, NULL, NULL);
@@ -143,7 +156,6 @@ static void us901_test2 (void)
     
     LOG_FUNC_NM;
 
-    sleep(1);
     rv = curl_http_post(US901_ENROLL_URL_BA, US901_PKCS10_CT, US901_PKCS10_REQ, 
 	                US901_UIDPWD_BAD, US901_CACERTS, CURLAUTH_BASIC, 
 			NULL, NULL, NULL);
@@ -171,8 +183,6 @@ static void us901_test3 (void)
     long rv;
 
     LOG_FUNC_NM;
-
-    sleep(1);
 
     rv = curl_http_post(US901_ENROLL_URL_DA, US901_PKCS10_CT, US901_PKCS10_REQ, 
 	                US901_UIDPWD_GOOD, US901_CACERTS, CURLAUTH_DIGEST, 
@@ -202,8 +212,6 @@ static void us901_test4 (void)
 
     LOG_FUNC_NM;
 
-    sleep(1);
-
     rv = curl_http_post(US901_ENROLL_URL_DA, US901_PKCS10_CT, US901_PKCS10_REQ, 
 	                US901_UIDPWD_BAD, US901_CACERTS, CURLAUTH_DIGEST, 
 			NULL, NULL, NULL);
@@ -232,8 +240,6 @@ static void us901_test5 (void)
     char cmd[200];
 
     LOG_FUNC_NM;
-
-    sleep(1);
 
     outfile = fopen(test5_outfile, "w");
     rv = curl_http_get(US901_CACERT_URL_BA, US901_CACERTS, &write_func);
@@ -353,7 +359,6 @@ static void us901_test10 (void)
 
     LOG_FUNC_NM;
 
-    sleep(1);
     rv = curl_http_post_cert(US901_ENROLL_URL_NA, 
 	US901_PKCS10_CT, 
 	US901_PKCS10_REQ, 
@@ -380,7 +385,6 @@ static void us901_test11 (void)
 
     LOG_FUNC_NM;
 
-    sleep(1);
     rv = curl_http_post_cert(US901_ENROLL_URL_NA, 
 	US901_PKCS10_CT, 
 	US901_PKCS10_REQ, 
@@ -406,7 +410,6 @@ static void us901_test12 (void)
 
     LOG_FUNC_NM;
 
-    sleep(1);
     rv = curl_http_post_cert(US901_ENROLL_URL_RA, 
 	US901_PKCS10_CT, 
 	US901_PKCS10_REQ, 
@@ -433,7 +436,6 @@ static void us901_test13 (void)
 
     LOG_FUNC_NM;
 
-    sleep(1);
     rv = curl_http_post_cert(US901_ENROLL_URL_BA, 
 	US901_PKCS10_CT, 
 	US901_PKCS10_REQ, 
@@ -466,7 +468,6 @@ static void us901_test14 (void)
 
     LOG_FUNC_NM;
 
-    sleep(1);
     rv = curl_http_post(US901_ENROLL_URL_BA, US901_PKCS10_CT, US901_PKCS10_REQ, 
 	                US901_UIDPWD_GOOD, US901_CACERTS, CURLAUTH_BASIC, 
 			"ADH-AES128-SHA256", NULL, NULL);
@@ -715,8 +716,6 @@ static void us901_test20 (void)
 
     LOG_FUNC_NM;
 
-    sleep(1);
-
     outfile = fopen(test5_outfile, "w");
     rv = curl_http_post(US901_CACERT_URL_BA, US901_PKCS10_CT, US901_PKCS10_REQ, 
 	                US901_UIDPWD_GOOD, US901_CACERTS, CURLAUTH_BASIC, 
@@ -742,7 +741,6 @@ static void us901_test21 (void)
 
     LOG_FUNC_NM;
 
-    sleep(1);
     rv = curl_http_post_certuid(US901_ENROLL_URL_BA, 
 	US901_PKCS10_CT, 
 	US901_PKCS10_REQ, 
@@ -771,7 +769,6 @@ static void us901_test22 (void)
 
     LOG_FUNC_NM;
 
-    sleep(1);
     rv = curl_http_post_certuid(US901_ENROLL_URL_BA, 
 	US901_PKCS10_CT, 
 	US901_PKCS10_REQ, 
@@ -800,7 +797,6 @@ static void us901_test23 (void)
 
     LOG_FUNC_NM;
 
-    sleep(1);
     rv = curl_http_post(US901_ENROLL_URL_NA, 
 	                US901_PKCS10_CT, 
 			US901_PKCS10_REQ, 

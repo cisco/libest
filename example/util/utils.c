@@ -9,6 +9,8 @@
  * All rights reserved.
  *------------------------------------------------------------------
  */
+
+// 2015-08-28 minor stability improvements
 // 2014-06-25 improved logging of server main activity
 
 #include <stdio.h>
@@ -38,7 +40,7 @@ int read_binary_file (char *filename, unsigned char **contents)
     len = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
-    *contents = malloc(len + 1);
+    *contents = (unsigned char *)malloc(len + 1);
     if (!*contents) {
 	printf("\nmalloc fail\n");
         fclose(fp);
@@ -63,17 +65,18 @@ int read_binary_file (char *filename, unsigned char **contents)
  * Generic function to write a binary file from
  * raw data.
  */
-void write_binary_file (char *filename, unsigned char *contents, int len) 
+int write_binary_file (char *filename, unsigned char *contents, int len)
 {
     FILE *fp;
 
     fp = fopen(filename, "wb");
     if (!fp) {
 	printf("\nUnable to open %s for writing\n", filename);
-	return;
+	return -1;
     }
     fwrite(contents, sizeof(char), len, fp);
     fclose(fp);
+    return 0;
 }
 
 /*
@@ -82,9 +85,8 @@ void write_binary_file (char *filename, unsigned char *contents, int len)
  */
 void dumpbin (unsigned char *buf, size_t len)
 {
-    int i;
+    size_t i;
 
-    //fflush(stdout);
     printf("\ndumpbin (%lu bytes):\n", (long unsigned)len);
     for (i = 0; i < len; i++) {
         /*if (buf[i] >= 0xA)*/ printf("%c", buf[i]);

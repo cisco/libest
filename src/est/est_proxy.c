@@ -76,7 +76,6 @@ static EST_CTX *get_client_ctx (EST_CTX *p_ctx)
     EST_CTX *c_ctx = NULL;
     EST_ERROR rv;
     unsigned long cur_threadid = 0;
-    unsigned long cur_pid = getpid();
     CLIENT_CTX_LU_NODE_T *found_node;
     unsigned long zero_threadid = 0x0;
     CLIENT_CTX_LU_NODE_T *empty_node;
@@ -91,14 +90,14 @@ static EST_CTX *get_client_ctx (EST_CTX *p_ctx)
      * We mix in the PID of the current process with the thread ID in
      * case the application is forking new processes (e.g. NGINX).  
      */
-#ifndef DISABLE_PTHREADS
-#ifdef __MINGW32__
+#ifdef _WIN32
     cur_threadid = (unsigned long) GetCurrentThreadId();
 #else
+#ifndef DISABLE_PTHREADS
     cur_threadid = (unsigned long) pthread_self();
 #endif
 #endif
-    cur_threadid += cur_pid;
+    cur_threadid += getpid();
 
     found_node = (CLIENT_CTX_LU_NODE_T *) bsearch(&cur_threadid,
                                                   p_ctx->client_ctx_array,
@@ -266,6 +265,7 @@ static EST_ERROR est_proxy_propagate_pkcs7 (void *http_ctx, unsigned char *pkcs7
 {
     char http_hdr[EST_HTTP_HDR_MAX];
     int hdrlen;
+    struct mg_connection *conn = (struct mg_connection*)http_ctx;
 
     /*
      * Send HTTP header
@@ -281,14 +281,14 @@ static EST_ERROR est_proxy_propagate_pkcs7 (void *http_ctx, unsigned char *pkcs7
     hdrlen = strnlen(http_hdr, EST_HTTP_HDR_MAX);
     snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
              pkcs7_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
-    if (!mg_write(http_ctx, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
+    if (!mg_write(conn, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
             return (EST_ERR_HTTP_WRITE);
     }
 
     /*
      * Send the signed PKCS7 certificate in the body
      */
-    if (!mg_write(http_ctx, pkcs7, pkcs7_len)) {
+    if (!mg_write(conn, pkcs7, pkcs7_len)) {
         EST_LOG_ERR("HTTP write error while propagating pkcs7");
         return (EST_ERR_HTTP_WRITE);
     }
@@ -343,7 +343,7 @@ EST_ERROR est_proxy_retrieve_cacerts (EST_CTX *ctx, unsigned char **cacerts_rtn,
      * Allocate a buffer to retrieve the CA certs
      * and get them copied in
      */
-    rcvd_cacerts = malloc(rcvd_cacerts_len);
+    rcvd_cacerts = (unsigned char *)malloc(rcvd_cacerts_len);
     if (rcvd_cacerts == NULL) {
         EST_LOG_ERR("Unable to malloc buffer for cacerts received from server");
         return (EST_ERR_MALLOC);
@@ -505,7 +505,7 @@ static EST_ERROR est_proxy_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
      * Allocate some space to hold the cert that we
      * expect to receive from the EST server.
      */
-    pkcs7 = malloc(EST_CA_MAX); 
+    pkcs7 = (unsigned char*)malloc(EST_CA_MAX); 
 
     /*
      * Attempt to enroll the CSR from the client
@@ -572,9 +572,9 @@ static int est_proxy_handle_keygen (EST_CTX *ctx)
  * incoming CSR Attributes request.  This function is similar to the Client API
  * function, est_client_get_csrattrs().
   */
-static int est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx)
+static EST_ERROR est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx)
 {
-    int rv = EST_ERR_NONE;
+    EST_ERROR rv = EST_ERR_NONE;
     int pop_present;
     char *csr_data, *csr_data_pop;
     int csr_len, csr_pop_len;
@@ -615,7 +615,7 @@ static int est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx)
 
 	    if (!ctx->csr_pop_present) {
 		if (csr_len == 0) {
-                    csr_data = malloc(EST_CSRATTRS_POP_LEN + 1);
+                    csr_data = (char *)malloc(EST_CSRATTRS_POP_LEN + 1);
 		    if (!csr_data) {
 			return (EST_ERR_MALLOC);
 		    }
@@ -682,7 +682,7 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
         return (EST_ERR_BAD_MODE);
     }
 
-    EST_LOG_INFO("Proxy started handling %s %s", method, uri);
+    // EST_LOG_INFO("Proxy started handling %s %s", method, uri);
 
     /*
      * See if this is a cacerts request
@@ -712,17 +712,17 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
 	    /*
 	     * Get the SSL context, which is required for authenticating the client.
 	     */
-	    ssl = (SSL*)mg_get_conn_ssl(http_ctx);
+	    ssl = (SSL *)mg_get_conn_ssl((struct mg_connection *)http_ctx);
 	    if (!ssl) {
 		rc = EST_ERR_NO_SSL_CTX;
 	    } else {
 		rc = est_proxy_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, 
 						    strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0);
+#if 0 // I see no reason for hiding the actual cause of errors from clients
 		if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING && rc != EST_ERR_AUTH_FAIL) {
-#if 0 // I see no reason for hiding real cause of error from clients
 		    rc = EST_ERR_BAD_PKCS10;
-#endif
 		}
+#endif
 	    }
 	}
     }
@@ -767,7 +767,7 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
         rc = EST_ERR_HTTP_NOT_FOUND;
     }
 
-    EST_LOG_INFO("Proxy finished handling %s %s with rv = %d (%s)", method, uri, rc, EST_ERR_NUM_TO_STR(rc));
+    // EST_LOG_INFO("Proxy finished handling %s %s with rv = %d (%s)", method, uri, rc, EST_ERR_NUM_TO_STR(rc));
 
     if (rc != EST_ERR_NONE) {
 	est_send_http_error(ctx, http_ctx, rc);
@@ -944,7 +944,7 @@ EST_CTX * est_proxy_init (unsigned char *ca_chain, int ca_chain_len,
      * is basically a server function that requires client capabilities to
      * communicate to the upstream server when needed. 
      */
-    ctx = malloc(sizeof(EST_CTX));
+    ctx = (EST_CTX *)malloc(sizeof(EST_CTX));
     if (!ctx) {
         EST_LOG_ERR("malloc failed");
         return NULL;
@@ -986,7 +986,7 @@ EST_CTX * est_proxy_init (unsigned char *ca_chain, int ca_chain_len,
 	est_destroy(ctx);
         return NULL;
     }
-    ctx->ca_chain_raw =  malloc(ca_chain_len+1);
+    ctx->ca_chain_raw =  (unsigned char *)malloc(ca_chain_len+1);
     if (!ctx->ca_chain_raw) {
         EST_LOG_ERR("malloc failed");
 	est_destroy(ctx);

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Starts EST server using HTTP Basic Authentication
+# Starts EST server using HTTP Digest Authentication
 
 export EST_TRUSTED_CERTS=CA/trustedcerts.crt
 export EST_CACERTS_RESP=CA/estCA/cacert.crt

@@ -17,6 +17,9 @@
 	fflush(stdout); \
     } while (0)
 
+#define CU_ASSERT_NM_EQ(name,actual,expected) \
+    CU_assertImplementation((actual)==(expected), actual+1/* hack: gets printed where the line number is usually shown*/, #actual " == " #expected "  "__FILE__, name, "", CU_FALSE)
+
 int read_binary_file(char *filename, unsigned char **contents);
 int write_binary_file(char *filename, unsigned char *contents, int len); 
 BIO *open_tcp_socket(char *ipaddr, char *port);

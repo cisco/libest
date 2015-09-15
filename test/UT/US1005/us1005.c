@@ -9,7 +9,6 @@
  */
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 #include <est.h>
 #include "test_utils.h"
 #include "st_server.h"
@@ -245,7 +244,7 @@ static void us1005_easy_provision (char *cn, char *server, int ba_hint, int use_
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ectx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);
@@ -259,7 +258,7 @@ static void us1005_easy_provision (char *cn, char *server, int ba_hint, int use_
      * Retrieve a copy of the new CA certs
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(ca_certs_len);
+	new_cert = (unsigned char *)malloc(ca_certs_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_cacerts(ectx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);

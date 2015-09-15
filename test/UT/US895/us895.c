@@ -8,7 +8,6 @@
  *------------------------------------------------------------------
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -104,8 +103,6 @@ static int us895_start_server (int manual_enroll, int nid)
 		  0,
 		  nid);
 
-
-    sleep(1);
     return rv;
 }
 
@@ -161,7 +158,6 @@ static int us895_destroy_suite (void)
 {
     st_stop();
     st_proxy_stop();
-    sleep(2);
     return 0;
 }
 
@@ -170,7 +166,7 @@ static unsigned char * handle_short_csrattrs_request (int *csr_len, void *app_da
     unsigned char *csr_data;
 
     *csr_len = strlen(TEST_ATTR7);
-    csr_data = malloc(*csr_len + 1);
+    csr_data = (unsigned char *)malloc(*csr_len + 1);
     strncpy((char *)csr_data, TEST_ATTR7, *csr_len);
     csr_data[*csr_len] = 0;
     return (csr_data);
@@ -181,7 +177,7 @@ static unsigned char * handle_corrupt_csrattrs_request (int *csr_len, void *app_
     unsigned char *csr_data;
 
     *csr_len = strlen(TEST_ATTR8);
-    csr_data = malloc(*csr_len + 1);
+    csr_data = (unsigned char *)malloc(*csr_len + 1);
     strncpy((char *)csr_data, TEST_ATTR8, *csr_len);
     csr_data[*csr_len] = 0;
     return (csr_data);
@@ -192,7 +188,7 @@ static unsigned char * handle_long_csrattrs_request (int *csr_len, void *app_dat
     unsigned char *csr_data;
 
     *csr_len = strlen(TEST_LONG_ATTR);
-    csr_data = malloc(*csr_len + 1);
+    csr_data = (unsigned char *)malloc(*csr_len + 1);
     strncpy((char *)csr_data, TEST_LONG_ATTR, *csr_len);
     csr_data[*csr_len] = 0;
     return (csr_data);
@@ -203,7 +199,7 @@ static unsigned char * handle_correct_csrattrs_request (int *csr_len, void *app_
     unsigned char *csr_data;
 
     *csr_len = strlen(TEST_ATTR1);
-    csr_data = malloc(*csr_len + 1);
+    csr_data = (unsigned char *)malloc(*csr_len + 1);
     strncpy((char *)csr_data, TEST_ATTR1, *csr_len);
     csr_data[*csr_len] = 0;
     return (csr_data);
@@ -214,7 +210,7 @@ static unsigned char * handle_nopop_csrattrs_request (int *csr_len, void *app_da
     unsigned char *csr_data;
 
     *csr_len = strlen(TEST_ATTR_NOPOP);
-    csr_data = malloc(*csr_len + 1);
+    csr_data = (unsigned char *)malloc(*csr_len + 1);
     strncpy((char *)csr_data, TEST_ATTR_NOPOP, *csr_len);
     csr_data[*csr_len] = 0;
     return (csr_data);
@@ -279,8 +275,6 @@ static void us895_test1 (void)
     int csr_len;
     unsigned char *csr_data = NULL;
 
-    sleep(1);
-    
     LOG_FUNC_NM;
 
     /*

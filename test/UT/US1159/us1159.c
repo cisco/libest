@@ -8,7 +8,6 @@
  *------------------------------------------------------------------
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include "test_utils.h"
 #include <openssl/ssl.h>
@@ -43,7 +42,7 @@ static unsigned char * handle_csrattrs_request (int *csr_len, void *app_data)
     unsigned char *csr_data;
 
     *csr_len = strlen(attrs);
-    csr_data = malloc(*csr_len + 1);
+    csr_data = (unsigned char *)malloc(*csr_len + 1);
     strncpy((char *)csr_data, attrs, *csr_len);
     csr_data[*csr_len] = 0;
     return (csr_data);
@@ -83,8 +82,6 @@ int  us1159_start_server()
         printf("\nUnable to set EST CSR Attributes callback for US1159.\n");
 	return (rv);
     }
-
-    sleep(1);
 
     return rv;
 }
@@ -127,7 +124,6 @@ static int us1159_init_suite (void)
 void us1159_stop_server() 
 {
     st_stop();
-    sleep(2);
 }
 
     
@@ -206,7 +202,7 @@ static EVP_PKEY * generate_ec_private_key (int nid)
     PEM_write_bio_ECPKParameters(out, group);
     PEM_write_bio_ECPrivateKey(out, eckey, NULL, NULL, 0, NULL, NULL);
     key_len = BIO_get_mem_data(out, &tdata);
-    key_data = malloc(key_len+1);
+    key_data = (unsigned char *)malloc(key_len+1);
     memcpy(key_data, tdata, key_len);
     EC_KEY_free(eckey);
     BIO_free(out);
@@ -289,7 +285,7 @@ static void us1159_test1 (void)
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ctx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);
@@ -526,7 +522,7 @@ static void us1159_test2 (void)
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ctx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);
@@ -840,7 +836,7 @@ static void us1159_test20 (void)
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ctx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);
@@ -938,7 +934,7 @@ static void us1159_test21 (void)
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ctx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);

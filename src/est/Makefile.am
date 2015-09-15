@@ -1,5 +1,5 @@
 lib_LTLIBRARIES = libest.la
-AM_CFLAGS = -I$(SSL_CFLAGS) -I../.. 
+AM_CFLAGS = -I../.. 
 libest_la_LDFLAGS = -release $(PACKAGE_VERSION) 
 libest_la_SOURCES = est.c est_client.c est_server.c est_server_http.c \
 			est_proxy.c est_client_http.c est_ossl_util.c NonPosix.c

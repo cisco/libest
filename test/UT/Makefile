@@ -48,7 +48,7 @@ CC = gcc
 LDFLAGS += -lcunit -ldl -lpthread -lest -lssl -lcrypto -lcurl
 
 # library paths
-LIBS = -L../../src/est/.libs -L$(OPENSSL_DIR)/lib -L$(CURL_DIR)/lib $(LDFLAGS) 
+LIBS = -L../../src/est/.libs -L$(OPENSSL_DIR)/lib -L$(CURL_DIR)/lib $(LDFLAGS)
 
 
 .SUFFIXES: .c

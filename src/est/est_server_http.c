@@ -47,7 +47,7 @@
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 #if defined(_WIN32)
-#define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
+// #define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
 #else
 #ifdef __linux__
 #define _XOPEN_SOURCE 600     // For flockfile() on Linux
@@ -70,7 +70,7 @@
 
 #ifndef _WIN32_WCE // Some ANSI #includes are not available on Windows CE
 #include <sys/types.h>
-#ifndef __MINGW32__
+#ifndef _WIN32
 #include <sys/socket.h>
 #endif
 #include <sys/stat.h>
@@ -90,7 +90,6 @@
 #include <stdio.h>
 #include "est_locl.h"
 #include "est_ossl_util.h"
-
 
 #include "est_server_http.h"
 #include "est_server.h"
@@ -644,14 +643,28 @@ static EST_ERROR general_ssl_error(struct mg_connection *conn, int ssl_err) {
     case 0x1408A0C1:
 	EST_LOG_ERR("No shared cipher");
 	{
-	    EST_LOG_INFO("Our list of accepted ciphers has the following entries, in this order:");
 	    STACK_OF(SSL_CIPHER) *sk = SSL_get_ciphers(conn->ssl);
-	    int i = 0;
-	    while(sk != NULL && i < sk_SSL_CIPHER_num(sk)) {
-		SSL_CIPHER *c = sk_SSL_CIPHER_value(sk, i++);
+	    int i;
+	    int len = 0;
+	    for(i = 0; sk != NULL && i < sk_SSL_CIPHER_num(sk); i++) {
+		SSL_CIPHER *c = sk_SSL_CIPHER_value(sk, i);
 		if (c != NULL) {
-		    EST_LOG_INFO((char *)c->name);
+		    len += strlen((char *)c->name)+2;
 		}
+	    }
+	    char *list = (char *)malloc(len+1);
+	    if (list != NULL) {
+		list[0] = '\0';
+		for(i = 0; sk != NULL && i < sk_SSL_CIPHER_num(sk); i++) {
+		    SSL_CIPHER *c = sk_SSL_CIPHER_value(sk, i);
+		    if (c != NULL) {
+			strcat(list, (char *)c->name);
+			if (i < sk_SSL_CIPHER_num(sk)-1)
+			    strcat(list, ", ");
+		    }
+		}
+		EST_LOG_INFO("List of accepted ciphers is, in this order: %s", list);
+		free(list);
 	    }
 	}
 	rv = EST_ERR_SSL_CIPHER_LIST;
@@ -1349,7 +1362,7 @@ static int est_mg_handler (struct mg_connection *conn)
 		         EST_MAX_CONTENT_LEN);
 	    return (EST_ERR_BAD_CONTENT_LEN);
 	}
-        body = malloc(cl+1);
+        body = (char *)malloc(cl+1);
         mg_read(conn, body, cl);
 	/* Make sure the buffer is null terminated */
 	body[cl] = 0x0;
@@ -1475,7 +1488,7 @@ static int set_ssl_option (struct mg_context *ctx)
     if (!RAND_bytes((unsigned char*)&sic[3], 8)) {
 	EST_LOG_WARN("RNG failure while setting SIC: %s", ssl_error());
     }
-    SSL_CTX_set_session_id_context(ssl_ctx, (void*)&sic, 11);
+    SSL_CTX_set_session_id_context(ssl_ctx, (const unsigned char*)&sic, 11);
 
     // load in the CA cert(s) used to verify client certificates
     SSL_CTX_set_cert_store(ssl_ctx, ectx->trusted_certs_store);
@@ -1600,7 +1613,7 @@ static int set_ssl_option (struct mg_context *ctx)
 
 static void reset_per_request_attributes (struct mg_connection *conn)
 {
-    conn->path_info = conn->request_info.ev_data = NULL;
+    conn->path_info = (char *)(conn->request_info.ev_data = NULL);
     conn->num_bytes_sent = conn->consumed_content = 0;
     conn->status_code = -1;
     conn->must_close = conn->request_len = 0;
@@ -1626,15 +1639,15 @@ static EST_ERROR process_new_connection (struct mg_connection *conn)
     // Important: on new connection, reset the receiving buffer. Credit goes to crule42.
     conn->data_len = 0;
     do {
-        EST_LOG_INFO("\n\nProcessing HTTP request...");
+        EST_LOG_INFO("Processing HTTP request...");
         reset_per_request_attributes(conn);
         conn->request_len = read_request(NULL, conn, conn->buf, conn->buf_size,
                                          &conn->data_len);
 	if (conn->request_len < 0) {
 	    rv = (EST_ERROR)-conn->request_len;
-	    EST_LOG_ERR("Processing HTTP request, error=%d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
+	    // EST_LOG_ERR("Processing HTTP request, error=%d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
 	} else {
-	    EST_LOG_INFO("Processing HTTP request, length=%d", conn->request_len);
+	    // EST_LOG_INFO("Processing HTTP request, length=%d", conn->request_len);
 	}
         assert(conn->request_len < 0 || conn->data_len >= conn->request_len);
         if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
@@ -1870,9 +1883,10 @@ struct mg_context *mg_start (void *user_data)
      * a closed socket.  This is a defensive measure
      * in case a client sends us a bogus request that
      * results in a socket closure.  
-     * TODO: this code will likely not work on Windows
      */
+#ifndef _MSC_VER // Otherwise, we get a runtime assertion failure in winsig.c
     signal(SIGPIPE, SIG_IGN);
+#endif
 
     // Allocate context and initialize reasonable general case defaults.
     // TODO(lsm): do proper error handling here.
@@ -1892,10 +1906,11 @@ struct mg_context *mg_start (void *user_data)
 
 EST_ERROR est_send_csrattr_data (EST_CTX *ctx, char *csr_data, int csr_len, void *http_ctx)
 {
-   char http_hdr[EST_HTTP_HDR_MAX];
-   int hdrlen;
+    char http_hdr[EST_HTTP_HDR_MAX];
+    int hdrlen;
+    struct mg_connection *conn = (struct mg_connection*)http_ctx;
 
-   if ((csr_len > 0) && csr_data) {
+    if ((csr_len > 0) && csr_data) {
         /*
          * Send HTTP 200 header
          */
@@ -1910,7 +1925,7 @@ EST_ERROR est_send_csrattr_data (EST_CTX *ctx, char *csr_data, int csr_len, void
         hdrlen = strnlen(http_hdr, EST_HTTP_HDR_MAX);
         snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
                  csr_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
-        if (!mg_write(http_ctx, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
+        if (!mg_write(conn, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
             free(csr_data);
             return (EST_ERR_HTTP_WRITE);
         }
@@ -1918,7 +1933,7 @@ EST_ERROR est_send_csrattr_data (EST_CTX *ctx, char *csr_data, int csr_len, void
         /*
          * Send the CSR in the body
          */
-        if (!mg_write(http_ctx, csr_data, csr_len)) {
+        if (!mg_write(conn, csr_data, csr_len)) {
             free(csr_data);
             return (EST_ERR_HTTP_WRITE);
         }
