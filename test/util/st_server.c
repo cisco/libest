@@ -20,8 +20,6 @@
 #include <est.h>
 #include <stdio.h>
 #include <errno.h>
-#include <unistd.h>
-#include <stdint.h>
 #include <signal.h>
 #include <fcntl.h>
 #define __USE_GNU
@@ -35,7 +33,7 @@
 #include "../../example/util/simple_server.h"
 #include "test_utils.h"
 #include <sys/types.h>
-#ifndef __MINGW32__
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
@@ -202,11 +200,11 @@ static int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
     /*
      * see if we can find a match for this public key
      */
-    n = malloc(sizeof(LOOKUP_ENTRY));
-    n->data = malloc(bptr->length);
+    n = (LOOKUP_ENTRY *)malloc(sizeof(LOOKUP_ENTRY));
+    n->data = (unsigned char *)malloc(bptr->length);
     n->length = bptr->length;
     memcpy(n->data, bptr->data, n->length);
-    l = tfind(n, (void **)&lookup_root, compare);
+    l = (LOOKUP_ENTRY *)tfind(n, (void **)&lookup_root, compare);
     if (l) {
 	/* We have a match, allow the enrollment */
 	rv = 1;	
@@ -217,7 +215,7 @@ static int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
 	free(n);
     } else {
 	/* Not a match, add it to the list and return */
-	l = tsearch(n, (void **)&lookup_root, compare);
+	l = (LOOKUP_ENTRY *)tsearch(n, (void **)&lookup_root, compare);
 	rv = 0;
 	printf("Adding key to lookup table:\n");
 	dumpbin((char*)n->data, n->length);
@@ -241,7 +239,7 @@ DONE:
  * Callback function used by EST stack to process a PKCS10
  * enrollment request with the CA.
  */
-static int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len, 
+static EST_ERROR process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len, 
                                unsigned char **cert, int *cert_len,
 			       char *uid, X509 *peercert, void *app_data)
 {
@@ -288,7 +286,7 @@ static int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
      */
     *cert_len = BIO_get_mem_data(result, (char**)&buf);
     if (*cert_len > 0 && *cert_len < MAX_CERT_LEN) {
-        *cert = malloc(*cert_len);
+        *cert = (unsigned char *)malloc(*cert_len);
         memcpy(*cert, buf, *cert_len);
     }
 
@@ -305,17 +303,17 @@ static unsigned char * process_csrattrs_request (int *csr_len, void *app_data)
 
     if (csr_attr_value) {
 	*csr_len = strlen(csr_attr_value);
-	csr_data = malloc(*csr_len + 1);
+	csr_data = (unsigned char *)malloc(*csr_len + 1);
 	strncpy((char *)csr_data, csr_attr_value, *csr_len+1);
     } else {
 	*csr_len = sizeof(TEST_CSR);
-	csr_data = malloc(*csr_len + 1);
+	csr_data = (unsigned char *)malloc(*csr_len + 1);
 	strcpy((char *)csr_data, TEST_CSR);
     }
     return (csr_data);
 }
 
-static char digest_user[3][32] = 
+static char digest_user[3][34] = 
     {
 	"estuser", 
 	"estrealm", 
@@ -466,6 +464,7 @@ void st_stop ()
     stop_single_server(server_data);
     cleanup();
     printf("Stopped EST server.\n");
+    fflush(stdout);
 }
 
 /*
@@ -510,8 +509,9 @@ static int st_start_internal (
     DH *dh;
     EST_ERROR rv;
 
-    est_set_log_source(EST_SERVER);
     printf("\nLaunching EST server...\n");
+    fflush(stdout);
+    est_set_log_source(EST_SERVER);
 
     manual_enroll = simulate_manual_enroll;
 

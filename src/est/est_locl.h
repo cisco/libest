@@ -186,11 +186,11 @@ struct est_ctx {
     /*
      * Callbacks requried for server mode operation
      */
-    int (*est_enroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len, 
+    EST_ERROR (*est_enroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len, 
 	                        unsigned char **pkcs7, int *cert_len,
 				char *user_id, X509 *peer_cert,
 				void *ex_data);
-    int (*est_reenroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len, 
+    EST_ERROR (*est_reenroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len, 
 	                          unsigned char **pkcs7, int *cert_len,
 				  char *user_id, X509 *peer_cert,
 				  void *ex_data);
@@ -261,7 +261,7 @@ typedef struct est_oid_list {
 /*
  * Index used to link the EST Ctx into the SSL structures
  */
-int e_ctx_ssl_exdata_index;
+extern int e_ctx_ssl_exdata_index;
 
 
 #ifndef EST_LOG_INFO
@@ -302,14 +302,14 @@ int est_base64_decode(const char *src, char *dst, int max_len);
 int wait_for_read(int socket, int usec);
 
 /* From est_server.c */
-int est_http_request(EST_CTX *ctx, void *http_ctx,
+EST_ERROR est_http_request(EST_CTX *ctx, void *http_ctx,
                      char *method, char *uri,
                      char *body, int body_len, const char *ct);
 
 /* From est_client.c */
 EST_ERROR est_client_init_ssl_ctx(EST_CTX *ctx);
 EST_ERROR est_client_connect(EST_CTX *ctx, SSL **ssl);
-int est_client_send_enroll_request(EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
+EST_ERROR est_client_send_enroll_request(EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
                                    unsigned char *pkcs7, int *pkcs7_len,
 				   int reenroll);
 void est_client_disconnect(EST_CTX *ctx, SSL **ssl);

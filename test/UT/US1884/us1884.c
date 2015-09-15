@@ -11,7 +11,6 @@
  *------------------------------------------------------------------
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -186,7 +185,7 @@ static size_t curl_data_cb (void *ptr, size_t size, size_t nmemb, void *userdata
          * strings.  In this case the http headers came from EST server and we
          * know they are null terminated
          */
-        rc = strstr(ptr, "WWW-Authenticate: Bearer");
+        rc = strstr((char *)ptr, "WWW-Authenticate: Bearer");
         if (rc) {
             bearer_found = 1;
         }

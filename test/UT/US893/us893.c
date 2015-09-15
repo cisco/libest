@@ -13,7 +13,6 @@
 // 2015-08-11 corrected some assertions and comments on expected behavior
 
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -273,7 +272,7 @@ static void us893_test2 (void)
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ectx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);

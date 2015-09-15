@@ -8,7 +8,6 @@
  *------------------------------------------------------------------
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include "test_utils.h"
 #include "st_server.h"
@@ -315,19 +314,19 @@ static void us899_simple_enroll (char *cn, char *server, EST_ERROR expected_enro
      * Get the latest CSR attributes
      */
     rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
-    CU_ASSERT(rv == expected_enroll_rv);
+    CU_ASSERT_NM_EQ(cn, rv, expected_enroll_rv);
 
     /*
      * Use the simplified API to enroll a CSR
      */
     rv = est_client_enroll(ectx, cn, &pkcs7_len, key);
-    CU_ASSERT(rv == expected_enroll_rv);
+    CU_ASSERT_NM_EQ(cn, rv, expected_enroll_rv);
 
     /*
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ectx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);
@@ -428,7 +427,7 @@ static void us899_test2 (void)
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ectx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);
@@ -530,7 +529,7 @@ static void us899_test4 (void)
     /*
      * Next try an invalid format
      */
-    csr = est_read_x509_request(badreq, 13, 999);
+    csr = est_read_x509_request(badreq, 13, (EST_CERT_FORMAT)999);
     CU_ASSERT(csr == NULL);
 
     /*
@@ -1046,12 +1045,11 @@ static void us899_test16 (void)
      * Generate a CRL and append it to the CA chain
      * we're using on the client side.
      */
-    system("openssl ca -config CA/estExampleCA.cnf -gencrl -out US899/test16_crl.pem");
-    sleep(1);
-    system("cat CA/trustedcerts.crt > US899/test16trust.crt");
-    sleep(1);
-    system("cat US899/test16_crl.pem >> US899/test16trust.crt");
-    sleep(1);
+    if (system("openssl ca -config CA/estExampleCA.cnf -gencrl -out US899/test16_crl.pem && "
+	       "cat CA/trustedcerts.crt US899/test16_crl.pem > US899/test16trust.crt")) {
+	printf("\nUnable to produce CA chain with crl: US899/test16trust.crt\n");
+	exit(1);
+    }
 
     /*
      * Read in the CA certificates
@@ -1109,7 +1107,7 @@ static void us899_test16 (void)
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ectx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);

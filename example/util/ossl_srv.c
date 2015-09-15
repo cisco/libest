@@ -85,7 +85,7 @@
  * and donated 'to the cause' along with lots and lots of other fixes to
  * the library. */
 
-
+#include "NonPosix.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -297,7 +297,7 @@ X509 *load_cert(BIO *err, const char *file, int format,
 	else if (format == FORMAT_NETSCAPE)
 		{
 		NETSCAPE_X509 *nx;
-		nx=ASN1_item_d2i_bio(ASN1_ITEM_rptr(NETSCAPE_X509),cert,NULL);
+		nx=(NETSCAPE_X509 *)ASN1_item_d2i_bio(ASN1_ITEM_rptr(NETSCAPE_X509),cert,NULL);
 		if (nx == NULL)
 				goto end;
 
@@ -881,7 +881,7 @@ int password_callback(char *buf, int bufsiz, int verify, PW_CB_DATA *cb_tmp)
 	if (cb_data)
 		{
 		if (cb_data->password)
-			password = cb_data->password;
+		    password = (const char *)cb_data->password;
 		if (cb_data->prompt_info)
 			prompt_info = cb_data->prompt_info;
 		}
@@ -1027,7 +1027,7 @@ CA_DB *load_index(char *dbfile, DB_ATTR *db_attr)
 			}
 		}
 
-	if ((retdb = OPENSSL_malloc(sizeof(CA_DB))) == NULL)
+	if ((retdb = (CA_DB *)OPENSSL_malloc(sizeof(CA_DB))) == NULL)
 		{
 		fprintf(stderr, "Out of memory\n");
 		goto err;
@@ -1084,6 +1084,17 @@ int index_name_cmp(const OPENSSL_CSTRING *a, const OPENSSL_CSTRING *b)
 	{ return(strcmp(a[DB_name], b[DB_name])); }
 
 
+#undef IMPLEMENT_LHASH_HASH_FN
+#define IMPLEMENT_LHASH_HASH_FN(name, o_type) \
+	unsigned long name##_LHASH_HASH(const void *arg) { \
+		const o_type *a = (o_type *)arg; \
+		return name##_hash(a); }
+#undef IMPLEMENT_LHASH_COMP_FN
+#define IMPLEMENT_LHASH_COMP_FN(name, o_type) \
+	int name##_LHASH_COMP(const void *arg1, const void *arg2) { \
+		const o_type *a = (o_type *) arg1;		    \
+		const o_type *b = (o_type *) arg2; \
+		return name##_cmp(a,b); }
 static IMPLEMENT_LHASH_HASH_FN(index_serial, OPENSSL_CSTRING)
 static IMPLEMENT_LHASH_COMP_FN(index_serial, OPENSSL_CSTRING)
 static IMPLEMENT_LHASH_HASH_FN(index_name, OPENSSL_CSTRING)
@@ -1282,11 +1293,11 @@ int parse_yesno(const char *str, int def)
 X509_NAME *parse_name(char *subject, long chtype, int multirdn)
 	{
 	size_t buflen = strlen(subject)+1; /* to copy the types and values into. due to escaping, the copy can only become shorter */
-	char *buf = OPENSSL_malloc(buflen);
+	char *buf = (char *)OPENSSL_malloc(buflen);
 	size_t max_ne = buflen / 2 + 1; /* maximum number of name elements */
-	char **ne_types = OPENSSL_malloc(max_ne * sizeof (char *));
-	char **ne_values = OPENSSL_malloc(max_ne * sizeof (char *));
-	int *mval = OPENSSL_malloc (max_ne * sizeof (int));
+	char **ne_types = (char **)OPENSSL_malloc(max_ne * sizeof (char *));
+	char **ne_values = (char **)OPENSSL_malloc(max_ne * sizeof (char *));
+	int *mval = (int *)OPENSSL_malloc (max_ne * sizeof (int));
 
 	char *sp = subject, *bp = buf;
 	int i, ne_num = 0;
@@ -2183,7 +2194,7 @@ static int get_certificate_status(const char *serial, CA_DB *db)
 		row[i]=NULL;
 
 	/* Malloc needed char spaces */
-	row[DB_serial] = OPENSSL_malloc(strlen(serial) + 2);
+	row[DB_serial] = (char *)OPENSSL_malloc(strlen(serial) + 2);
 	if (row[DB_serial] == NULL)
 		{
 		BIO_printf(bio_err, "Malloc failure\n");
@@ -2310,7 +2321,7 @@ BIO *read_cert_pkcs7(char *cert_file) {
  * Please accept my apology in advance for the poor formatting 
  * in the code below.
  */
-BIO * ossl_simple_enroll (const char *p10buf, int p10len, char *configfile)
+BIO * ossl_simple_enroll (const unsigned char *p10buf, int p10len, const char *configfile)
 {
 	char *keyfile = NULL;
 	BIO *p7out;

@@ -15,7 +15,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 #include <pthread.h>
 #include <est.h>
 #include <curl/curl.h>
@@ -367,13 +366,8 @@ static void us1060_test_matrix_item ()
      * it's in the correct mode.
      */
     st_stop();
-    if (test_matrix[i].server_srp == SRP_ON) {
-	rv = us1060_start_server(US1060_SERVER_CERTKEY, US1060_SERVER_CERTKEY, 0, 0, 1);
-    } else {
-	rv = us1060_start_server(US1060_SERVER_CERTKEY, US1060_SERVER_CERTKEY, 0, 0, 0);
-    }
-    CU_ASSERT(rv == 0);
-
+    rv = us1060_start_server(US1060_SERVER_CERTKEY, US1060_SERVER_CERTKEY, 0, 0, test_matrix[i].server_srp == SRP_ON);
+    CU_ASSERT_FATAL(rv == 0);
 
     /*
      * Set the server HTTP auth configuration
@@ -391,7 +385,6 @@ static void us1060_test_matrix_item ()
 	st_set_http_auth_required();
         break;
     }
-
 
     switch (test_matrix[i].curl_srp) {
     case SRP_GOOD:
@@ -421,9 +414,10 @@ static void us1060_test_matrix_item ()
 	}
 	break;
     }    
-    CU_ASSERT(rv == test_matrix[i].expected_http_result);
+    CU_ASSERT_NM_EQ(test_matrix[i].test_name, rv, test_matrix[i].expected_http_result);
     if (rv != test_matrix[i].expected_http_result) {
 	printf("\nMatrix test %s failed with rv = %d\n", test_matrix[i].test_name, (int)rv);
+	fflush(stdout);
     }
 
     i++; // prepare index for next test in row
@@ -530,7 +524,7 @@ static void us1060_easy_provision (int use_srp, int use_ta, char *cipher_suite, 
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ectx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);
@@ -544,7 +538,7 @@ static void us1060_easy_provision (int use_srp, int use_ta, char *cipher_suite, 
      * Retrieve a copy of the new CA certs
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(ca_certs_len);
+	new_cert = (unsigned char *)malloc(ca_certs_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_cacerts(ectx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);
@@ -869,7 +863,7 @@ static void us1060_test106 ()
 
     /*
      * Enable SRP on the client
-     * Use a strength slightly larger then the N value in passwd.srpv
+     * Use a strength slightly larger than the N value in passwd.srpv
      */
     rv = est_client_enable_srp(ectx, 1537, US1060_UID, US1060_PWD); 
     CU_ASSERT(rv == EST_ERR_NONE);

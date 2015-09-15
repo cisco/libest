@@ -13,6 +13,8 @@
  **------------------------------------------------------------------
  */
 
+// 2015-09-09 slightly improved code re-usability for do_operation()
+// 2015-08-28 minor bug corrections w.r.t long options and stability improvements
 // 2015-08-07 added defaults for server address and port
 // 2015-08-07 corrected error handling; improved diagnostic output
 // 2014-06-26 improved identity cert & key handling
@@ -23,17 +25,14 @@
 
 /* Main routine */
 #include <est.h>
-#include "stdio.h"
-#include <getopt.h>
+#include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
-#include <strings.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <unistd.h>
 
 #include "../util/utils.h"
 
@@ -64,12 +63,10 @@ static char client_cert_file[MAX_FILENAME_LEN];
 static int read_timeout = EST_SSL_READ_TIMEOUT_DEF;
 static unsigned char *new_pkey = NULL;
 static int new_pkey_len = 0;
-static unsigned char *cacerts = NULL;
-static int cacerts_len = 0;
 static char out_dir[MAX_FILENAME_LEN];
-static int enroll = 0;
 static int getcsr = 0;
 static int getcert = 0;
+static int enroll = 0;
 static int reenroll = 0;
 static int force_pop = 0;
 static unsigned char *c_cert = NULL;
@@ -150,7 +147,7 @@ static unsigned char * generate_private_key (int *key_len)
     out = BIO_new(BIO_s_mem());
     PEM_write_bio_RSAPrivateKey(out, rsa, NULL, NULL, 0, NULL, NULL);
     *key_len = BIO_get_mem_data(out, &tdata);
-    key_data = malloc(*key_len + 1);
+    key_data = (unsigned char *)malloc(*key_len + 1);
     memcpy(key_data, tdata, *key_len);
     BIO_free(out);
     RSA_free(rsa);
@@ -177,12 +174,16 @@ static void save_cert (char *file_name, unsigned char *cert_data, int cert_len)
 	pem_len = est_convert_p7b64_to_pem(cert_data, cert_len, &pem);
 	if (pem_len > 0) {
 	    snprintf(full_file_name, MAX_FILENAME_LEN, "%s.%s", file_name, "pem");
-	    write_binary_file(full_file_name, pem, pem_len);
+	    if (write_binary_file(full_file_name, pem, pem_len) < 0) {
+		exit(1);
+	    }
 	    free(pem);
 	}
     } else {
 	snprintf(full_file_name, MAX_FILENAME_LEN, "%s.%s", file_name, "pkcs7");
-        write_binary_file(full_file_name, cert_data, cert_len);
+        if (write_binary_file(full_file_name, cert_data, cert_len) < 0) {
+	    exit(1);
+	}
     }
 }
 
@@ -219,7 +220,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
                 printf("\nError determining length of token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
             }   
-            token_ptr = malloc(token_len+1);
+            token_ptr = (char *)malloc(token_len+1);
             if (token_ptr == NULL) {
                 printf("\nError allocating token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
@@ -258,14 +259,16 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
            __FUNCTION__, openssl_cert_error,
            X509_verify_cert_error_string(openssl_cert_error));
 
-    printf("Failing Cert:\n");
+    printf("Failing ");
     X509_print_fp(stdout, cur_cert);
+#if 0
     /*
      * Next call prints out the signature which can be used as the fingerprint
      * This fingerprint can be checked against the anticipated value to determine
      * whether or not the server's cert should be approved.
      */
     X509_signature_print(bio_err, cur_cert->sig_alg, cur_cert->signature);
+#endif
 
     BIO_free(bio_err);
 
@@ -314,10 +317,10 @@ static X509_REQ *read_csr (char *csr_file)
     return (csr);
 }
 
-static int simple_enroll_attempt (EST_CTX *ectx)
+static EST_ERROR simple_enroll_attempt (EST_CTX *ectx)
 {
     int pkcs7_len = 0;
-    int rv;
+    EST_ERROR rv;
     char file_name[MAX_FILENAME_LEN];
     unsigned char *new_client_cert;
     X509_REQ *csr = NULL;
@@ -352,7 +355,7 @@ static int simple_enroll_attempt (EST_CTX *ectx)
          * client library has obtained the new client certificate.
          * now retrieve it from the library
          */
-        new_client_cert = malloc(pkcs7_len);
+        new_client_cert = (unsigned char *)malloc(pkcs7_len);
         if (new_client_cert == NULL) {
             if (verbose) {
                 printf("\nmalloc of destination buffer for enrollment cert failed\n");
@@ -440,16 +443,15 @@ static EVP_PKEY *read_private_key (char *key_file)
     if (priv_key == NULL) {
         printf("\nError while reading PEM encoded private key file %s\n", key_file);
         ERR_print_errors_fp(stderr);
-        return (NULL);
     }
     BIO_free(keyin);
 
     return (priv_key);
 }
 
-static int regular_csr_attempt (EST_CTX *ectx)
+static EST_ERROR regular_csr_attempt (EST_CTX *ectx)
 {
-    int rv;
+    EST_ERROR rv;
     unsigned char *attr_data = NULL;
     int attr_len;
     char file_name[MAX_FILENAME_LEN];
@@ -462,15 +464,17 @@ static int regular_csr_attempt (EST_CTX *ectx)
         printf("Warning: CSR attributes were not available\n");
     } else {
         snprintf(file_name, MAX_FILENAME_LEN, "%s/csr.base64", out_dir);
-        write_binary_file(file_name, attr_data, attr_len);
+        if (write_binary_file(file_name, attr_data, attr_len) < 0) {
+	    exit(1);
+	}
     }
     return (rv);
 }
 
-static int regular_enroll_attempt (EST_CTX *ectx)
+static EST_ERROR regular_enroll_attempt (EST_CTX *ectx)
 {
     int pkcs7_len = 0;
-    int rv;
+    EST_ERROR rv;
     char file_name[MAX_FILENAME_LEN];
     unsigned char *new_client_cert;
     unsigned char *attr_data = NULL;
@@ -496,9 +500,8 @@ static int regular_enroll_attempt (EST_CTX *ectx)
         printf("\nFailed to get X509_REQ\n");
         return (EST_ERR_NO_CSR);
     }
-    rv = populate_x509_csr(csr, priv_key, "EST-client");
 
-    if (rv) {
+    if (populate_x509_csr(csr, priv_key, "EST-client")) {
         printf("\nFailed to populate X509_REQ\n");
         return (EST_ERR_X509_PUBKEY);
     }
@@ -549,7 +552,7 @@ static int regular_enroll_attempt (EST_CTX *ectx)
         }
     }
 
-    X509_REQ_print_fp(stderr, csr);
+    // X509_REQ_print_fp(stderr, csr);
 
     rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, priv_key);
 
@@ -562,7 +565,7 @@ static int regular_enroll_attempt (EST_CTX *ectx)
          * client library has obtained the new client certificate.
          * now retrieve it from the library
          */
-        new_client_cert = malloc(pkcs7_len);
+        new_client_cert = (unsigned char *)malloc(pkcs7_len);
         if (new_client_cert == NULL) {
             if (verbose) {
                 printf("\nmalloc of destination buffer for enrollment cert failed\n");
@@ -616,10 +619,10 @@ static void retry_enroll_delay (int retry_delay, time_t retry_time)
         if (retry_time != 0) {
 
             time_t current_time;
-            double secs_to_wait;
+            long secs_to_wait;
 
             time(&current_time);
-            secs_to_wait = difftime(retry_time, current_time);
+            secs_to_wait = (long)difftime(retry_time, current_time);
 
             if (secs_to_wait <= 0) {
                 if (verbose) {
@@ -648,8 +651,10 @@ static void retry_enroll_delay (int retry_delay, time_t retry_time)
 }
 
 
-static void do_operation ()
+static EST_ERROR do_operation (char *trustanchor_file)
 {
+    unsigned char *cacerts;
+    int cacerts_len;
     EST_CTX *ectx;
     unsigned char *pkcs7;
     int pkcs7_len = 0;
@@ -659,6 +664,15 @@ static void do_operation ()
     int retry_delay = 0;
     time_t retry_time = 0;
     char *operation;
+
+    /*
+     * Read in the CA certificates
+     */
+    cacerts_len = read_binary_file(trustanchor_file, &cacerts);
+    if (cacerts_len <= 0) {
+	printf("\nCACERT file could not be read\n");
+	exit(1);
+    }
 
     ectx = est_client_init(cacerts, cacerts_len,
                            EST_CERT_FORMAT_PEM,
@@ -713,7 +727,7 @@ static void do_operation ()
              * allocate a buffer to retrieve the CA certs
              * and get them copied in
              */
-            pkcs7 = malloc(pkcs7_len);
+            pkcs7 = (unsigned char*)malloc(pkcs7_len);
             rv = est_client_copy_cacerts(ectx, pkcs7);
 
 #if 0
@@ -725,9 +739,8 @@ static void do_operation ()
             }
 #endif
 
-            snprintf(file_name, MAX_FILENAME_LEN, "%s/cacert.pkcs7", out_dir);
-            write_binary_file(file_name, pkcs7, pkcs7_len);
-
+            snprintf(file_name, MAX_FILENAME_LEN, "%s/cacert", out_dir);
+            save_cert(file_name, pkcs7, pkcs7_len);
             free(pkcs7);
 
         }
@@ -829,7 +842,7 @@ static void do_operation ()
              * client library has obtained the new client certificate.
              * now retrieve it from the library
              */
-            new_client_cert = malloc(pkcs7_len);
+            new_client_cert = (unsigned char*)malloc(pkcs7_len);
             if (new_client_cert == NULL) {
                 if (verbose) {
                     printf("\nmalloc of destination buffer for reenroll cert failed\n");
@@ -866,8 +879,11 @@ static void do_operation ()
     }
 
     est_destroy(ectx);
+    free(cacerts);
 
     ERR_clear_error();
+
+    return rv;
 }
 
 
@@ -895,6 +911,10 @@ int main (int argc, char **argv)
 
     est_http_uid[0] = 0x0;
     est_http_pwd[0] = 0x0;
+    est_srp_uid[0] = 0x0;
+    est_srp_pwd[0] = 0x0;
+    subj_cn[0] = 0x0;
+    est_server[0] = 0x0;
 
     /*
      * Set the default common name to put into the Subject field
@@ -919,30 +939,31 @@ int main (int argc, char **argv)
             }
             printf("\n");
 #endif
-            if (!strncmp(long_options[option_index].name, "trustanchor", strlen("trustanchor"))) {
+	    // the following uses of strncmp() MUST use strlen(...)+1, otherwise only prefix is compared.
+            if (!strncmp(long_options[option_index].name, "trustanchor", strlen("trustanchor")+1)) {
                 if (!strncmp(optarg, "no", strlen("no"))) {
                     trustanchor = 0;
                 } else {
                     trustanchor_file = optarg;
                 }
             } else
-            if (!strncmp(long_options[option_index].name, "srp", strlen("srp"))) {
+            if (!strncmp(long_options[option_index].name, "srp", strlen("srp")+1)) {
                 srp = 1;
             } else
-            if (!strncmp(long_options[option_index].name, "srp-user", strlen("srp-user"))) {
+            if (!strncmp(long_options[option_index].name, "srp-user", strlen("srp-user")+1)) {
                 strncpy(est_srp_uid, optarg, MAX_UID_LEN);
             } else
-            if (!strncmp(long_options[option_index].name, "srp-password", strlen("srp-password"))) {
+            if (!strncmp(long_options[option_index].name, "srp-password", strlen("srp-password")+1)) {
                 strncpy(est_srp_pwd, optarg, MAX_PWD_LEN);
             } else
-	    if (!strncmp(long_options[option_index].name,"auth-token", strlen("auth-token"))) {
+	    if (!strncmp(long_options[option_index].name,"auth-token", strlen("auth-token")+1)) {
 		strncpy(est_auth_token, optarg, MAX_AUTH_TOKEN_LEN);
                 token_auth_mode = 1;
 	    } else
-            if (!strncmp(long_options[option_index].name, "common-name", strlen("common-name"))) {
+            if (!strncmp(long_options[option_index].name, "common-name", strlen("common-name")+1)) {
                 strncpy(subj_cn, optarg, MAX_CN);
             } else
-            if (!strncmp(long_options[option_index].name, "pem-output", strlen("pem-output"))) {
+            if (!strncmp(long_options[option_index].name, "pem-output", strlen("pem-output")+1)) {
                 pem_out = 1;
             } else show_usage_and_exit();
             break;
@@ -1006,7 +1027,7 @@ int main (int argc, char **argv)
         case 'w':
             read_timeout = atoi(optarg);
             if (read_timeout > EST_SSL_READ_TIMEOUT_MAX) {
-                printf("\nMaxium number of seconds to wait is %d, ", EST_SSL_READ_TIMEOUT_MAX);
+                printf("\nMaximum number of seconds to wait is %d, ", EST_SSL_READ_TIMEOUT_MAX);
                 printf("please use a lower value with the -w option\n");
                 exit(1);
             }
@@ -1066,7 +1087,7 @@ int main (int argc, char **argv)
             printf("Using CSR file %s\n", csr_file);
         }
         if (priv_key_file   [0]) {
-            printf("Using identity private key file %s\n", priv_key_file);
+            printf("Using private key file %s\n", priv_key_file);
         }
         if (client_cert_file[0]) {
             printf("Using identity client cert file %s\n", client_cert_file);
@@ -1096,15 +1117,6 @@ int main (int argc, char **argv)
                 exit(1);
             }
             trustanchor_file = getenv("EST_OPENSSL_CACERT");
-        }
-
-        /*
-         * Read in the CA certificates
-         */
-        cacerts_len = read_binary_file(trustanchor_file, &cacerts);
-        if (cacerts_len <= 0) {
-            printf("\nCACERT file could not be read\n");
-            exit(1);
         }
     }
 
@@ -1168,14 +1180,16 @@ int main (int argc, char **argv)
     }
 
     if (!priv_key_file[0] && enroll && !csr_file[0]) {
-	printf("A private key is required for enrolling. Creating a new RSA key pair since you didn't provide a key using the -x option.\n");
+	printf("A private key is required for enrolling. Creating a new key pair since you didn't provide a key using the -x option.\n");
         /*
          * Create a private key that will be used for the
          * enroll operation.
          */
         new_pkey = generate_private_key(&new_pkey_len);
         snprintf(file_name, MAX_FILENAME_LEN, "%s/newkey.pem", out_dir);
-        write_binary_file(file_name, new_pkey, new_pkey_len);
+        if (write_binary_file(file_name, new_pkey, new_pkey_len) < 0) {
+            exit(1);
+        }
         free(new_pkey);
 
         /*
@@ -1188,10 +1202,13 @@ int main (int argc, char **argv)
     if (enroll && !csr_file[0]) {
 	/* Read in the private key file */
 	priv_key = read_private_key(priv_key_file);
+	if (!priv_key) {
+	    exit(1);
+	}
     }
 
 
-    do_operation();
+    (void)do_operation(trustanchor_file);
 
     if (priv_key) {
         EVP_PKEY_free(priv_key);
@@ -1203,7 +1220,6 @@ int main (int argc, char **argv)
         X509_free(client_cert);
     }
 
-    free(cacerts);
     if (c_cert_len) {
         free(c_cert);
     }

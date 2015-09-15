@@ -20,8 +20,6 @@
 #include <est.h>
 #include <stdio.h>
 #include <errno.h>
-#include <unistd.h>
-#include <stdint.h>
 #include <signal.h>
 #include <fcntl.h>
 #include <search.h>
@@ -34,7 +32,7 @@
 #include "../../example/util/simple_server.h"
 #include "test_utils.h"
 #include <sys/types.h>
-#ifndef __MINGW32__
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
@@ -121,7 +119,7 @@ static DH *get_dh1024dsa()
  * The following funcitons are the callbacks used by libest.a to bind
  * the EST stack to the HTTP/SSL layer and the CA server.
  ***************************************************************************************/
-static char digest_user[3][32] = 
+static char digest_user[3][34] = 
     {
 	"estuser", 
 	"estrealm", 
@@ -288,7 +286,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
                 printf("Error determining length of token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
             }   
-            token_ptr = malloc(token_len+1);
+            token_ptr = (char *)malloc(token_len+1);
             if (token_ptr == NULL){
                 printf("Error allocating token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
@@ -319,6 +317,7 @@ void st_proxy_stop ()
     stop_single_server(proxy_data);
     cleanup();
     printf("Stopped EST proxy server.\n");
+    fflush(stdout);
 }
 
 static int st_proxy_start_internal (int listen_port,
@@ -343,8 +342,9 @@ static int st_proxy_start_internal (int listen_port,
     DH *dh;
     EST_ERROR rv;
 
-    est_set_log_source(EST_PROXY);
     printf("\nLaunching EST proxy server...\n");
+    fflush(stdout);
+    est_set_log_source(EST_PROXY);
 
     /*
      * Read in the CA certificates

@@ -100,3 +100,14 @@ Note:  RFC 7030 requires the certificate to be encoded as base64 PKCS7.  This en
        openssl base64 -d -in /tmp/newcert.pkcs7 | \
            openssl pkcs7 -inform DER -print_certs -out /tmp/savecert.pem
 
+
+TLS-SRP support
+---------------
+
+To enable TLS-SRP for the EST client, use the --srp option. You also need to 
+use the options --srp-user and --srp-password to specify credentials of the client.
+Here is an example:
+
+    ./estclient -e --srp --srp-user srpuser --srp-password srppwd -o /tmp -v
+
+Of course, also the server must be SRP enabled.
