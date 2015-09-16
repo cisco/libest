@@ -8,7 +8,6 @@
  *------------------------------------------------------------------
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include <est_ossl_util.h>
 #include "test_utils.h"
@@ -264,7 +263,7 @@ static void us898_test1 (void)
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ectx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);
@@ -406,7 +405,7 @@ static void us898_test2 (void)
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
+	new_cert = (unsigned char *)malloc(pkcs7_len);
 	CU_ASSERT(new_cert != NULL);
 	rv = est_client_copy_enrolled_cert(ectx, new_cert);
 	CU_ASSERT(rv == EST_ERR_NONE);
@@ -680,7 +679,7 @@ static void us898_test5 (void)
     CU_ASSERT(rv == EST_ERR_NONE);
 
     /*
-     * Enroll an expired cert that contains x509 extensions.
+     * Enroll a cert with wrong signature that contains x509 extensions.
      */
     rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
     CU_ASSERT(rv == EST_ERR_CLIENT_INVALID_KEY);
@@ -1057,6 +1056,7 @@ static void us898_test9 (void)
  * client sends a valid identity cert but doesn't 
  * provide HTTP auth credentials.
  */
+// TODO check: This test crashes sometimes trying to access the SubjectAltNames in the CSR
 static void us898_test10 (void) 
 {
     char cmd[200];
@@ -1230,13 +1230,13 @@ static void us898_test11 (void)
      * Get the latest CSR attributes
      */
     rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
-    CU_ASSERT(rv == EST_ERR_SSL_CONNECT);
+    CU_ASSERT(rv == EST_ERR_AUTH_CERT);
 
     /*
      * Re-Enroll the cert 
      */
     rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
-    CU_ASSERT(rv == EST_ERR_SSL_CONNECT);
+    CU_ASSERT(rv == EST_ERR_AUTH_CERT);
 
     est_destroy(ectx);
 }

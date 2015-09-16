@@ -38,9 +38,8 @@
 #include <stdio.h>
 #include <stddef.h>
 #include "est_locl.h"
-#if defined(_WIN32) && !defined(__SYMBIAN32__) // Windows specific
+#if defined(_WIN32) && !defined(_WIN32_WINNT) && !defined(__SYMBIAN32__) // Windows specific
 #define _WIN32_WINNT 0x0400                    // To make it link in VS2005
-#include <windows.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX MAX_PATH
@@ -111,7 +110,7 @@ typedef long off_t;
 #define funlockfile(x) LeaveCriticalSection(&global_log_file_lock)
 #define sleep(x) Sleep((x) * 1000)
 
-#if !defined(fileno)
+#if !defined(__MINGW32__)
 #define fileno(x) _fileno(x)
 #endif // !fileno MINGW #defines fileno
 
@@ -156,15 +155,21 @@ typedef struct DIR {
 #include <sys/types.h>
 #include <sys/socket.h>
 #endif
+#ifndef _WIN32
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <sys/time.h>
+#include <pwd.h>
+#endif
 #include <stdint.h>
+#ifdef _MSC_VER
+#include <time.h>
+#else
+#include <sys/time.h>
 #include <inttypes.h>
 
-#include <pwd.h>
 #include <unistd.h>
 #include <dirent.h>
+#endif
 #if defined(__MACH__)
 #define SSL_LIB   "libssl.dylib"
 #define CRYPTO_LIB  "libcrypto.dylib"
@@ -185,9 +190,11 @@ typedef struct DIR {
 #define mg_rename(x, y) rename(x, y)
 #define mg_sleep(x) usleep((x) * 1000)
 #define ERRNO errno
+#ifndef _WIN32
 #define INVALID_SOCKET (-1)
-#define INT64_FMT PRId64
 typedef int SOCKET;
+#endif
+#define INT64_FMT PRId64
 #define WINCDECL
 
 #endif // End of Windows and UNIX specific includes

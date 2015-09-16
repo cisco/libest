@@ -4,9 +4,16 @@
  * November, 2012
  *
  * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
+
+// 2014-04-23 extended documentation of callback functions
+// 2014-06-26 reduced value of EST_RETRY_PERIOD_MIN
+// 2015-08-07 added est_set_log_source() and est_log_prefixed() differentiating log source
+// 2015-08-07 simplified logging macros
 
 #ifndef HEADER_EST_LOCL_H
 #define HEADER_EST_LOCL_H
@@ -28,7 +35,7 @@
 
 /* The retry-after values below are in seconds */
 #define EST_RETRY_PERIOD_DEF	3600 
-#define EST_RETRY_PERIOD_MIN	60 
+#define EST_RETRY_PERIOD_MIN	6 
 #define EST_RETRY_PERIOD_MAX	3600*48 
 
 #define EST_TLS_VERIFY_DEPTH	    7
@@ -92,12 +99,12 @@
 /*
  * HTTP error responses
  */
-#define EST_BODY_BAD_PKCS10     "Invalid or corrupted pkcs10 request.\n"
-#define EST_BODY_UNAUTHORIZED   "The server was unable to authorize the request.\n"
-#define EST_BODY_BAD_METH       "Invalid HTTP method used.  Either GET or POST required depending on the request type.\n"
-#define EST_BODY_BAD_SSL        "An unknown TLS error has occured.\n"
-#define EST_BODY_UNKNOWN_ERR    "An unknown error has occured.\n"
-#define EST_BODY_NOT_FOUND      "Requested content is currently not available on the server.\n"
+#define EST_BODY_BAD_PKCS10     "Invalid or corrupted pkcs10 request."
+#define EST_BODY_UNAUTHORIZED   "The server was unable to authorize the request."
+#define EST_BODY_BAD_METH       "Invalid HTTP method used.  Either GET or POST required depending on the request type."
+#define EST_BODY_BAD_SSL        "An unknown TLS error has occured."
+#define EST_BODY_UNKNOWN_ERR    "An unknown error has occured."
+#define EST_BODY_NOT_FOUND      "Requested content is currently not available on the server."
 
 
 /*
@@ -179,11 +186,11 @@ struct est_ctx {
     /*
      * Callbacks requried for server mode operation
      */
-    int (*est_enroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len, 
+    EST_ERROR (*est_enroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len, 
 	                        unsigned char **pkcs7, int *cert_len,
 				char *user_id, X509 *peer_cert,
 				void *ex_data);
-    int (*est_reenroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len, 
+    EST_ERROR (*est_reenroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len, 
 	                          unsigned char **pkcs7, int *cert_len,
 				  char *user_id, X509 *peer_cert,
 				  void *ex_data);
@@ -234,7 +241,8 @@ struct est_ctx {
     unsigned char *ca_chain_raw;
     int   ca_chain_raw_len;
     CLIENT_CTX_LU_NODE_T *client_ctx_array;
-    void *ex_data;
+    void *ex_data; /* Optional application specific data
+                      for use by the callback functions */
     int enable_srp;
     int (*est_srp_username_cb)(SSL *s, int *ad, void *arg);
     int enforce_csrattrs; /* Used to force the client to provide the CSR attrs in the CSR */
@@ -253,34 +261,25 @@ typedef struct est_oid_list {
 /*
  * Index used to link the EST Ctx into the SSL structures
  */
-int e_ctx_ssl_exdata_index;
+extern int e_ctx_ssl_exdata_index;
 
-
-void est_log (EST_LOG_LEVEL lvl, char *format, ...);
-void est_log_backtrace (void);
 
 #ifndef EST_LOG_INFO
 #define EST_LOG_INFO(...) do { \
-        est_log(EST_LOG_LVL_INFO, "\n***EST [INFO][%s:%d]--> ", \
-                __FUNCTION__, __LINE__); \
-        est_log(EST_LOG_LVL_INFO, __VA_ARGS__); \
+        est_log_prefixed(EST_LOG_LVL_INFO, __FUNCTION__, __LINE__, __VA_ARGS__); \
 } while (0)
 #endif
 
 #ifndef EST_LOG_WARN
 #define EST_LOG_WARN(...) do { \
-        est_log(EST_LOG_LVL_WARN, "\n***EST [WARNING][%s:%d]--> ", \
-                __FUNCTION__, __LINE__); \
-        est_log(EST_LOG_LVL_WARN, __VA_ARGS__); \
+        est_log_prefixed(EST_LOG_LVL_WARN, __FUNCTION__, __LINE__, __VA_ARGS__); \
         est_log_backtrace(); \
 } while (0)
 #endif
 
 #ifndef EST_LOG_ERR
 #define EST_LOG_ERR(...) do { \
-        est_log(EST_LOG_LVL_ERR, "\n***EST [ERROR][%s:%d]--> ", \
-                __FUNCTION__, __LINE__); \
-        est_log(EST_LOG_LVL_ERR, __VA_ARGS__); \
+        est_log_prefixed(EST_LOG_LVL_ERR, __FUNCTION__, __LINE__, __VA_ARGS__); \
         est_log_backtrace(); \
 } while (0)
 #endif
@@ -291,21 +290,26 @@ char * est_get_tls_uid(SSL *ssl, int is_client);
 EST_ERROR est_load_ca_certs(EST_CTX *ctx, unsigned char *raw, int size);
 
 EST_ERROR est_load_trusted_certs(EST_CTX *ctx, unsigned char *certs, int certs_len);
-void est_log(EST_LOG_LEVEL lvl, char *format, ...);
+void est_log (EST_LOG_LEVEL lvl, const char *format, ...);
+void est_log_prefixed (EST_LOG_LEVEL lvl, const char *func, int line, const char *format, ...);
+void est_log_backtrace (void);
 void est_log_version(void);
 void est_hex_to_str(char *dst, unsigned char *src, int len);
 void est_base64_encode(const unsigned char *src, int src_len, char *dst);
 int est_base64_decode(const char *src, char *dst, int max_len);
 
+/* From est_server_http.c */
+int wait_for_read(int socket, int usec);
+
 /* From est_server.c */
-int est_http_request(EST_CTX *ctx, void *http_ctx,
+EST_ERROR est_http_request(EST_CTX *ctx, void *http_ctx,
                      char *method, char *uri,
                      char *body, int body_len, const char *ct);
 
 /* From est_client.c */
 EST_ERROR est_client_init_ssl_ctx(EST_CTX *ctx);
 EST_ERROR est_client_connect(EST_CTX *ctx, SSL **ssl);
-int est_client_send_enroll_request(EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
+EST_ERROR est_client_send_enroll_request(EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
                                    unsigned char *pkcs7, int *pkcs7_len,
 				   int reenroll);
 void est_client_disconnect(EST_CTX *ctx, SSL **ssl);

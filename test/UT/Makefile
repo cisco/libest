@@ -21,9 +21,10 @@ SRC =  	runtest.c \
 	US2174/us2174.c \
 	../util/curl_utils.c \
 	../util/test_utils.c \
+	../../example/util/simple_server.c \
 	../util/st_server.c \
 	../util/st_proxy.c \
-	../util/ossl_srv.c 
+	../../example/util/ossl_srv.c
 OBJ = $(SRC:.c=.o)
 OUT = runtest
 
@@ -35,7 +36,7 @@ ifndef CURL_DIR
 endif
 
 # include directories
-INCLUDES = -I../../src/est -I../.. -I../util -I$(OPENSSL_DIR)/include -I$(CURL_DIR)/include 
+INCLUDES = -I../../src/est -I../.. -I../../example/util -I../util -I$(OPENSSL_DIR)/include -I$(CURL_DIR)/include 
 
 # C++ compiler flags (-g -O2 -Wall)
 CCFLAGS = -Wall -g -DHAVE_CUNIT -DNO_SSL_DL
@@ -44,10 +45,10 @@ CCFLAGS = -Wall -g -DHAVE_CUNIT -DNO_SSL_DL
 CC = gcc
 
 # linker flags
-LDFLAGS += -lcunit -ldl -lpthread -lssl -lcrypto -lest -lcurl
+LDFLAGS += -lcunit -ldl -lpthread -lest -lssl -lcrypto -lcurl
 
 # library paths
-LIBS = -L../../src/est/.libs -L$(OPENSSL_DIR)/lib -L$(CURL_DIR)/lib $(LDFLAGS) 
+LIBS = -L../../src/est/.libs -L$(OPENSSL_DIR)/lib -L$(CURL_DIR)/lib $(LDFLAGS)
 
 
 .SUFFIXES: .c
@@ -57,7 +58,7 @@ default:	runtest
 .c.o:
 	$(CC) $(INCLUDES) $(CCFLAGS) -c $< -o $@
 
-runtest: $(OBJ)
+runtest: $(OBJ) ../../src/est/.libs/libest.a
 	$(CC) -o $(OUT) $(OBJ) $(LIBS) 
 
 clean:

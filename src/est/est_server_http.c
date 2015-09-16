@@ -1,4 +1,3 @@
-/** @file */
 /*------------------------------------------------------------------
  * est/est_server_http.c - EST HTTP server
  *
@@ -13,9 +12,16 @@
  * May, 2013
  *
  * Copyright (c) 2013-2014 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  ***------------------------------------------------------------------
  */
+
+// 2015-08-13 improved TLS error handling and reporting, introducing general_ssl_error()
+// 2015-08-13 improved logging; extracted wait_for_read() also used by simple_server.c
+// 2014-06-25 improved logging of server main activity
+
 // Copyright (c) 2004-2012 Sergey Lyubka
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -36,11 +42,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+#include "est.h"
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 #if defined(_WIN32)
-#define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
+// #define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
 #else
 #ifdef __linux__
 #define _XOPEN_SOURCE 600     // For flockfile() on Linux
@@ -63,6 +70,9 @@
 
 #ifndef _WIN32_WCE // Some ANSI #includes are not available on Windows CE
 #include <sys/types.h>
+#ifndef _WIN32
+#include <sys/socket.h>
+#endif
 #include <sys/stat.h>
 #include <errno.h>
 #include <signal.h>
@@ -78,10 +88,8 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdio.h>
-#include "est.h"
 #include "est_locl.h"
 #include "est_ossl_util.h"
-
 
 #include "est_server_http.h"
 #include "est_server.h"
@@ -91,14 +99,6 @@
 #define MG_BUF_LEN 8192
 #define MAX_REQUEST_SIZE 16384
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
-
-#ifdef _WIN32
-static CRITICAL_SECTION global_log_file_lock;
-static pthread_t pthread_self (void)
-{
-    return GetCurrentThreadId();
-}
-#endif // _WIN32
 
 // Darwin prior to 7.0 and Win32 do not have socklen_t
 #ifdef NO_SOCKLEN_T
@@ -209,7 +209,7 @@ struct mg_request_info *mg_get_request_info (struct mg_connection *conn)
     return &conn->request_info;
 }
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32) && !defined(__MINGW32__) && !defined(__SYMBIAN32__)
 static void mg_strlcpy (register char *dst, register const char *src, size_t n)
 {
     for (; *src != '\0' && n > 1; n--) {
@@ -276,6 +276,7 @@ static int mg_vsnprintf (struct mg_connection *conn, char *buf, size_t buflen,
     return n;
 }
 
+#if 0
 //static int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
 //                       PRINTF_FORMAT_STRING(const char *fmt), ...)
 //PRINTF_ARGS(4, 5);
@@ -292,6 +293,7 @@ static int mg_snprintf (struct mg_connection *conn, char *buf, size_t buflen,
 
     return n;
 }
+#endif
 
 // Skip the characters until one of the delimiters characters found.
 // 0-terminate resulting word. Skip the delimiter and following whitespaces.
@@ -414,23 +416,24 @@ void mg_send_http_error (struct mg_connection *conn, int status,
 
     // Errors 1xx, 204 and 304 MUST NOT send a body
     if (status > 199 && status != 204 && status != 304) {
-        len = mg_snprintf(conn, buf, sizeof(buf), "Error %d: %s", status, reason);
-        buf[len++] = '\n';
+#if 0
+        len = mg_snprintf(conn, buf, sizeof(buf), "Error %d: %s\n", status, reason);
+#endif
 
         va_start(ap, fmt);
         len += mg_vsnprintf(conn, buf + len, sizeof(buf) - len, fmt, ap);
         va_end(ap);
     }
-    EST_LOG_INFO("[%s]", buf);
+    EST_LOG_INFO("Sending HTTP %d (%s) error response with message '%s'", status, reason, buf);
 
     mg_printf(conn, "HTTP/1.1 %d %s\r\n"
               "Content-Length: %d\r\n"
               "Connection: %s\r\n\r\n", status, reason, len,
               suggest_connection_header(conn));
-    conn->num_bytes_sent += mg_printf(conn, "%s", buf);
+    conn->num_bytes_sent += mg_printf(conn, "%s\r\n", buf);
 }
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32) && !defined(__MINGW32__) && !defined(__SYMBIAN32__)
 // For Windows, change all slashes to backslashes in path names.
 static void change_slashes_to_backslashes (char *path)
 {
@@ -530,50 +533,210 @@ static int64_t push (FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
     return sent;
 }
 
+/* helper function also used by simple_server.c */
+int wait_for_read(int sock, int usec)
+{
+    fd_set set;
+    FD_ZERO(&set);
+    FD_SET(sock, &set);
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = usec;
+
+    return select(sock + 1, &set, NULL, NULL, &tv);
+}
+
 // This function is needed to prevent Mongoose to be stuck in a blocking
 // socket read when user requested exit. To do that, we sleep in select
 // with a timeout, and when returned, check the context for the stop flag.
-// If it is set, we return 0, and this means that we must not continue
+// If it is set, we return 1, and this means that we must not continue
 // reading, must give up and close the connection and exit serving thread.
+// On a file error, we return -(ERRNO).
 static int wait_until_socket_is_readable (struct mg_connection *conn)
 {
     int result;
-    struct timeval tv;
-    fd_set set;
 
     do {
-        tv.tv_sec = 0;
-        tv.tv_usec = 300 * 1000;
-        FD_ZERO(&set);
-        FD_SET(conn->client.sock, &set);
-        result = select(conn->client.sock + 1, &set, NULL, NULL, &tv);
-        if (result == 0 && conn->ssl != NULL) {
+	result = wait_for_read(conn->client.sock, 300*1000);
+        if (result == 0 && conn->ssl != NULL) { // time elapsed
             result = SSL_pending(conn->ssl);
         }
-    } while ((result == 0 || (result < 0 && ERRNO == EINTR)) &&
+    } while ((result == 0 || (result < 0 && errno == EINTR)) &&
              conn->ctx->stop_flag == 0);
 
-    return conn->ctx->stop_flag || result < 0 ? 0 : 1;
+    if (result < 0) {
+	EST_LOG_WARN("Waiting for reading socket %d resulted in ERRNO %d (%s)",
+		     conn->client.sock, errno, strerror(errno));
+    }
+    return (result < 0 ? -errno : (conn->ctx->stop_flag ? 1 : 0));
+}
+
+// adapted from ssl/s3_pkt.c
+static int ssl_send_alert_fail (SSL *s)
+{
+    int level = SSL3_AL_FATAL;
+    int desc = SSL_AD_HANDSHAKE_FAILURE;
+
+    /* Map tls/ssl alert value to correct one */
+    //desc=s->method->ssl3_enc->alert_value(desc);
+    if (s->version == SSL3_VERSION && desc == SSL_AD_PROTOCOL_VERSION)
+	desc = SSL_AD_HANDSHAKE_FAILURE; /* SSL 3.0 does not have protocol_version alerts */
+    if (desc < 0) return -1;
+    /* If a fatal one, remove from cache */
+    if ((level == 2) && (s->session != NULL))
+	SSL_CTX_remove_session(s->ctx,s->session);
+
+    s->s3->alert_dispatch=1;
+    s->s3->send_alert[0]=level;
+    s->s3->send_alert[1]=desc;
+    if (s->s3->wbuf.left == 0) /* data still being written out? */
+	return s->method->ssl_dispatch_alert(s);
+    /* else data is still being written out, we will get written
+     * some time in the future */
+    return -1;
+}
+
+static EST_ERROR general_ssl_error(struct mg_connection *conn, int ssl_err) {
+    EST_ERROR rv = EST_ERR_SYSCALL;
+    switch (ERR_peek_error()) {
+    case 0:
+	if (ssl_err == 0) {
+	    EST_LOG_ERR("Client has disconnected violating the protocol");
+	    rv = EST_ERR_SOCKET_STOP;
+	}
+	if (ssl_err == -1) {
+	    if (errno == 0) {
+		EST_LOG_WARN("TLS connection failed likely due to bad SRP username");
+		rv = EST_ERR_AUTH_SRP;
+	    } else {
+		EST_LOG_WARN("SSL_accept resulted in ERRNO %d (%s)", errno, strerror(errno));
+		if (errno == 104) { // Connection reset by peer
+		    EST_LOG_WARN("Most likely the client did not accept our authentication");
+		    rv = EST_ERR_AUTH_FAIL; // EST_ERR_SOCKET_STOP
+		} else {
+		    rv = EST_ERR_SYSCALL;
+		}
+	    }
+	}
+	break;
+    case 0x0D0C5006:
+	EST_LOG_ERR("Certificate/CRL signature verification failure");
+	rv = EST_ERR_AUTH_CERT;
+	break;
+    case 0x140760FC:
+	EST_LOG_ERR("SSL/TLS protocol version not accepted");
+	(void)ssl_send_alert_fail(conn->ssl); // In this case, make sure to stop client waiting
+	break;
+    case 0x140780E5:
+	EST_LOG_ERR("Handshake failure; this may be due to the client not being SRP enabled");
+	rv = EST_ERR_AUTH_SRP;
+	break;
+    case 0x14089086:
+	EST_LOG_ERR("Client certificate not accepted, likely due to expiration, mismatch with trust anchor, or missing/invalid CRL");
+	rv = EST_ERR_AUTH_CERT;
+	break;
+    case 0x140890B2:
+	EST_LOG_ERR("Could not get valid client certificate");
+	rv = EST_ERR_AUTH_CERT;
+	break;
+    case 0x1408A0C1:
+	EST_LOG_ERR("No shared cipher");
+	{
+	    STACK_OF(SSL_CIPHER) *sk = SSL_get_ciphers(conn->ssl);
+	    int i;
+	    int len = 0;
+	    for(i = 0; sk != NULL && i < sk_SSL_CIPHER_num(sk); i++) {
+		SSL_CIPHER *c = sk_SSL_CIPHER_value(sk, i);
+		if (c != NULL) {
+		    len += strlen((char *)c->name)+2;
+		}
+	    }
+	    char *list = (char *)malloc(len+1);
+	    if (list != NULL) {
+		list[0] = '\0';
+		for(i = 0; sk != NULL && i < sk_SSL_CIPHER_num(sk); i++) {
+		    SSL_CIPHER *c = sk_SSL_CIPHER_value(sk, i);
+		    if (c != NULL) {
+			strcat(list, (char *)c->name);
+			if (i < sk_SSL_CIPHER_num(sk)-1)
+			    strcat(list, ", ");
+		    }
+		}
+		EST_LOG_INFO("List of accepted ciphers is, in this order: %s", list);
+		free(list);
+	    }
+	}
+	rv = EST_ERR_SSL_CIPHER_LIST;
+	break;
+    case 0x1408F119:
+	EST_LOG_ERR("Decryption failed or bad record mac; this error is likely due to bad SRP password");
+	rv = EST_ERR_AUTH_SRP;
+	break;
+    case 0x140940E5:
+	EST_LOG_ERR("SSL handshake failure");
+	break;
+    case 0x14094413:
+	EST_LOG_WARN("This error is likely due to an invalid certificate purpose (i.e., key usage)");
+	break;
+    case 0x14094414:
+	EST_LOG_ERR("Client certificate revoked");
+	rv = EST_ERR_AUTH_CERT;
+	break;
+    case 0x14094415:
+	EST_LOG_ERR("Our certificate expired");
+	rv = EST_ERR_AUTH_CERT;
+	break;
+    case 0x14094418:
+	EST_LOG_ERR("Our certificate is not accepted, likely due to expiration, mismatch with trust anchor, or missing/invalid CRL"); // OpenSSL said: "Unknown CA"
+	rv = EST_ERR_AUTH_CERT;
+	break;
+    case 0x1409441B:
+	EST_LOG_ERR("Verification error on our certificate or its CRL, SSL handshake failure");
+	rv = EST_ERR_AUTH_CERT;
+	break;
+    case 0x1409442F:
+	EST_LOG_ERR("Insufficient security for SRP");
+	rv = EST_ERR_AUTH_SRP;
+	break;
+    case 0x1409B166:
+	EST_LOG_ERR("Client is trying SRP though not enabled on server");
+	rv = EST_ERR_AUTH_SRP;
+	break;
+    default:
+	ossl_dump_ssl_errors();
+	break;
+    }
+    return rv;
 }
 
 // Read from IO channel - opened file descriptor, socket, or SSL descriptor.
-// Return negative value on error, or number of bytes read on success.
+// Return negative value -EST_ERR... on error, or number of bytes read on success.
 static int pull (FILE *fp, struct mg_connection *conn, char *buf, int len)
 {
-    int nread;
-    int err_cd;
+    int nread; // or error code if negative
+    int err_code;
 
     if (fp != NULL) {
         // Use read() instead of fread(), because if we're reading from the CGI
         // pipe, fread() may block until IO buffer is filled up. We cannot afford
         // to block and must pass all read bytes immediately to the client.
         nread = (int) read(fileno(fp), buf, (size_t)len);
-    } else if (!conn->must_close && !wait_until_socket_is_readable(conn)) {
-        nread = -1;
+	if (nread < 0)
+	    nread = -EST_ERR_SSL_READ;
+    } else if (!conn->must_close && (nread = wait_until_socket_is_readable(conn))) {
+	return conn->ctx->stop_flag ? 0 : -EST_ERR_SOCKET/*nread*/; // nread is -ERRNO here
     } else if (conn->ssl != NULL) {
         nread = SSL_read(conn->ssl, buf, len);
-	err_cd = SSL_get_error(conn->ssl ,nread);
-	switch(err_cd) {
+
+	err_code = SSL_get_error(conn->ssl, nread);
+	if (nread < 0) {
+	    nread = -EST_ERR_SSL_READ;
+	}
+	if (err_code != SSL_ERROR_NONE && err_code != SSL_ERROR_WANT_READ) {
+	    EST_LOG_ERR("SSL_read error: %d (%s)", err_code, ossl_error_string(err_code));
+	}
+	switch(err_code) {
 	case SSL_ERROR_NONE:
 	    /* Nothing to do, it's a graceful shutdown */
 	    break;
@@ -582,30 +745,44 @@ static int pull (FILE *fp, struct mg_connection *conn, char *buf, int len)
 	     * More data may be coming, change nread to zero
 	     * so Mongoose will attempt to read more data
 	     * from the peer.  This would occur if the peer
-	     * initiated an SSL renegotation.
+	     * initiated an SSL re-negotiation.
 	     */
 	    nread = 0;
 	    break;
 	case SSL_ERROR_WANT_X509_LOOKUP:
-	    EST_LOG_ERR("SSL_read error, wants lookup\n");
+	    ossl_dump_ssl_errors();
+	    // an application callback set by SSL_CTX_set_client_cert_cb() has asked to be called again.
 	    break;
+	case SSL_ERROR_SSL:
+	    /* Some general OpenSSL error, dump the OpenSSL error log to learn more about this */
+	    usleep(100); /* In case an EST_ERR_AUTH_CERT error occurred on our side, this delay helps
+			    avoiding a race condition causing est_client_connect() to obtain:
+			    "SSL_connect error: 5 (SSL_ERROR_SYSCALL)" with "ERRNO 104 (Connection reset by peer)"
+			    This leads the client to report the too general error EST_ERR_AUTH_FAIL, 
+			    while the error code should actually be the more specific EST_ERR_AUTH_CERT,
+			    after reporting in the log: "SSL_connect error: 1 (SSL_ERROR_SSL)" */
+	    // break;
+	case SSL_ERROR_SYSCALL:
+	    nread = -general_ssl_error(conn, nread); // Make sure nread is negative to indicate an error to the function above us
+	    break;
+	case SSL_ERROR_ZERO_RETURN:
+	    EST_LOG_WARN("Client closed connnection, possibly found a FQDN mismatch with our certificate");
+	    // fall through
 	default:
-	    /*
-	     * For all other errors, simply log the error
-	     * and make sure nread is -1 to indicate an
-	     * error to the function above us.
-	     */
-	    EST_LOG_ERR("SSL_read error, code: %d\n", err_cd);
-	    nread = -1;
+	    ossl_dump_ssl_errors();
+	    nread = -EST_ERR_SYSCALL; // Make sure nread is negative to indicate an error to the function above us
 	    break;
 	}
     } else {
-        nread = (int) recv(conn->client.sock, buf, (size_t)len, 0);
+        nread = recv(conn->client.sock, buf, (size_t)len, 0);
+	if (nread < 0)
+	    nread = -EST_ERR_SSL_READ;
     }
 
-    return conn->ctx->stop_flag ? -1 : nread;
+    return conn->ctx->stop_flag ? -EST_ERR_SOCKET_STOP : nread;
 }
 
+// Return negative value -EST_ERR... on error, or number of bytes read on success.
 int mg_read (struct mg_connection *conn, void *buf, size_t len)
 {
     int n, buffered_len, nread;
@@ -1074,7 +1251,7 @@ static void parse_http_headers (char **buf, struct mg_request_info *ri)
 
     for (i = 0; i < (int)ARRAY_SIZE(ri->http_headers); i++) {
         ri->http_headers[i].name = skip_quoted(buf, ":", " ", 0);
-        ri->http_headers[i].value = skip(buf, "\r\n");
+        ri->http_headers[i].value = skip(buf, EST_HTTP_HDR_EOL);
         if (ri->http_headers[i].name[0] == '\0') {
             break;
         }
@@ -1102,16 +1279,16 @@ static int parse_http_message (char *buf, int len, struct mg_request_info *ri)
 
         buf[request_length - 1] = '\0';
 
-        // RFC says that all initial whitespaces should be ingored
+        // RFC says that all initial whitespaces should be ignored
         while (*buf != '\0' && isspace(*(unsigned char*)buf)) {
             buf++;
         }
         ri->request_method = skip(&buf, " ");
         ri->uri = skip(&buf, " ");
-        ri->http_version = skip(&buf, "\r\n");
+        ri->http_version = skip(&buf, EST_HTTP_HDR_EOL);
         parse_http_headers(&buf, ri);
     }
-    EST_LOG_INFO("request_len=%d\n", request_length);
+    EST_LOG_INFO("request_len=%d", request_length);
     return request_length;
 }
 
@@ -1134,6 +1311,7 @@ static int parse_http_request (char *buf, int len, struct mg_request_info *ri)
 // buffer (which marks the end of HTTP request). Buffer buf may already
 // have some data. The length of the data is stored in nread.
 // Upon every read operation, increase nread by the number of bytes read.
+// Return negative value -EST_ERR... on error, or number of bytes read on success.
 static int read_request (FILE *fp, struct mg_connection *conn,
                          char *buf, int bufsiz, int *nread)
 {
@@ -1148,11 +1326,11 @@ static int read_request (FILE *fp, struct mg_connection *conn,
         }
     }
 
-    if (n < 0) {
+    if (n <= 0) { // No more data to read or
         // recv() error -> propagate error; do not process a b0rked-with-very-high-probability request
-        return -1;
+        return n;
     }
-    return request_len;
+    return request_len < 0 ? -EST_ERR_SSL_READ : request_len;
 }
 
 #define EST_MAX_CONTENT_LEN 8192
@@ -1184,7 +1362,7 @@ static int est_mg_handler (struct mg_connection *conn)
 		         EST_MAX_CONTENT_LEN);
 	    return (EST_ERR_BAD_CONTENT_LEN);
 	}
-        body = malloc(cl+1);
+        body = (char *)malloc(cl+1);
         mg_read(conn, body, cl);
 	/* Make sure the buffer is null terminated */
 	body[cl] = 0x0;
@@ -1202,10 +1380,12 @@ static int est_mg_handler (struct mg_connection *conn)
                                         (char*)request_info->request_method,
                                         (char*)request_info->uri, body, cl, ct_hdr);
     }
+#if 0
     if (est_rv != EST_ERR_NONE) {
-        EST_LOG_ERR("EST error response code: %d (%s)\n", 
+        EST_LOG_ERR("EST error response code: %d (%s)", 
 		    est_rv, EST_ERR_NUM_TO_STR(est_rv));
     }
+#endif
     if (cl_hdr) {
         free(body);
     }
@@ -1230,7 +1410,7 @@ static void handle_request (struct mg_connection *conn)
     url_decode(ri->uri, uri_len, (char*)ri->uri, uri_len + 1, 0);
     remove_double_dots_and_double_slashes((char*)ri->uri);
 
-    EST_LOG_INFO("%s", ri->uri);
+    // EST_LOG_INFO("Request URI: %s", ri->uri);
     /*
      * Process the request
      */
@@ -1243,13 +1423,8 @@ static void handle_request (struct mg_connection *conn)
 
 static void log_header (const struct mg_connection *conn, const char *header)
 {
-    const char *header_value;
-
-    if ((header_value = mg_get_header(conn, header)) == NULL) {
-        EST_LOG_INFO("%s", " -");
-    } else {
-        EST_LOG_INFO(" \"%s\"", header_value);
-    }
+    const char *header_value = mg_get_header(conn, header);
+    EST_LOG_INFO("%s: %s", header, header_value ? header_value : "(none)");
 }
 
 static void log_access (const struct mg_connection *conn)
@@ -1258,7 +1433,7 @@ static void log_access (const struct mg_connection *conn)
     char date[64], src_addr[20];
 
 
-    strftime(date, sizeof(date), "%d/%b/%Y:%H:%M:%S %z",
+    strftime(date, sizeof(date), "%Y-%b-%d %H:%M:%S %z",
              localtime(&conn->birth_time));
 
     ri = &conn->request_info;
@@ -1269,7 +1444,7 @@ static void log_access (const struct mg_connection *conn)
                  ri->request_method ? ri->request_method : "-",
                  ri->uri ? ri->uri : "-", ri->http_version,
                  conn->status_code, conn->num_bytes_sent);
-    log_header(conn, "Referer");
+//  log_header(conn, "Referer");
     log_header(conn, "User-Agent");
 }
 
@@ -1313,7 +1488,7 @@ static int set_ssl_option (struct mg_context *ctx)
     if (!RAND_bytes((unsigned char*)&sic[3], 8)) {
 	EST_LOG_WARN("RNG failure while setting SIC: %s", ssl_error());
     }
-    SSL_CTX_set_session_id_context(ssl_ctx, (void*)&sic, 11);
+    SSL_CTX_set_session_id_context(ssl_ctx, (const unsigned char*)&sic, 11);
 
     // load in the CA cert(s) used to verify client certificates
     SSL_CTX_set_cert_store(ssl_ctx, ectx->trusted_certs_store);
@@ -1331,7 +1506,7 @@ static int set_ssl_option (struct mg_context *ctx)
      * above gives us a performance boost.
      *
      * The other options set here are to improve forward
-     * secrecty and comply with the EST draft.
+     * secrecy and comply with the EST draft.
      */
     SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2 |
                         SSL_OP_NO_SSLv3 |
@@ -1353,7 +1528,7 @@ static int set_ssl_option (struct mg_context *ctx)
 	EST_LOG_INFO("Using default ECDHE curve (prime256v1)");
     }
     if (ecdh == NULL) {
-        EST_LOG_ERR("Failed to generate temp ecdh parameters\n");
+        EST_LOG_ERR("Failed to generate temp ecdh parameters");
         return 0;
     }
     SSL_CTX_set_tmp_ecdh(ssl_ctx, ecdh);
@@ -1388,9 +1563,9 @@ static int set_ssl_option (struct mg_context *ctx)
     }
 
     if (ectx->enable_srp) {
-	EST_LOG_INFO("Enabling TLS SRP mode\n");
+	EST_LOG_INFO("Enabling TLS SRP mode");
 	if (!SSL_CTX_set_cipher_list(ssl_ctx, EST_CIPHER_LIST_SRP_SERVER)) { 
-	    EST_LOG_ERR("Failed to set SSL cipher suites\n");
+	    EST_LOG_ERR("Failed to set SSL cipher suites");
 	    return 0;
 	}
 	/*
@@ -1400,13 +1575,13 @@ static int set_ssl_option (struct mg_context *ctx)
 	 */
 	SSL_CTX_set_srp_username_callback(ssl_ctx, ectx->est_srp_username_cb);
     } else {
-	EST_LOG_INFO("TLS SRP not enabled\n");
+	EST_LOG_INFO("TLS SRP not enabled");
 	/*
 	 * Set the TLS cipher suites that should be allowed.
 	 * This disables anonymous and null ciphers
 	 */
 	if (!SSL_CTX_set_cipher_list(ssl_ctx, EST_CIPHER_LIST)) { 
-	    EST_LOG_ERR("Failed to set SSL cipher suites\n");
+	    EST_LOG_ERR("Failed to set SSL cipher suites");
 	    return 0;
 	}
     }
@@ -1438,7 +1613,7 @@ static int set_ssl_option (struct mg_context *ctx)
 
 static void reset_per_request_attributes (struct mg_connection *conn)
 {
-    conn->path_info = conn->request_info.ev_data = NULL;
+    conn->path_info = (char *)(conn->request_info.ev_data = NULL);
     conn->num_bytes_sent = conn->consumed_content = 0;
     conn->status_code = -1;
     conn->must_close = conn->request_len = 0;
@@ -1451,8 +1626,9 @@ static int is_valid_uri (const char *uri)
     return uri[0] == '/' || (uri[0] == '*' && uri[1] == '\0');
 }
 
-static void process_new_connection (struct mg_connection *conn)
+static EST_ERROR process_new_connection (struct mg_connection *conn)
 {
+    EST_ERROR rv = EST_ERR_NONE;
     struct mg_request_info *ri = &conn->request_info;
     int keep_alive_enabled, keep_alive, discard_len;
     const char *cl;
@@ -1460,20 +1636,30 @@ static void process_new_connection (struct mg_connection *conn)
     keep_alive_enabled = conn->ctx->enable_keepalives;
     keep_alive = 0;
 
-    // Important: on new connection, reset the receiving buffer. Credit goes
-    // to crule42.
+    // Important: on new connection, reset the receiving buffer. Credit goes to crule42.
     conn->data_len = 0;
     do {
+        EST_LOG_INFO("Processing HTTP request...");
         reset_per_request_attributes(conn);
         conn->request_len = read_request(NULL, conn, conn->buf, conn->buf_size,
                                          &conn->data_len);
+	if (conn->request_len < 0) {
+	    rv = (EST_ERROR)-conn->request_len;
+	    // EST_LOG_ERR("Processing HTTP request, error=%d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
+	} else {
+	    // EST_LOG_INFO("Processing HTTP request, length=%d", conn->request_len);
+	}
         assert(conn->request_len < 0 || conn->data_len >= conn->request_len);
         if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
             send_http_error(conn, 413, "Request Too Large", "%s", "");
-            return;
+            return EST_ERR_BAD_CONTENT_LEN;
         }
         if (conn->request_len <= 0) {
-            return; // Remote end closed the connection
+	    if (conn->request_len < 0) {
+		// An error occurred as given in rv. There should be more info in the log regarding ERRNO or SSL_ERROR
+		return rv;
+	    } // else client closed the connection
+	    return EST_ERR_SOCKET_STOP; 
         }
         if (parse_http_request(conn->buf, conn->buf_size, ri) <= 0 ||
             !is_valid_uri(ri->uri)) {
@@ -1483,11 +1669,12 @@ static void process_new_connection (struct mg_connection *conn)
             conn->must_close = 1;
         } else if (strcmp(ri->http_version, "1.0") &&
                    strcmp(ri->http_version, "1.1")) {
+            log_access(conn);
             // Request seems valid, but HTTP version is strange
             send_http_error(conn, 505, "HTTP version not supported", "%s", "");
-            log_access(conn);
         } else {
             // Request is valid, handle it
+            log_access(conn);
             if ((cl = get_header(ri, "Content-Length")) != NULL) {
                 conn->content_len = strtoll(cl, NULL, 10);
             } else if (!mg_strcasecmp(ri->request_method, "POST") ||
@@ -1498,7 +1685,6 @@ static void process_new_connection (struct mg_connection *conn)
             }
             conn->birth_time = time(NULL);
             handle_request(conn);
-            log_access(conn);
         }
         if (ri->remote_user != NULL) {
             free((void*)ri->remote_user);
@@ -1521,10 +1707,14 @@ static void process_new_connection (struct mg_connection *conn)
         assert(conn->data_len >= 0);
         assert(conn->data_len <= conn->buf_size);
 
-    } while (conn->ctx->stop_flag == 0 &&
-             keep_alive_enabled &&
-             conn->content_len >= 0 &&
-             keep_alive);
+	keep_alive = (keep_alive_enabled && keep_alive && 
+		      conn->ctx->stop_flag == 0 && conn->content_len >= 0);
+	if (keep_alive && conn->data_len <= 0) {
+	    EST_LOG_INFO("Awaiting any further request on socket %d...\n", conn->client.sock);
+	}
+
+    } while (keep_alive);
+    return rv;
 }
 
 
@@ -1562,7 +1752,6 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
     struct sockaddr_storage addr;
     int ssl_err, err_code;
     EST_ERROR rv = EST_ERR_NONE;
-    int rc;
 
     if (!ctx) {
         EST_LOG_ERR("Null EST context");
@@ -1576,11 +1765,10 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
     accepted.sock = fd;
 
     len = sizeof(struct sockaddr_storage);
-    rc = getpeername(fd, (struct sockaddr*)&addr, &len);
-    if (rc < 0) {
+    if (getpeername(fd, (struct sockaddr*)&addr, &len) < 0) {
 	EST_LOG_ERR("getpeername() failed");
 	/* This should never happen, not sure what would cause this */
-	return (EST_ERR_UNKNOWN);
+	return (EST_ERR_SYSCALL);
     }
     // deal with both IPv4 and IPv6:
     if (addr.ss_family == AF_INET) {
@@ -1592,8 +1780,7 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
         port = ntohs(accepted.rsa.sin6.sin6_port);
         inet_ntop(AF_INET6, &accepted.rsa.sin6.sin6_addr, ipstr, sizeof ipstr);
     }
-    EST_LOG_INFO("Peer IP address: %s", ipstr);
-    EST_LOG_INFO("Peer port      : %d", port);
+    EST_LOG_INFO("Peer IP address and port: %s:%d", ipstr, port);
 
     conn = (struct mg_connection*)calloc(1, sizeof(*conn) + MAX_REQUEST_SIZE);
     if (conn == NULL) {
@@ -1618,44 +1805,38 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
          * EST require TLS,  Setup the TLS tunnel
          */
         conn->ssl = SSL_new(conn->ctx->ssl_ctx);
-        if (conn->ssl != NULL) {
+        if (conn->ssl == NULL) {
+            EST_LOG_ERR("Error creating TLS context");
+        } else {
             SSL_set_fd(conn->ssl, conn->client.sock);
             ssl_err = SSL_accept(conn->ssl); 
-            if (ssl_err <= 0) {
-		err_code = SSL_get_error(conn->ssl, ssl_err);
+	    err_code = SSL_get_error(conn->ssl, ssl_err);
+	    if (ssl_err <= 0 && (err_code != SSL_ERROR_NONE && 
+				 err_code != SSL_ERROR_WANT_READ && err_code != SSL_ERROR_WANT_WRITE)) {
+		EST_LOG_ERR("SSL_accept error: %d (%s)", err_code, ossl_error_string(err_code));
 		switch (err_code) {
 		case SSL_ERROR_SYSCALL:
-		    EST_LOG_ERR("OpenSSL system call error");
-		    rv = EST_ERR_SYSCALL;
-		    break;
 		case SSL_ERROR_SSL:
-		    /* Some unknown OpenSSL error, dump the 
-		     * OpenSSL error log to learn more about this */
-		    ossl_dump_ssl_errors();
-		    rv = EST_ERR_UNKNOWN;
-		    break;
-		case SSL_ERROR_WANT_READ:
-		case SSL_ERROR_WANT_WRITE:
-		    EST_LOG_INFO("App using non-blocking socket");
-		    process_new_connection(conn);
+		    rv = general_ssl_error(conn, ssl_err);
 		    break;
 		case SSL_ERROR_WANT_X509_LOOKUP:
-		    EST_LOG_ERR("SSL_accept error, wants lookup");
-		    rv = EST_ERR_UNKNOWN;
+		    ossl_dump_ssl_errors();
+		    rv = EST_ERR_AUTH_FAIL;
 		    break;
-		case SSL_ERROR_NONE:
 		default:
+		    ossl_dump_ssl_errors();
+		    rv = EST_ERR_SYSCALL;
 		    break;
 		}
-	    } else {
-		process_new_connection(conn);
+	    } else { // this includes SSL_ERROR_WANT_READ and SSL_ERROR_WANT_WRITE
+		rv = process_new_connection(conn);
 	    }
             ssl_err = SSL_shutdown(conn->ssl);
 	    switch (ssl_err) {
 	    case 0:
 		/* OpenSSL docs say to call shutdown again for this case */
 		SSL_shutdown(conn->ssl);
-		EST_LOG_INFO("Two-phase SSL_shutdown initiated");
+		EST_LOG_INFO("SSL_shutdown performed in two phases");
 		break;
 	    case 1:
 		/* Nothing to do, shutdown worked */
@@ -1663,7 +1844,7 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
 		break;
 	    default:
 		/* Log an error */
-		EST_LOG_WARN("SSL_shutdown failed");
+		EST_LOG_WARN("SSL_shutdown failed\n");
 		break;
 	    }
             SSL_free(conn->ssl);
@@ -1691,10 +1872,6 @@ void mg_stop (struct mg_context *ctx)
     ctx->stop_flag = 1;
 
     free_context(ctx);
-
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
-    (void)WSACleanup();
-#endif // _WIN32
 }
 
 struct mg_context *mg_start (void *user_data)
@@ -1706,15 +1883,10 @@ struct mg_context *mg_start (void *user_data)
      * a closed socket.  This is a defensive measure
      * in case a client sends us a bogus request that
      * results in a socket closure.  
-     * TODO: this code will likely not work on Windows
      */
+#ifndef _MSC_VER // Otherwise, we get a runtime assertion failure in winsig.c
     signal(SIGPIPE, SIG_IGN);
-
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
-    WSADATA data;
-    WSAStartup(MAKEWORD(2, 2), &data);
-    InitializeCriticalSection(&global_log_file_lock);
-#endif // _WIN32
+#endif
 
     // Allocate context and initialize reasonable general case defaults.
     // TODO(lsm): do proper error handling here.
@@ -1734,10 +1906,11 @@ struct mg_context *mg_start (void *user_data)
 
 EST_ERROR est_send_csrattr_data (EST_CTX *ctx, char *csr_data, int csr_len, void *http_ctx)
 {
-   char http_hdr[EST_HTTP_HDR_MAX];
-   int hdrlen;
+    char http_hdr[EST_HTTP_HDR_MAX];
+    int hdrlen;
+    struct mg_connection *conn = (struct mg_connection*)http_ctx;
 
-   if ((csr_len > 0) && csr_data) {
+    if ((csr_len > 0) && csr_data) {
         /*
          * Send HTTP 200 header
          */
@@ -1752,7 +1925,7 @@ EST_ERROR est_send_csrattr_data (EST_CTX *ctx, char *csr_data, int csr_len, void
         hdrlen = strnlen(http_hdr, EST_HTTP_HDR_MAX);
         snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
                  csr_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
-        if (!mg_write(http_ctx, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
+        if (!mg_write(conn, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
             free(csr_data);
             return (EST_ERR_HTTP_WRITE);
         }
@@ -1760,7 +1933,7 @@ EST_ERROR est_send_csrattr_data (EST_CTX *ctx, char *csr_data, int csr_len, void
         /*
          * Send the CSR in the body
          */
-        if (!mg_write(http_ctx, csr_data, csr_len)) {
+        if (!mg_write(conn, csr_data, csr_len)) {
             free(csr_data);
             return (EST_ERR_HTTP_WRITE);
         }

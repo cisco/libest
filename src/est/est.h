@@ -1,15 +1,24 @@
-/** @file */
 /*------------------------------------------------------------------
  * est/est.h - Public API for Enrollment over Secure Transport
  *
  * November, 2012
  *
  * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
+
+// 2015-08-07 added est_set_log_source() differentiating log prefixes for client/server/proxy
+// 2015-08-07 simplified declaration of error codes and related strings, now less error-prone
+// 2014-04-23 added EST_ERR_NO_CERT
+// 2014-04-26 extended EST_SSL_READ_TIMEOUT_MAX
+
 #ifndef HEADER_EST_H
 #define HEADER_EST_H
+
+#include "NonPosix.h"
 
 #include <openssl/ssl.h>
 #include <openssl/engine.h>
@@ -34,76 +43,86 @@ typedef enum {
 
 
 #define FOREACH_EST_ERROR(E) \
-    E(EST_ERR_NO_CTX) \
-    E(EST_ERR_NO_CSR) \
-    E(EST_ERR_NO_CERT) \
-    E(EST_ERR_NO_KEY) \
-    E(EST_ERR_INVALID_PARAMETERS) \
-    E(EST_ERR_LOAD_CACERTS) \
-    E(EST_ERR_LOAD_TRUST_CERTS) \
-    E(EST_ERR_BAD_MODE) \
-    E(EST_ERR_BAD_PKCS10) \
-    E(EST_ERR_HTTP_WRITE) \
-    E(EST_ERR_HTTP_UNSUPPORTED) \
-    E(EST_ERR_HTTP_CANNOT_BUILD_HEADER) \
-    E(EST_ERR_HTTP_BAD_REQ) \
-    E(EST_ERR_HTTP_NOT_FOUND) \
-    E(EST_ERR_HTTP_NO_CONTENT) \
-    E(EST_ERR_BAD_CONTENT_TYPE) \
-    E(EST_ERR_BAD_CONTENT_LEN) \
-    E(EST_ERR_NO_SSL_CTX) \
-    E(EST_ERR_AUTH_FAIL) \
-    E(EST_ERR_AUTH_FAIL_TLSUID) \
-    E(EST_ERR_AUTH_PENDING) \
-    E(EST_ERR_CA_ENROLL_FAIL) \
-    E(EST_ERR_CA_ENROLL_RETRY) \
-    E(EST_ERR_WRONG_METHOD) \
-    E(EST_ERR_X509_SIGN) \
-    E(EST_ERR_X509_VER) \
-    E(EST_ERR_X509_CN) \
-    E(EST_ERR_X509_ATTR) \
-    E(EST_ERR_X509_PUBKEY) \
-    E(EST_ERR_MALLOC) \
-    E(EST_ERR_SSL_WRITE) \
-    E(EST_ERR_SSL_READ) \
-    E(EST_ERR_SSL_NEW) \
-    E(EST_ERR_SSL_CTX_NEW) \
-    E(EST_ERR_SSL_CONNECT) \
-    E(EST_ERR_SSL_CIPHER_LIST) \
-    E(EST_ERR_PEM_READ) \
-    E(EST_ERR_NULL_CALLBACK) \
-    E(EST_ERR_IP_GETADDR) \
-    E(EST_ERR_IP_CONNECT) \
-    E(EST_ERR_INVALID_SERVER_NAME) \
-    E(EST_ERR_INVALID_PORT_NUM) \
-    E(EST_ERR_CLIENT_INVALID_KEY) \
-    E(EST_ERR_CLIENT_NOT_INITIALIZED) \
-    E(EST_ERR_ZERO_LENGTH_BUF) \
-    E(EST_ERR_READ_BUFFER_TOO_SMALL) \
-    E(EST_ERR_BUF_EXCEEDS_MAX_LEN) \
-    E(EST_ERR_NO_CERTIFICATE) \
-    E(EST_ERR_NO_CERTS_FOUND) \
-    E(EST_ERR_FQDN_MISMATCH) \
-    E(EST_ERR_SYSCALL) \
-    E(EST_ERR_CSR_ALREADY_SIGNED) \
-    E(EST_ERR_CSR_ATTR_MISSING) \
-    E(EST_ERR_SUBJECT_MISMATCH) \
-    E(EST_ERR_INVALID_DIGEST) \
-    E(EST_ERR_CERT_VERIFICATION) \
-    E(EST_ERR_CACERT_VERIFICATION) \
-    E(EST_ERR_INVALID_TOKEN) \
-    E(EST_ERR_INVALID_RETRY_VALUE) \
-    E(EST_ERR_BAD_X509) \
-    E(EST_ERR_BAD_BASE64) \
-    E(EST_ERR_BAD_ASN1_HEX) \
-    E(EST_ERR_SRP_STRENGTH_LOW) \
-    E(EST_ERR_SRP_USERID_BAD) \
-    E(EST_ERR_SRP_PWD_BAD) \
-    E(EST_ERR_CB_FAILED) \
-    E(EST_ERR_UNKNOWN)
+   E(EST_ERR_NO_CTX, "The EST_CTX* was not provided when invoking the function") \
+   E(EST_ERR_NO_CSR, "The CSR was not provided when invoking the function") \
+   E(EST_ERR_NO_CERT, "No valid X509 certificate was provided when invoking the function") \
+   E(EST_ERR_NO_KEY, "The EVP_PKEY* was not provided when invoking the function") \
+   E(EST_ERR_INVALID_PARAMETERS, "An invalid argument was provided to the function") \
+   E(EST_ERR_LOAD_CACERTS, "The CA certificates provided were not loaded") \
+   E(EST_ERR_LOAD_TRUST_CERTS, "The certificate chain of trusted certificates was not loaded") \
+   E(EST_ERR_LOAD_CLIENT_CERT, "The certificate of the client could not be loaded") \
+   E(EST_ERR_LOAD_CLIENT_PKEY, "The private key of the client could not be loaded") \
+   E(EST_ERR_BAD_MODE, "An EST operation was attempted while using the wrong mode of operation.  The valid modes are client, server, and proxy.  Some EST operations may only be performed in certain modes.") \
+   E(EST_ERR_BAD_PKCS10, "The PKCS10 CSR received from the client is invalid or corrupted") \
+   E(EST_ERR_HTTP_WRITE, "An error occurred while writing the HTTP response on the socket") \
+   E(EST_ERR_HTTP_UNSUPPORTED, "The EST server sent an unsupported HTTP status code in the response") \
+   E(EST_ERR_HTTP_CANNOT_BUILD_HEADER, "The HTTP header could not be built correctly") \
+   E(EST_ERR_HTTP_BAD_REQ, "The HTTP request was bad as reported by the server") \
+   E(EST_ERR_HTTP_FORBIDDEN, "The HTTP request was refused") \
+   E(EST_ERR_HTTP_NOT_FOUND, "The requested information is currently not found on the server") \
+   E(EST_ERR_HTTP_NO_CONTENT, "The content requested is not available") \
+   E(EST_ERR_BAD_CONTENT_TYPE, "The HTTP content type header in the request was invalid") \
+   E(EST_ERR_BAD_CONTENT_LEN, "The HTTP content length header in the request specified a value that was too large") \
+   E(EST_ERR_NO_SSL_CTX, "The application did not provide a valid SSL_CTX* reference to the API") \
+   E(EST_ERR_AUTH_FAIL, "The EST server was unable to authenticate the EST client") \
+   E(EST_ERR_AUTH_FAIL_TLSUID, "Authentication failure due to a missing/invalid challengePassword (TLS UID for PoP binding) in the CSR") \
+   E(EST_ERR_AUTH_PENDING, "An HTTP authentication challenge was sent to the client and the response is yet to arrive") \
+   E(EST_ERR_CA_ENROLL_FAIL, "The certificate authority was unable to sign the CSR") \
+   E(EST_ERR_CA_ENROLL_RETRY, "The certificate authority has requested the client to retry the enroll request in the future, likely due to the CA not being configured for automatic enrollment") \
+   E(EST_ERR_WRONG_METHOD, "An invalid HTTP method (GET/POST) was used for the given type of request") \
+   E(EST_ERR_X509_SIGN, "An error occurred in the OpenSSL library while trying to sign the CSR") \
+   E(EST_ERR_X509_VER, "An error occurred in the OpenSSL library while trying to set the version on the CSR") \
+   E(EST_ERR_X509_CN, "An error occurred in the OpenSSL library while trying to set name entry in the CSR") \
+   E(EST_ERR_X509_ATTR, "An error occurred in the OpenSSL library while trying to set the X509 attributes in the CSR") \
+   E(EST_ERR_X509_PUBKEY, "An error occurred in the OpenSSL library while trying to set the public key in the CSR") \
+   E(EST_ERR_MALLOC, "Unable to allocation malloc. This likely indicates a critical failure on the host system") \
+   E(EST_ERR_SSL_WRITE, "An error occurred at the TLS layer while trying to write to the socket") \
+   E(EST_ERR_SSL_READ, "An error occurred at the TLS layer while trying to read from the socket") \
+   E(EST_ERR_SSL_NEW, "An error occurred in the OpenSSL library while trying to allocate the SSL* reference") \
+   E(EST_ERR_SSL_CTX_NEW, "An error occurred in the OpenSSL library while trying to allocate or update the SSL context") \
+   E(EST_ERR_SSL_CONNECT, "An error occurred in the OpenSSL library while trying to establish a TLS session with the server") \
+   E(EST_ERR_SSL_CIPHER_LIST, "An error occurred in the OpenSSL library while trying to set or use the allowed TLS cipher suites") \
+   E(EST_ERR_PEM_READ, "An error occurred in the OpenSSL library while trying to read the PEM encoded CSR. This may be due to a corrupted PKSC10") \
+   E(EST_ERR_NULL_CALLBACK, "The application layer failed to provide the required callback function for the requested EST operation") \
+   E(EST_ERR_IP_GETADDR, "Unable to resolve the server host name") \
+   E(EST_ERR_IP_CONNECT, "Unable to connect to requested host/port") \
+   E(EST_ERR_INVALID_SERVER_NAME, "The server name provided was invalid. It may not be NULL and it may not exceed the maximum server name length") \
+   E(EST_ERR_INVALID_PORT_NUM, "The TCP port number provided was invalid. It must be greater than 0 and less than 65536") \
+   E(EST_ERR_CLIENT_INVALID_KEY, "The private key must match the public key in the certificate") \
+   E(EST_ERR_CLIENT_NOT_INITIALIZED, "The application attempted to use the libest API prior to invoking est_client_init()") \
+   E(EST_ERR_ZERO_LENGTH_BUF, "The certificate received from the server had an invalid length") \
+   E(EST_ERR_READ_BUFFER_TOO_SMALL, "The I/O buffer provided for reading data from the socket is not large enough to receive the response from the server") \
+   E(EST_ERR_BUF_EXCEEDS_MAX_LEN, "The EST server sent a cacerts response that exceeded the maximum size allowed") \
+   E(EST_ERR_NO_CERTIFICATE, "No certificate provided, e.g., an attempt was made to copy the certs from the context prior to the EST operation being performed") \
+   E(EST_ERR_NO_CERTS_FOUND, "No certificates were found in the trusted certificate list provided") \
+   E(EST_ERR_FQDN_MISMATCH, "The EST server name did not match the fully qualified domain name in the server certificate") \
+   E(EST_ERR_SYSCALL, "The OpenSSL library reported a system call error when attempting to establish the TLS session") \
+   E(EST_ERR_CSR_ALREADY_SIGNED, "The CSR provided already contained a signature. Libest requires the CSR to not be signed since libest is responsible for signing the CSR") \
+   E(EST_ERR_CSR_ATTR_MISSING, "The CSR received from the EST client does not contain all the required CSR attributes") \
+   E(EST_ERR_SUBJECT_MISMATCH, "The Subject or SubjectAltName fields of client CSR and certificate do not agree") \
+   E(EST_ERR_INVALID_DIGEST, "An invalid digest type was requested") \
+   E(EST_ERR_CERT_VERIFICATION, "Validation of certificate chain or of certificate relative to chain has failed") \
+   E(EST_ERR_CACERT_VERIFICATION, "Validation of the CA certificate chain received from the EST server has failed") \
+   E(EST_ERR_INVALID_TOKEN, "An invalid authorization token was received") \
+   E(EST_ERR_INVALID_RETRY_VALUE, "An invalid or missing retry-after was received from the server") \
+   E(EST_ERR_BAD_PKCS7, "An invalid or corrupted PKCS7 structure was provided") \
+   E(EST_ERR_BAD_X509, "An invalid or corrupted X509 certificate was provided") \
+   E(EST_ERR_BAD_BASE64, "An invalid or corrupted CSR Attribute Base64 encoded string was provided") \
+   E(EST_ERR_BAD_ASN1_HEX, "An invalid or corrupted CSR Attribute ASN1 hex string was provided") \
+   E(EST_ERR_BAD_ASN1_STR, "An invalid CSR Attribute configuration string was provided") \
+   E(EST_ERR_ASN1, "Internal ASN1 error") \
+   E(EST_ERR_SRP_STRENGTH_LOW, "The SRP strength requested by the application was too small") \
+   E(EST_ERR_SRP_USERID_BAD, "The SRP user ID was not accepted") \
+   E(EST_ERR_SRP_PWD_BAD, "The SRP password was not accepted") \
+   E(EST_ERR_CB_FAILED,  "The application layer call-back facility failed") \
+   E(EST_ERR_AUTH_SRP, "TLS SRP-based authentication failed") \
+   E(EST_ERR_AUTH_CERT, "TLS cert-based authentication failed") \
+   E(EST_ERR_SOCKET, "TLS socket error") \
+   E(EST_ERR_SOCKET_STOP, "TLS connection stopped") \
+   E(EST_ERR_UNKNOWN, "Unknown error") // Last error in the enum definition. Should never be used
 
-#define GENERATE_ENUM(ENUM) ENUM,
-#define GENERATE_STRING(STRING) #STRING,
+#define GENERATE_ENUM(ENUM,TEXT) ENUM,
+#define GENERATE_STRING(ENUM,TEXT) #ENUM,
 
 /*! @enum EST_ERROR
  *  @brief This enum is used to indicate error conditions to the application layer.
@@ -111,78 +130,10 @@ typedef enum {
  *         enumeration.  Applications should always check the returned error
  *         indication and gracefully handle errors.  When no error occurs, libest
  *         will return EST_ERR_NONE, which has the value zero.
-\n
-\n EST_ERR_NONE  No error occurred.
-\n EST_ERR_NO_CTX  The EST_CTX* was not provided when invoking the function.
-\n EST_ERR_NO_CSR  The PKCS10 CSR was not provided when invoking the function.
-\n EST_ERR_NO_CERT  No valid X509 certificate was provided when invoking the function.
-\n EST_ERR_NO_KEY  The EVP_PKEY* was not provided when invoking the function.
-\n EST_ERR_INVALID_PARAMETERS  An invalid argument was provided to the function.
-\n EST_ERR_LOAD_CACERTS  The CA certifictes provided were not loaded.
-\n EST_ERR_LOAD_TRUST_CERTS  The certificate chain of trusted certificates was not loaded.
-\n EST_ERR_BAD_MODE  An EST operation was attempted while using the wrong mode of operation.  The valid modes are client, server, and proxy.  Some EST operations may only be performed in certain modes.
-\n EST_ERR_BAD_PKCS10  The PKCS10 CSR received from the client is corrupted.
-\n EST_ERR_HTTP_WRITE  An error occurred while writing the HTTP response on the socket. 
-\n EST_ERR_HTTP_UNSUPPORTED  The EST server sent an unsupported HTTP status code in the response.
-\n EST_ERR_HTTP_CANNOT_BUILD_HEADER  The HTTP header could not be built correctly.
-\n EST_ERR_HTTP_BAD_REQ  The HTTP request was bad as reported by the server. 
-\n EST_ERR_HTTP_NOT_FOUND  The HTTP requested information that is currently not found on the server. 
-\n EST_ERR_HTTP_NO_CONTENT  The content requested is not available.
-\n EST_ERR_BAD_CONTENT_TYPE  The HTTP content type header in the request was invalid.
-\n EST_ERR_BAD_CONTENT_LEN  The HTTP content length header in the request specified a value that was too large.
-\n EST_ERR_NO_SSL_CTX  The application did not provide a valid SSL_CTX* reference to the API.
-\n EST_ERR_AUTH_FAIL  The EST server was unable to authentication the EST client.
-\n EST_ERR_AUTH_FAIL_TLSUID  The authentication failure was due to an invalid challenge password in the PKCS10 CSR.
-\n EST_ERR_AUTH_PENDING  An HTTP authentication challenge was sent to the client and the response is yet to arrive.
-\n EST_ERR_CA_ENROLL_FAIL  The certificate authority was unable to sign the PKCS10 CSR. 
-\n EST_ERR_CA_ENROLL_RETRY  The certificate authority has requested the client to retry the enroll request in the future, likely due to the CA not being configured for automatic enrollment.
-\n EST_ERR_WRONG_METHOD  An invalid HTTP method (GET/POST) was used for the request.
-\n EST_ERR_X509_SIGN  An error occurred in the OpenSSL library while trying to sign the PKCS10 CSR.
-\n EST_ERR_X509_VER  An error occurred in the OpenSSL library while trying to set the version on the PKCS10 CSR.
-\n EST_ERR_X509_CN  An error occurred in the OpenSSL library while trying to set the common name in the PKCS10 CSR.
-\n EST_ERR_X509_ATTR  An error occurred in the OpenSSL library while trying to set the X509 attributes in the PKCS10 CSR.
-\n EST_ERR_X509_PUBKEY  An error occurred in the OpenSSL library while trying to set the public key in the PKCS10 CSR.
-\n EST_ERR_MALLOC  Unable to allocation malloc.  This likely indicates a critical failure on the host system.
-\n EST_ERR_SSL_WRITE  An error occurred at the TLS layer while trying to write to the socket.
-\n EST_ERR_SSL_READ  An error occurred at the TLS layer while trying to read from the socket.
-\n EST_ERR_SSL_NEW  An error occurred in the OpenSSL library while trying to allocate the SSL* reference.
-\n EST_ERR_SSL_CTX_NEW  An error occurred in the OpenSSL library while trying to allocate the SSL_CTX* reference.
-\n EST_ERR_SSL_CONNECT  An error occurred in the OpenSSL library while trying to establish a TLS session with the server.
-\n EST_ERR_SSL_CIPHER_LIST  An error occurred in the OpenSSL library while trying to set the allowed TLS cipher suites.
-\n EST_ERR_PEM_READ  An error occurred in the OpenSSL library while trying to read the PEM encoded PKCS10 CSR.  This may be due to a corrupted PKCS10.
-\n EST_ERR_NULL_CALLBACK  The application layer failed to provide the required callback function for the requested EST operation.
-\n EST_ERR_IP_GETADDR  Unable to resolve the server host name.
-\n EST_ERR_IP_CONNECT  Unable to connect to requested host/port.
-\n EST_ERR_INVALID_SERVER_NAME  The server name provided to libest was invalid.  It may not be NULL and it may not exceed the maximum server name length.
-\n EST_ERR_INVALID_PORT_NUM  The TCP port number provided to libest was invalid.  It must be greater than 0 and less than 65536.
-\n EST_ERR_CLIENT_INVALID_KEY  The certificate and private key provided to libest could not be loaded.  The private key must match the public key in the certificate.
-\n EST_ERR_CLIENT_NOT_INITIALIZED  The application attempted to use a libest API prior to invoking est_client_init().
-\n EST_ERR_ZERO_LENGTH_BUF  The certificate received from the server had an invalid length.
-\n EST_ERR_READ_BUFFER_TOO_SMALL  The I/O buffer provided for reading data from the socket is not large enough to receive the response from the server.
-\n EST_ERR_BUF_EXCEEDS_MAX_LEN  The EST server sent a cacerts response that exceeded the maximum size allowed.
-\n EST_ERR_NO_CERTIFICATE  An attempt was made to copy the certs from the context prior to the EST operation being performed.
-\n EST_ERR_NO_CERTS_FOUND  No certificates were found in the trusted certificate list provided to libest.
-\n EST_ERR_FQDN_MISMATCH  The EST server name did not match the fully qualified domain name in the server's X509 certificate.
-\n EST_ERR_SYSCALL  The OpenSSL library reported a system call error when attempting to establish the TLS session.
-\n EST_ERR_CSR_ALREADY_SIGNED  The PKCS10 CSR provided to libest already contained a signature.  libest requires the CSR to not be signed since libest is responsible for signing the CSR.
-\n EST_ERR_CSR_ATTR_MISSING  The PKCS10 CSR received from the EST client does not contain all the required CSR attributes.
-\n EST_ERR_SUBJECT_MISMATCH The Subject or SubjectAltName fields of client CSR and certificate do not agree.
-\n EST_ERR_INVALID_DIGEST  An invalid digest type was requested.   
-\n EST_ERR_CERT_VERIFICATION Validation of certificate chain or of certificate relative to chain has failed.
-\n EST_ERR_CACERT_VERIFICATION  Validation of the CA certificate chain received from the EST server has failed.
-\n EST_ERR_INVALID_TOKEN  An invalid authorization token was received.
-\n EST_ERR_INVALID_RETRY_VALUE  An invalid or missing retry-after was received from the server.
-\n EST_ERR_BAD_X509  An invalid or corrupted X509 certificate was provided to libest.  
-\n EST_ERR_BAD_BASE64  An invalid or corrupted CSR Attribute Base64 encoded string was provided. 
-\n EST_ERR_BAD_ASN1_HEX  An invalid or corrupted CSR Attribute ASN1 Hex string was provided.
-\n EST_ERR_SRP_STRENGTH_LOW  The SRP strength requested by the application was too small.
-\n EST_ERR_SRP_USERID_BAD  The SRP user ID was not accepted.
-\n EST_ERR_SRP_PWD_BAD  The SRP password was not accepted.
-\n EST_ERR_CB_FAILED  The application layer call-back facility failed.
-\n EST_ERR_LAST  Last error in the enum definition. Should never be used.
-*/
+ */
+
 typedef enum {
-    EST_ERR_NONE = 0,
+    EST_ERR_NONE = 0, // No error occurred
     FOREACH_EST_ERROR(GENERATE_ENUM)
     EST_ERR_LAST
 } EST_ERROR;
@@ -336,6 +287,7 @@ typedef EST_HTTP_AUTH_CRED_RC (*auth_credentials_cb)(EST_HTTP_AUTH_HDR *auth_cre
  */
 EST_ERROR est_enable_crl(EST_CTX *ctx);
 EST_ERROR est_init_logger(EST_LOG_LEVEL lvl, void (*loggerfunc)(char *, va_list));
+EST_ERROR est_set_log_source (EST_MODE source);
 int est_get_api_level(void); 
 const char * est_get_version(void); 
 void est_enable_backtrace(int enable);
@@ -411,13 +363,13 @@ EST_ERROR est_client_enable_srp(EST_CTX *ctx, int strength, char *uid, char *pwd
  * The following callback entry points must be set by the application
  * when acting as an EST server or proxy.
  */
-EST_ERROR est_set_ca_enroll_cb(EST_CTX *ctx, int (*cb)(unsigned char * pkcs10, 
+EST_ERROR est_set_ca_enroll_cb(EST_CTX *ctx, EST_ERROR (*cb)(unsigned char * pkcs10, 
 	                       int p10_len, unsigned char **pkcs7, int *pkcs7_len, 
 			       char *user_id, X509 *peer_cert, void *ex_data));
-EST_ERROR est_set_ca_reenroll_cb(EST_CTX *ctx, int (*cb)(unsigned char * pkcs10, 
+EST_ERROR est_set_ca_reenroll_cb(EST_CTX *ctx, EST_ERROR (*cb)(unsigned char * pkcs10, 
 	                         int p10_len, unsigned char **pkcs7, int *pkcs7_len, 
 				 char *user_id, X509 *peer_cert, void *ex_data));
-EST_ERROR est_set_csr_cb(EST_CTX * ctx, unsigned char *(*cb)(int*csr_len, void *ex_data));
+EST_ERROR est_set_csr_cb(EST_CTX * ctx, unsigned char *(*cb)(int *csr_len, void *ex_data));
 EST_ERROR est_set_http_auth_cb(EST_CTX * ctx, int (*cb)(EST_CTX*, EST_HTTP_AUTH_HDR*, X509*, void*));
 
     
@@ -448,7 +400,19 @@ int est_convert_p7b64_to_pem(unsigned char *certs_p7, int certs_len, unsigned ch
  
     @return void.
  */
+#if (defined(__MINGW32__) || defined(_WIN32)) && !defined(__SYMBIAN32__)
 #define est_apps_startup() \
+    WSADATA wsaData; \
+    int rc = WSAStartup(MAKEWORD(2, 2), &wsaData); \
+    if (rc != 0) { \
+        printf("WSAStartup could not find a usable Winsock DLL, error: %d\n", rc); \
+	exit(1); \
+    } \
+    est_ssl_startup()
+#else
+#define est_apps_startup() est_ssl_startup()
+#endif
+#define est_ssl_startup() \
     do { CRYPTO_malloc_init(); \
          ERR_load_crypto_strings(); OpenSSL_add_all_algorithms(); \
          ENGINE_load_builtin_engines(); \
@@ -464,7 +428,14 @@ int est_convert_p7b64_to_pem(unsigned char *certs_p7, int certs_len, unsigned ch
  
     @return void.
  */
+#if (defined(__MINGW32__) || defined(_WIN32)) && !defined(__SYMBIAN32__)
 #define est_apps_shutdown() \
+    (void)WSACleanup(); \
+    est_ssl_shutdown()
+#else
+#define est_apps_shutdown() est_ssl_shutdown()
+#endif
+#define est_ssl_shutdown() \
     do { CONF_modules_unload(1); \
          OBJ_cleanup(); EVP_cleanup(); ENGINE_cleanup(); \
          CRYPTO_cleanup_all_ex_data(); ERR_remove_thread_state(NULL); \

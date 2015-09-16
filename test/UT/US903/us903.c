@@ -8,7 +8,6 @@
  *------------------------------------------------------------------
  */
 #include <stdio.h>
-#include <unistd.h>
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -461,7 +460,7 @@ static void us903_test7 (void)
      * Client library has obtained the new client certificate.
      * Now retrieve it from the library.
      */
-    pkcs7 = malloc(pkcs7_len);
+    pkcs7 = (unsigned char *)malloc(pkcs7_len);
     if (!pkcs7) {
         return;
     }
@@ -582,7 +581,7 @@ static void us903_test9 (void)
     rv = est_client_enroll(ctx, "TestCase9", &pkcs7_len, new_pkey);
     CU_ASSERT(rv == EST_ERR_NONE);
 
-    pkcs7 = malloc(pkcs7_len);
+    pkcs7 = (unsigned char *)malloc(pkcs7_len);
     rv = est_client_copy_enrolled_cert(ctx, pkcs7);
     
     free(pkcs7);

@@ -1,4 +1,3 @@
-/** @file */
 /*------------------------------------------------------------------
  * est_ossl_util.c - Interface between EST server and OpenSSL for
  *                   EST server operations.  Some of this code was taken
@@ -9,6 +8,8 @@
  * November, 2012
  *
  * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -73,15 +74,33 @@
  * and donated 'to the cause' along with lots and lots of other fixes to
  * the library. */
 
+// 2015-08-28 stability and readabilitly improvement on logging of ossl_verify_cb() 
+// 2015-08-13 improved error handling and reporting
 
+#include "est.h"
 #include <stdio.h>
 #include <openssl/x509v3.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
 #include <openssl/x509.h>
 #include "est_ossl_util.h"
-#include "est.h"
 #include "est_locl.h"
+
+char *ossl_error_string(int err_code)
+{
+    static char *strings[] = {
+	"SSL_ERROR_NONE",
+	"SSL_ERROR_SSL",
+	"SSL_ERROR_WANT_READ",
+	"SSL_ERROR_WANT_WRITE",
+	"SSL_ERROR_WANT_X509_LOOKUP",
+	"SSL_ERROR_SYSCALL",
+	"SSL_ERROR_ZERO_RETURN",
+	"SSL_ERROR_WANT_CONNECT",
+	"SSL_ERROR_WANT_ACCEPT" };
+    return (0 <= err_code && err_code < sizeof(strings)/sizeof(*strings) ?
+	      strings[err_code] : "unknown SSL error code");
+}
 
 /*****************************************************************************************
 * Authorization routines
@@ -94,17 +113,13 @@ int ossl_verify_cb (int ok, X509_STORE_CTX *ctx)
     EST_LOG_INFO("enter function: ok=%d cert_error=%d", ok, cert_error);
 
     if (!ok) {
-        if (current_cert) {
-            X509_NAME_print_ex_fp(stdout,
-                                  X509_get_subject_name(current_cert),
-                                  0, XN_FLAG_ONELINE);
-            printf("\n");
-        }
-        EST_LOG_INFO("%serror %d at %d depth lookup:%s\n",
-                     X509_STORE_CTX_get0_parent_ctx(ctx) ? "[CRL path]" : "",
-                     cert_error,
-                     X509_STORE_CTX_get_error_depth(ctx),
-                     X509_verify_cert_error_string(cert_error));
+        EST_LOG_WARN("%svalidation error=%d (%s) at depth=%d; cert subject='%s', issuer='%s", 
+		     X509_STORE_CTX_get0_parent_ctx(ctx) ? "[CRL path] " : "",
+		     cert_error, 
+		     cert_error == 3 ? "no CRL" : X509_verify_cert_error_string(cert_error),
+		     X509_STORE_CTX_get_error_depth(ctx),
+		     current_cert ? current_cert->name : "(no cert)" ,
+		     current_cert ? X509_NAME_oneline(X509_get_issuer_name(current_cert), NULL, 0) : "(no cert)");
         switch (cert_error) {
         case X509_V_ERR_UNABLE_TO_GET_CRL:
             /*
@@ -162,7 +177,7 @@ static int ossl_init_cert_store_from_raw (X509_STORE *store,
 
     in = BIO_new_mem_buf(raw, size);
     if (in == NULL) {
-        EST_LOG_ERR("Unable to open the raw CA cert buffer\n");
+        EST_LOG_ERR("Unable to open the raw CA cert buffer");
         return 0;
     }
 
@@ -243,7 +258,9 @@ void ossl_dump_ssl_errors ()
     ERR_print_errors(e);
     (void)BIO_flush(e);
     BIO_get_mem_ptr(e, &bptr);
-    EST_LOG_WARN("OSSL error: %s", bptr->data); 
+    if (bptr->data) {
+	EST_LOG_WARN("OpenSSL error: %s", bptr->data);
+    }
     BIO_free_all(e);
 }
 
@@ -291,7 +308,7 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
 	return (-1);
     }
     in = BIO_push(b64, in);    
-    cacerts_decoded = malloc(certs_len);
+    cacerts_decoded = (unsigned char *)malloc(certs_len);
     if (!cacerts_decoded) {
 	EST_LOG_ERR("malloc failed");
 	return (-1);
@@ -365,7 +382,7 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
 	return (-1);
     }
 
-    *pem = malloc(pem_len + 1);
+    *pem = (unsigned char *)malloc(pem_len + 1);
     if (!*pem) {
         EST_LOG_ERR("malloc failed");
 	PKCS7_free(p7);
@@ -394,7 +411,7 @@ unsigned char *est_ossl_BIO_copy_data(BIO *out, int *data_lenp) {
     int data_len;
 
     data_len = BIO_get_mem_data(out, &tdata);
-    data = malloc(data_len+1);
+    data = (unsigned char *)malloc(data_len+1);
     if (data) {
         memcpy(data, tdata, data_len);
 	data[data_len]='\0';  // Make sure it's \0 terminated, in case used as string
@@ -506,7 +523,8 @@ unsigned char *ossl_get_csr_subject_alt_name (const X509_REQ *csr)
     STACK_OF(X509_EXTENSION) *exts;
     // would be incomplete: exts = X509_REQ_get_extensions(csr);
     const X509_EXTENSION *ext = NULL;
-    if (X509_REQ_get_extension((X509_REQ *)csr, NID_subject_alt_name, -1, &exts, 0, NULL) >= 0) {
+    if ((exts = X509_REQ_get_extensions((X509_REQ *)csr))/* TODO: The following would be more complete, but for some configurations gives SIGSEGV, maybe due to SSL version mismatch?
+        X509_REQ_get_extension((X509_REQ *)csr, NID_subject_alt_name, -1, &exts, 0, NULL) >= 0*/) {
         ext = sk_X509_EXTENSION_value(exts, X509v3_get_ext_by_NID(exts, NID_subject_alt_name, -1));
     }
     unsigned char *str = ossl_get_extension_value(ext);
@@ -530,10 +548,12 @@ int ossl_name_entries_inclusion (X509_NAME *name1, X509_NAME *name2)
 	int found = 0;
 	for (pos2 = 0; pos2 < X509_NAME_entry_count(name2); pos2++) {
 	    X509_NAME_ENTRY *ne2 = X509_NAME_get_entry(name2, pos2);
+	    ASN1_STRING *s1 = X509_NAME_ENTRY_get_data(ne1);
+	    ASN1_STRING *s2 = X509_NAME_ENTRY_get_data(ne2);
 	    if (OBJ_obj2nid(X509_NAME_ENTRY_get_object(ne1)) == 
 		OBJ_obj2nid(X509_NAME_ENTRY_get_object(ne2)) &&
-		!ASN1_STRING_cmp(X509_NAME_ENTRY_get_data(ne1), 
-				 X509_NAME_ENTRY_get_data(ne2))) {
+		s1->length == s2->length && !memcmp(s1->data, s2->data, s1->length)) {
+		// This goes wrong if the string types do not match: !ASN1_STRING_cmp(s1, s1)
 		found = 1;
 		break;
 	    }
@@ -551,8 +571,8 @@ EST_ERROR ossl_check_subjects_agree(const X509_REQ *csr, const X509 *cer)
     X509_NAME *subj2 = X509_get_subject_name    ((X509     *)cer);
     EST_ERROR rv = EST_ERR_SUBJECT_MISMATCH;
 
-    char *csr_subject = X509_NAME_oneline(X509_REQ_get_subject_name((X509_REQ *)csr), NULL, 0);
-    char *cer_subject = X509_NAME_oneline(X509_get_subject_name    ((X509     *)cer), NULL, 0);
+    char *csr_subject = X509_NAME_oneline(subj1, NULL, 0);
+    char *cer_subject = X509_NAME_oneline(subj2, NULL, 0);
 
     if (!(ossl_name_entries_inclusion (subj1, subj2) &&
 	  ossl_name_entries_inclusion (subj2, subj1))) {
@@ -576,7 +596,9 @@ EST_ERROR ossl_check_subjects_agree(const X509_REQ *csr, const X509 *cer)
     }
     if (rv != EST_ERR_NONE) {
         EST_LOG_ERR("Subject Alternative Names disagree for CSR ('%s') and cert ('%s') with common Subject '%s'", 
-		    csr_subject_alt, cer_subject_alt, csr_subject ? csr_subject : "(none)");
+		    csr_subject_alt ? csr_subject_alt : "(none)",
+		    cer_subject_alt ? cer_subject_alt : "(none)",
+		    csr_subject ? csr_subject : "(none)");
     }
     if (csr_subject_alt) free (csr_subject_alt);
     if (cer_subject_alt) free (cer_subject_alt);

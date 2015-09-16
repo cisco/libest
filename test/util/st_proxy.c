@@ -8,15 +8,19 @@
  * October, 2013
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
- *------------------------------------------------------------------
+ **------------------------------------------------------------------
  */
+
+// 2015-08-14 sharing master_thread() with unit tests, more efficient synchronization
+// 2015-08-14 using start_single_server() and stop_single_server() of simple_server.c
+
+#include <est.h>
 #include <stdio.h>
 #include <errno.h>
-#include <unistd.h>
-#include <stdint.h>
 #include <signal.h>
-#include <pthread.h>
 #include <fcntl.h>
 #include <search.h>
 #include <openssl/err.h>
@@ -24,17 +28,18 @@
 #include <openssl/conf.h>
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
-#include <est.h>
-#include "ossl_srv.h"
+#include "../../example/util/ossl_srv.h"
+#include "../../example/util/simple_server.h"
 #include "test_utils.h"
 #include <sys/types.h>
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
+#endif
 #include "st_proxy.h"
 
-static int tcp_port;
-volatile int stop_proxy_flag = 0;
+void *proxy_data = NULL;
 unsigned char *proxy_cacerts_raw = NULL;
 int proxy_cacerts_len = 0;
 EST_CTX *epctx;
@@ -114,7 +119,7 @@ static DH *get_dh1024dsa()
  * The following funcitons are the callbacks used by libest.a to bind
  * the EST stack to the HTTP/SSL layer and the CA server.
  ***************************************************************************************/
-static char digest_user[3][32] = 
+static char digest_user[3][34] = 
     {
 	"estuser", 
 	"estrealm", 
@@ -267,7 +272,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
     char *token_ptr = NULL;
     int token_len = 0;
 
-    printf("\nHTTP Token authentication credential callback invoked from EST client library\n");
+    printf("HTTP Token authentication credential callback invoked from EST client library\n");
     
     if (auth_credentials->mode == AUTH_TOKEN) {
         /*
@@ -278,12 +283,12 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
             token_len = strlen(client_token_cred);
 
             if (token_len == 0) {
-                printf("\nError determining length of token string used for credentials\n");
+                printf("Error determining length of token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
             }   
-            token_ptr = malloc(token_len+1);
+            token_ptr = (char *)malloc(token_len+1);
             if (token_ptr == NULL){
-                printf("\nError allocating token string used for credentials\n");
+                printf("Error allocating token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
             }   
             strncpy(token_ptr, client_token_cred, strlen(client_token_cred));
@@ -295,7 +300,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
          */
         auth_credentials->auth_token = token_ptr;
 
-        printf("Returning access token = %s\n\n", auth_credentials->auth_token);
+        printf("Returning access token = %s\n", auth_credentials->auth_token);
         
         return (EST_HTTP_AUTH_CRED_SUCCESS);
     }
@@ -304,69 +309,15 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
 }
 
 
-static void* master_thread (void *arg)
-{
-    int sock;                 
-    struct sockaddr_in6 addr;
-    int on = 1;
-    int rc;
-    int flags;
-    int new;
-    int unsigned len;
-
-    memset(&addr, 0x0, sizeof(struct sockaddr_in6));
-    addr.sin6_family = AF_INET6;
-    addr.sin6_port = htons((uint16_t)tcp_port);
-
-    sock = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
-    if (sock == -1) {
-        fprintf(stderr, "\nsocket call failed\n");
-        exit(1);
-    }
-    // Needs to be done to bind to both :: and 0.0.0.0 to the same port
-    int no = 0;
-    setsockopt(sock, SOL_SOCKET, IPV6_V6ONLY, (void *)&no, sizeof(no));
-
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(on));
-    setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char*)&on, sizeof(on));
-    flags = fcntl(sock, F_GETFL, 0);
-    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
-    rc = bind(sock, (const struct sockaddr*)&addr, sizeof(addr));
-    if (rc == -1) {
-        fprintf(stderr, "\nbind call failed\n");
-        exit(1);
-    }
-    listen(sock, SOMAXCONN);
-    stop_proxy_flag = 0;
-
-    while (stop_proxy_flag == 0) {
-        len = sizeof(addr);
-        new = accept(sock, (struct sockaddr*)&addr, &len);
-        if (new < 0) {
-	    /*
-	     * this is a bit cheesy, but much easier to implement than using select()
-	     */
-            usleep(100);
-        } else {
-            if (stop_proxy_flag == 0) {
-		est_server_handle_request(epctx, new);
-		close(new);
-            }
-        }
-    }
-    close(sock);
-    cleanup();
-    return NULL;
-}
-
-
 /*
  * Call this function to stop the single-threaded simple EST proxy server
  */
 void st_proxy_stop ()
 {
-    stop_proxy_flag = 1;
-    sleep(2);
+    stop_single_server(proxy_data);
+    cleanup();
+    printf("Stopped EST proxy server.\n");
+    fflush(stdout);
 }
 
 static int st_proxy_start_internal (int listen_port,
@@ -389,8 +340,11 @@ static int st_proxy_start_internal (int listen_port,
     EVP_PKEY *priv_key;
     BIO *certin, *keyin;
     DH *dh;
-    pthread_t thread;
     EST_ERROR rv;
+
+    printf("\nLaunching EST proxy server...\n");
+    fflush(stdout);
+    est_set_log_source(EST_PROXY);
 
     /*
      * Read in the CA certificates
@@ -399,7 +353,7 @@ static int st_proxy_start_internal (int listen_port,
     if (ca_chain_file) {        
         proxy_cacerts_len = read_binary_file(ca_chain_file, &proxy_cacerts_raw);
         if (proxy_cacerts_len <= 0) {
-            printf("\nCA chain file %s file could not be read\n", ca_chain_file);
+            printf("CA chain file %s file could not be read\n", ca_chain_file);
             return (-1);
         }
     } else {
@@ -414,8 +368,7 @@ static int st_proxy_start_internal (int listen_port,
     if (trusted_certs_file) {
         proxy_trustcerts_len = read_binary_file(trusted_certs_file, &proxy_trustcerts);
         if (proxy_trustcerts_len <= 0) {
-            printf("\nTrusted certs file %s could not be read\n", 
-		    trusted_certs_file);
+            printf("Trusted certs file %s could not be read\n", trusted_certs_file);
             return (-1);
         }
     }
@@ -425,7 +378,7 @@ static int st_proxy_start_internal (int listen_port,
      */
     certin = BIO_new(BIO_s_file_internal());
     if (BIO_read_filename(certin, certfile) <= 0) {
-	printf("\nUnable to read server certificate file %s\n", certfile);
+	printf("Unable to read server certificate file %s\n", certfile);
 	return (-1);
     }
     /*
@@ -434,7 +387,7 @@ static int st_proxy_start_internal (int listen_port,
      */
     x = PEM_read_bio_X509(certin, NULL, NULL, NULL);
     if (x == NULL) {
-	printf("\nError while reading PEM encoded server certificate file %s\n", certfile);
+	printf("Error while reading PEM encoded server certificate file %s\n", certfile);
 	return (-1);
     }
     BIO_free(certin);
@@ -445,7 +398,7 @@ static int st_proxy_start_internal (int listen_port,
      */
     keyin = BIO_new(BIO_s_file_internal());
     if (BIO_read_filename(keyin, keyfile) <= 0) {
-	printf("\nUnable to read server private key file %s\n", keyfile);
+	printf("Unable to read server private key file %s\n", keyfile);
 	return (-1);
     }
     /*
@@ -455,7 +408,7 @@ static int st_proxy_start_internal (int listen_port,
      */
     priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
     if (priv_key == NULL) {
-	printf("\nError while reading PEM encoded private key file %s\n", certfile);
+	printf("Error while reading PEM encoded private key file %s\n", certfile);
 	return (-1);
     }
     BIO_free(keyin);
@@ -470,7 +423,7 @@ static int st_proxy_start_internal (int listen_port,
 	                   EST_CERT_FORMAT_PEM, realm, x, priv_key,
 			   userid, password);
     if (!epctx) {
-        printf("\nUnable to initialize EST context.  Aborting!!!\n");
+        printf("Unable to initialize EST context.  Aborting!!!\n");
         return (-1);
     }
 
@@ -483,7 +436,7 @@ static int st_proxy_start_internal (int listen_port,
     }
 
     if (est_set_http_auth_cb(epctx, &process_http_auth)) {
-        printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");
+        printf("Unable to set EST HTTP AUTH callback.  Aborting!!!\n");
         return (-1);
     }    
 
@@ -516,16 +469,16 @@ static int st_proxy_start_internal (int listen_port,
     if (enable_srp) {
 	p_srp_db = SRP_VBASE_new(NULL);
 	if (!p_srp_db) {
-	    printf("\nUnable allocate proxy SRP verifier database.  Aborting!!!\n");
+	    printf("Unable allocate proxy SRP verifier database.  Aborting!!!\n");
 	    return(-1); 
 	}
 	if (SRP_VBASE_init(p_srp_db, srp_vfile) != SRP_NO_ERROR) {
-	    printf("\nUnable initialize proxy SRP verifier database %s.  Aborting!!!\n", srp_vfile);
+	    printf("Unable initialize proxy SRP verifier database %s.  Aborting!!!\n", srp_vfile);
 	    return(-1); 
 	}
 	
 	if (est_server_enable_srp(epctx, &ssl_srp_server_param_cb)) { 
-	    printf("\nUnable to enable proxy SRP.  Aborting!!!\n");
+	    printf("Unable to enable proxy SRP.  Aborting!!!\n");
 	    return(-1);
 	}
     }
@@ -538,7 +491,7 @@ static int st_proxy_start_internal (int listen_port,
      *   st_proxy_set_srv_valid_token()
      */
     if (enable_server_token_auth) {
-        printf("\nEnabling server side proxy token authentication mode...\n");
+        printf("Enabling server side proxy token authentication mode...\n");
         st_proxy_enable_http_token_auth();
     }
     /* prepare the client side for the case where the server
@@ -547,29 +500,26 @@ static int st_proxy_start_internal (int listen_port,
      * - NOTE: It's assumed that the client token credential to use has been
      *   set using st_proxy_set_clnt_token_cred()
      */
-    printf("\nEnabling client side proxy token authentication mode...\n");
+    printf("Enabling client side proxy token authentication mode...\n");
     rv = est_proxy_set_auth_cred_cb(epctx, auth_credentials_token_cb);
     if (rv != EST_ERR_NONE) {
-        printf("\nUnable to register token auth callback.  Aborting!!!\n");
+        printf("Unable to register token auth callback.  Aborting!!!\n");
         return (-1);
     }
 
-    printf("\nLaunching EST proxy server...\n");
-
     rv = est_proxy_start(epctx);
     if (rv != EST_ERR_NONE) {
-        printf("\nFailed to init mg\n");
+        printf("Failed to init mg\n");
         return (-1);
     }
 
     // Start master (listening) thread
-    tcp_port = listen_port;
-    pthread_create(&thread, NULL, master_thread, NULL);
+    proxy_data = start_single_server (epctx, listen_port, 0/* better IP v4, not v6 */);
 
     /* Clean up */
     EVP_PKEY_free(priv_key);
     X509_free(x);
-    sleep(2);
+    est_set_log_source(EST_CLIENT);
     return 0;
 }
 
@@ -728,12 +678,12 @@ int st_proxy_http_disable (int disable)
 {
     if (disable) {
         if (est_set_http_auth_cb(epctx, NULL)) {
-            printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");
+            printf("Unable to set EST HTTP AUTH callback.  Aborting!!!\n");
             return (-1);
         }
     } else {
         if (est_set_http_auth_cb(epctx, &process_http_auth)) {
-            printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");
+            printf("Unable to set EST HTTP AUTH callback.  Aborting!!!\n");
             return (-1);
         }
     }

@@ -1,3 +1,17 @@
+/*------------------------------------------------------------------
+ * README for EST client
+ *
+ * March, 2014
+ *
+ * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * Copyright (c) 2014 Siemens AG
+ * License: 3-clause ("New") BSD License
+ * All rights reserved.
+ *------------------------------------------------------------------
+ */
+
+// 2014-04-23 minor enhancements and extensions reflecting new options
+
 This directory contains a sample EST client application.  It utilizes
 OpenSSL for the SSL stack to be used for HTTP requests, libest for 
 the EST stack, and OpenSSL 1.0.1 for certificate and crypto operations. 
@@ -22,32 +36,36 @@ To run the example:
     and request a new certificate.  The example EST server uses the user ID and
     password estuser/estpwd: 
 
-    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp --pem-output 
+    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp --pem-output
 
-    Note: The new private key is stored at /tmp/newkey.pem.
+    The IP address 127.0.0.1 and port 8085 may be left out since these are used by default:
+
+    ./estclient -e -u estuser -h estpwd -o /tmp --pem-output
+
+    Note: The new private key is stored at /tmp/newkey.pem .
     To check the cert response, use this command:
 
-    openssl x509 -text -in /tmp/newcert.pem 
+    openssl x509 -noout -text -in /tmp/newcert.pem
 
     Instead of producing a new key along with a (re-)enrollment request,
-    you may use an existing key stored in a PEM file
-    or generate a fresh one yourself, using for instance the following command:
+    you may use an existing key stored in a PEM file or generate 
+    a fresh one yourself, using for instance the following command:
 
     openssl ecparam -name prime256v1 -genkey -out privkey.pem
 
     To use an existing private key for the CSR, supply it using the -x option:
 
-    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -x privkey.pem -o /tmp --pem-output
+    ./estclient -e -u estuser -h estpwd -x privkey.pem -o /tmp --pem-output
 
     You may also use an existing CSR for enrollment, supplied using the -y option:
 
-    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -y req.p10 -o /tmp --pem-output
+    ./estclient -e -u estuser -h estpwd -y req.p10 -o /tmp --pem-output
 
-4.  Optionally you can request attributes as a single request or as
-    part of the enroll. For a simple attributes request use the
-    following command:
+4.  Optionally you can request attributes as a single request 
+    or as part of the enroll. For a simple attributes request
+    use the following command:
 
-    ./estclient -a -s 127.0.0.1 -p 8085 -o /tmp
+    ./estclient -a -o /tmp
 
     To view the list attributes obtained this way, you may use:
 
@@ -55,12 +73,13 @@ To run the example:
  
     Then you can perform the enroll using this command:
  
-    ./estclient -e -a -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp --pem-output
+    ./estclient -e -a -u estuser -h estpwd -o /tmp --pem-output
  
 5.  You can use an existing certificate to identify the EST client
     to the server instead of specifying the HTTP user name/password.  
     Now that you've enrolled a certificate in step #3
-    above, you can re-enroll that certificate prior to expiration.  
+    above, you can use that certificate to enroll again. Note, your
+    EST server should be configured not to require HTTP authentication.
 
     Save the new certificate and key from step 3: 
 
@@ -69,7 +88,7 @@ To run the example:
 
     Next, use this cert as identity to do another enroll operation:
 
-    ./estclient -r -s 127.0.0.1 -p 8085 -c /tmp/savecert.pem -k /tmp/savekey.pem -o /tmp --pem-output
+    ./estclient -r -c /tmp/savecert.pem -k /tmp/savekey.pem -o /tmp --pem-output
 
 
 Note:  RFC 7030 requires the certificate to be encoded as base64 PKCS7.  This encoding isn't
@@ -81,3 +100,14 @@ Note:  RFC 7030 requires the certificate to be encoded as base64 PKCS7.  This en
        openssl base64 -d -in /tmp/newcert.pkcs7 | \
            openssl pkcs7 -inform DER -print_certs -out /tmp/savecert.pem
 
+
+TLS-SRP support
+---------------
+
+To enable TLS-SRP for the EST client, use the --srp option. You also need to 
+use the options --srp-user and --srp-password to specify credentials of the client.
+Here is an example:
+
+    ./estclient -e --srp --srp-user srpuser --srp-password srppwd -o /tmp -v
+
+Of course, also the server must be SRP enabled.

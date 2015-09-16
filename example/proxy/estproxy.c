@@ -9,24 +9,26 @@
  * May, 2013
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2014 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
 
+// 2015-08-28 minor bug corrections w.r.t long options and stability improvements; added -o option
+// 2015-08-07 completed use of DISABLE_PTHREADS
+
 /* Main routine */
+#include <est.h>
 #include <stdio.h>
 #include <errno.h>
-#include <unistd.h>
-#include <stdint.h>
 #include <signal.h>
+#ifndef DISABLE_PTHREADS
 #include <pthread.h>
-//#include <fcntl.h>
-#include <getopt.h>
+#endif
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
-#include <est.h>
 #include <sys/types.h>
-#include <netinet/in.h>
 #include "../util/utils.h"
 #include "../util/simple_server.h"
 
@@ -34,9 +36,14 @@
 #define MAX_SERVER_LEN 32
 #define PROXY_PORT 8086  
 
+/*
+ * The OpenSSL CA needs this BIO to send errors to
+ */
+BIO *bio_err = NULL;
+
 static char est_server[MAX_SERVER_LEN];
 static char est_auth_token[MAX_AUTH_TOKEN_LEN+1];
-static int est_server_port;
+static int est_server_port = 8085;
 static int listen_port = PROXY_PORT;
 static int verbose = 0;
 static int pop = 0;
@@ -44,6 +51,7 @@ static int v6 = 0;
 static int srp = 0;
 static int client_token_auth_mode = 0;
 static int http_auth_disable = 0;
+static int disable_forced_http_auth = 0;
 static int http_digest_auth = 0;
 static int http_basic_auth = 0;
 static int server_http_token_auth = 0;
@@ -65,21 +73,22 @@ static char valid_token_value[MAX_AUTH_TOKEN_LEN];
 
 static void print_version (FILE *fp)
 {
-    fprintf(fp, "Using %s\n", SSLeay_version(SSLEAY_VERSION));
+    // fprintf(fp, "Using %s\n", SSLeay_version(SSLEAY_VERSION));
 }
 
 static void show_usage_and_exit (void)
 {
-    fprintf(stderr, "\nAvailable estserver options\n"
+    fprintf(stderr, "\nAvailable EST proxy options\n"
             "  -v           Verbose operation\n"
             "  -n           Disable HTTP authentication\n"
+            "  -o           Do not require HTTP authentication when TLS client auth succeeds\n"
             "  -h           Use HTTP Digest auth instead of Basic auth\n"
             "  -t           Enable PoP check of TLS UID\n"
             "  -c <file>    PEM file to use for server cert\n"
             "  -k <file>    PEM file to use for server key\n"
-            "  -s <server>  Upstream server IP address\n"
-            "  -p <port#>   Upstream server TCP port#\n"
-	    "  -l <port#>   Downstream client TCP port# to listen on\n"
+            "  -s <server>  Upstream server name or IP address\n"
+            "  -p <port>    Upstream server TCP port number; default: 8085\n"
+	    "  -l <port>    Downstream client TCP port number to listen on; default: 8086\n"
             "  -r <value>   HTTP realm to present to clients\n"
 #ifndef DISABLE_PTHREADS
 	    "  -d <seconds> Sleep timer to auto-shut the server\n"
@@ -87,11 +96,12 @@ static void show_usage_and_exit (void)
 	    "  -f           Runs EST Proxy in FIPS MODE = ON\n"
 	    "  -6           Enable IPv6\n"
 	    "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
+            "  -?           Print this help message and exit\n"
             "\n");
     exit(255);
 }
 
-static char digest_user[3][32] = 
+static char digest_user[3][34] =
     {
 	"estuser", 
 	"estrealm", 
@@ -145,8 +155,8 @@ int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
          * Authorization Server would return either a success or failure
          * response.
 	 */
-        printf("\nConfigured for HTTP Token Authentication\n");
-        printf("Configured access token = %s \nClient access token received = %s\n\n",
+        printf("Configured for HTTP Token Authentication\n");
+        printf("Configured access token = %s \nClient access token received = %s\n",
                ah->auth_token, valid_token_value);
 
 	if (!strcmp(ah->auth_token, valid_token_value)) {
@@ -183,7 +193,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
     char *token_ptr = NULL;
     int token_len = 0;
 
-    printf("\nHTTP Token authentication credential callback invoked from EST client library\n");
+    printf("HTTP Token authentication credential callback invoked from EST client library\n");
     
     if (auth_credentials->mode == AUTH_TOKEN) {
         /*
@@ -197,7 +207,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
                 printf("\nError determining length of token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
             }   
-            token_ptr = malloc(token_len+1);
+            token_ptr = (char *)malloc(token_len+1);
             if (token_ptr == NULL){
                 printf("\nError allocating token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
@@ -211,7 +221,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
          */
         auth_credentials->auth_token = token_ptr;
 
-        printf("Returning access token = %s\n\n", auth_credentials->auth_token);
+        printf("Returning access token = %s\n", auth_credentials->auth_token);
         
         return (EST_HTTP_AUTH_CRED_SUCCESS);
     }
@@ -243,7 +253,7 @@ static int process_ssl_srp_auth (SSL *s, int *ad, void *arg) {
     user = SRP_VBASE_get_by_user(srp_db, login); 
 
     if (user == NULL) {
-	printf("User %s doesn't exist in SRP database\n", login);
+	printf("\nUser %s doesn't exist in SRP database\n", login);
 	return SSL3_AL_FATAL;
     }
 
@@ -264,6 +274,7 @@ static int process_ssl_srp_auth (SSL *s, int *ad, void *arg) {
     return SSL_ERROR_NONE;
 }
 
+#ifndef DISABLE_PTHREADS
 /*
  * We're using OpenSSL, both as the CA and libest
  * requires it.  OpenSSL requires these platform specific
@@ -282,11 +293,17 @@ static void ssl_locking_callback (int mode, int mutex_num, const char *file,
 }
 static unsigned long ssl_id_callback (void)
 {
+#ifndef _WIN32
     return (unsigned long)pthread_self();
+#else
+    return (unsigned long)pthread_self().p;
+#endif
 }
+#endif
 
 void cleanup (void)
 {
+#ifndef DISABLE_PTHREADS
     int i;
 
     /*
@@ -299,21 +316,24 @@ void cleanup (void)
     CRYPTO_set_locking_callback(NULL);
     CRYPTO_set_id_callback(NULL);
     free(ssl_mutexes);
+#endif
 
     est_proxy_stop(ectx);
     est_destroy(ectx);
     if (srp_db) {
 	SRP_VBASE_free(srp_db);
     }
-    free(cacerts_raw);
-    free(trustcerts);
+    BIO_free(bio_err);
+    if (cacerts_raw)
+	free(cacerts_raw);
+    if (trustcerts)
+	free(trustcerts);
     est_apps_shutdown();
 }
 
 int main (int argc, char **argv)
 {
-    char c;
-    int i, size;
+    signed char c;
     EVP_PKEY *priv_key;
     BIO *certin, *keyin;
     X509 *x;
@@ -325,32 +345,28 @@ int main (int argc, char **argv)
         {"srp", 1, NULL, 0},
         {"token", 1, 0, 0},
         {"auth-token", 1, 0, 0},
+        {"help", 0, NULL, 0},
         {NULL, 0, NULL, 0}
     };
     
-    /* Show usage if -h or --help options are specified or if no parameters have
-     * been specified.  Upstream server and port are required.
-     */
-    if ((argc == 1) ||
-        (argc == 2 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")))) {
-        show_usage_and_exit();
-    }
+    strncpy(est_server, "127.0.0.1", MAX_SERVER_LEN);
 
-    while ((c = getopt_long(argc, argv, "vt6nhfr:c:k:s:p:l:d:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "?vt6nohfr:c:k:s:p:l:d:", long_options, &option_index)) != -1) {
         switch (c) {
 	case 0:
-            if (!strncmp(long_options[option_index].name,"srp", strlen("srp"))) {
+	    // the following uses of strncmp() MUST use strlen(...)+1, otherwise only prefix is compared.
+            if (!strncmp(long_options[option_index].name,"srp", strlen("srp")+1)) {
 		srp = 1;
                 strncpy(vfile, optarg, 255);
-            }
-            if (!strncmp(long_options[option_index].name,"token", strlen("token"))) {
+            } else
+            if (!strncmp(long_options[option_index].name,"token", strlen("token")+1)) {
 		server_http_token_auth = 1;
                 strncpy(&(valid_token_value[0]), optarg, MAX_AUTH_TOKEN_LEN);
-            }
-            if (!strncmp(long_options[option_index].name,"auth-token", strlen("auth-token"))) {
+            } else
+            if (!strncmp(long_options[option_index].name,"auth-token", strlen("auth-token")+1)) {
                 strncpy(est_auth_token, optarg, MAX_AUTH_TOKEN_LEN);
                 client_token_auth_mode = 1;
-            }
+            } else show_usage_and_exit();
 	    break;
         case 'v':
             verbose = 1;
@@ -369,6 +385,9 @@ int main (int argc, char **argv)
             break;
         case 'n':
             http_auth_disable = 1;
+            break;
+        case 'o':
+            disable_forced_http_auth = 1;
             break;
         case 'c':
 	    strncpy(certfile, optarg, EST_MAX_FILE_LEN);
@@ -403,9 +422,10 @@ int main (int argc, char **argv)
               printf("\nERROR WHILE SETTING FIPS MODE ON exiting ....\n");
               exit(1);
             } else {
-              printf("\nRunning EST Sample Proxy with FIPS MODE = ON !\n");
+              printf("Running EST Sample Proxy with FIPS MODE = ON !\n");
             };
             break;
+        case '?':
         default:
             show_usage_and_exit();
             break;
@@ -415,19 +435,16 @@ int main (int argc, char **argv)
     argv += optind;
 
     if (verbose) {
-        fprintf(stdout, "\nEST Proxy start up values:\n");
         print_version(stdout);
-	fprintf(stdout, "Using EST server %s:%d", est_server, est_server_port);
-	fprintf(stdout, "\nListening on port: %d", listen_port);
-	fprintf(stdout, "\nUsing identity cert file: %s", certfile);
-	fprintf(stdout, "\nUsing identity private key file: %s", keyfile);
-	fprintf(stdout, "\nUsing realm value: %s\n", realm);
+        fprintf(stdout, "EST Proxy start up values:\n");
+	fprintf(stdout, "Using EST server %s:%d\n", est_server, est_server_port);
+	fprintf(stdout, "Listening on port: %d\n", listen_port);
+	fprintf(stdout, "Using identity cert file: %s\n", certfile);
+	fprintf(stdout, "Using identity private key file: %s\n", keyfile);
+	fprintf(stdout, "Using realm value: %s\n", realm);
         fflush(stdout);
     }
 
-    /*
-     * Initialize EST context from libest.a
-     */
     if (!getenv("EST_TRUSTED_CERTS")) {
         printf("\nEST_TRUSTED_CERTS file not set, set this env variable to resolve\n");
         exit(1);
@@ -496,10 +513,20 @@ int main (int argc, char **argv)
     }
     BIO_free(keyin);
 
-    est_init_logger(EST_LOG_LVL_INFO, NULL);
+    bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
+    if (!bio_err) {
+        printf("\nBIO not working\n");
+        exit(1);
+    }
+
     if (verbose) {
+	est_init_logger(EST_LOG_LVL_INFO, NULL);
 	est_enable_backtrace(1);
     }
+
+    /*
+     * Initialize EST context from libest
+     */
     ectx = est_proxy_init(trustcerts, trustcerts_len,
                           cacerts_raw, cacerts_len, EST_CERT_FORMAT_PEM,
                           realm, x, priv_key, "estuser", "estpwd");
@@ -512,6 +539,15 @@ int main (int argc, char **argv)
 	    printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");
 	    exit(1);
 	}    
+    }
+    if (disable_forced_http_auth) {
+        if (verbose) {
+	    printf("Not requiring HTTP authentication when TLS client auth succeeds\n");
+	}
+	if (est_set_http_auth_required(ectx, HTTP_AUTH_NOT_REQUIRED)) {
+	    printf("\nUnable to disable required HTTP auth.  Aborting!!!\n");
+	    exit(1);
+	}
     }
 
     if (http_digest_auth) {
@@ -539,7 +575,7 @@ int main (int argc, char **argv)
     }
 
     if (!pop) {
-	printf("\nDisabling PoP check");
+	printf("Disabling PoP check\n");
 	est_server_disable_pop(ectx);
     }
 
@@ -570,22 +606,25 @@ int main (int argc, char **argv)
         }        
     }            
     
+#ifndef DISABLE_PTHREADS
     /*
      * Install thread locking mechanism for OpenSSL
      */
-    size = sizeof(pthread_mutex_t) * CRYPTO_num_locks();
+    int size = sizeof(pthread_mutex_t) * CRYPTO_num_locks();
     if ((ssl_mutexes = (pthread_mutex_t*)malloc((size_t)size)) == NULL) {
-        printf("Cannot allocate mutexes");
+        printf("\nCannot allocate mutexes\n");
 	exit(1);
     }   
 
+    int i;
     for (i = 0; i < CRYPTO_num_locks(); i++) {
         pthread_mutex_init(&ssl_mutexes[i], NULL);
     }
     CRYPTO_set_locking_callback(&ssl_locking_callback);
     CRYPTO_set_id_callback(&ssl_id_callback);
+#endif
 
-    printf("\nLaunching EST proxy...\n");
+    printf("Launching EST proxy...\n");
 
     rv = est_proxy_start(ectx);
     if (rv != EST_ERR_NONE) {

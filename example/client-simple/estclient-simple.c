@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------
- * estclient-simple.c - Example application that utilizes libest.so for
+ * estclient-simple.c - Simple example application that utilizes libest for
  *               EST client operations.  This module utilizes OpenSSL
  *               for SSL and crypto services. 
  *
@@ -7,19 +7,21 @@
  * October, 2013
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  *------------------------------------------------------------------
  */
 
-#include "stdio.h"
-#include <getopt.h>
+// 2015-08-28 minor bug corrections w.r.t long options and stability improvements
+
+#include <est.h>
+#include <stdio.h>
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
-#include <strings.h>
 #include <stdlib.h>
-#include <est.h>
 #include "../util/utils.h"
 
 #define MAX_SERVER_LEN 32
@@ -36,7 +38,7 @@ static char est_srp_uid[MAX_UID_LEN];
 static char est_srp_pwd[MAX_PWD_LEN];
 static char est_server[MAX_SERVER_LEN];
 static char est_auth_token[MAX_AUTH_TOKEN_LEN];
-static int est_port;
+static int est_port = 8085;
 static int srp = 0;
 static int token_auth_mode = 0;
 
@@ -46,19 +48,19 @@ static int token_auth_mode = 0;
 
 static void print_version () 
 {
-    printf("Using %s\n", SSLeay_version(SSLEAY_VERSION));
+    // printf("Using %s\n", SSLeay_version(SSLEAY_VERSION));
 }
 
 
 static void show_usage_and_exit (void) 
 {
-    printf("estclient \n");
     printf("Usage:\n");
     printf("\nAvailable client OPTIONS\n"
-	"  -s <server>       Enrollment server IP address\n"
-	"  -p <port#>        TCP port# for enrollment server\n"
+	"  -s <server>       Enrollment server name or IP address; default: 127.0.0.1\n"
+	"  -p <port>         TCP port number of enrollment server; default: 8085\n"
 	"  -u                Specify user name for HTTP authentication.\n"
 	"  -h                Specify password for HTTP authentication.\n"
+	"  -?                Print this help message and exit\n"
 	"  --srp                       Enable TLS-SRP cipher suites.  Use with --srp-user and --srp-password options.\n"
 	"  --srp-user     <string>     Specify the SRP user name.\n"
 	"  --srp-password <string>     Specify the SRP password.\n"
@@ -97,14 +99,14 @@ static EVP_PKEY * generate_private_key (void)
     eckey = EC_KEY_new();
     EC_KEY_set_group(eckey, group); 
     if (!EC_KEY_generate_key(eckey)) {
-	printf("Failed to generate EC key\n");
+	printf("\nFailed to generate EC key\n");
         exit(1);
     }
     out = BIO_new(BIO_s_mem());
     PEM_write_bio_ECPKParameters(out, group);
     PEM_write_bio_ECPrivateKey(out, eckey, NULL, NULL, 0, NULL, NULL);
     key_len = BIO_get_mem_data(out, &tdata);
-    key_data = malloc(key_len+1);
+    key_data = (unsigned char *)malloc(key_len+1);
     memcpy(key_data, tdata, key_len);
     EC_KEY_free(eckey);
     BIO_free(out);
@@ -114,7 +116,9 @@ static EVP_PKEY * generate_private_key (void)
      * We'll write this out to a local file called new_key.pem.
      * Your application should persist the key somewhere safe.
      */
-    write_binary_file(file_name, key_data, key_len);
+    if (write_binary_file(file_name, key_data, key_len) < 0) {
+	exit(1);
+    }
     free(key_data);
     
     /*
@@ -162,7 +166,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb(EST_HTTP_AUTH_HDR *auth_credenti
     char *token_ptr = NULL;
     int token_len = 0;
 
-    printf("\nHTTP Token authentication credential callback invoked from EST client library\n");
+    printf("HTTP Token authentication credential callback invoked from EST client library\n");
     
     if (auth_credentials->mode == AUTH_TOKEN) {
         /*
@@ -176,7 +180,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb(EST_HTTP_AUTH_HDR *auth_credenti
                 printf("\nError determining length of token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
             }   
-            token_ptr = malloc(token_len+1);
+            token_ptr = (char *)malloc(token_len+1);
             if (token_ptr == NULL){
                 printf("\nError allocating token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
@@ -190,7 +194,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb(EST_HTTP_AUTH_HDR *auth_credenti
          */
         auth_credentials->auth_token = token_ptr;
 
-        printf("Returning access token = %s\n\n", auth_credentials->auth_token);
+        printf("Returning access token = %s\n", auth_credentials->auth_token);
         
         return (EST_HTTP_AUTH_CRED_SUCCESS);
     }
@@ -278,29 +282,33 @@ int main (int argc, char **argv)
         {"srp-user", 1, 0, 0},
         {"srp-password", 1, 0, 0},
         {"auth-token", 1, 0, 0},
+        {"help", 0, NULL, 0},
         {NULL, 0, NULL, 0}
     };
     int option_index = 0;
 
+    strncpy(est_server, "127.0.0.1", MAX_SERVER_LEN);
+
     est_http_uid[0] = 0x0;
     est_http_pwd[0] = 0x0;
 
-    while ((c = getopt_long(argc, argv, "s:p:u:h:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "?s:p:u:h:", long_options, &option_index)) != -1) {
         switch (c) {
             case 0:
-		if (!strncmp(long_options[option_index].name,"srp", strlen("srp"))) {
+		// the following uses of strncmp() MUST use strlen(...)+1, otherwise only prefix is compared.
+		if (!strncmp(long_options[option_index].name,"srp", strlen("srp")+1)) {
 		    srp = 1;
-		}
-		if (!strncmp(long_options[option_index].name,"srp-user", strlen("srp-user"))) {
+		} else
+		if (!strncmp(long_options[option_index].name,"srp-user", strlen("srp-user")+1)) {
 		    strncpy(est_srp_uid, optarg, MAX_UID_LEN);
-		}
-		if (!strncmp(long_options[option_index].name,"srp-password", strlen("srp-password"))) {
+		} else
+		if (!strncmp(long_options[option_index].name,"srp-password", strlen("srp-password")+1)) {
 		    strncpy(est_srp_pwd, optarg, MAX_PWD_LEN);
-		}
-		if (!strncmp(long_options[option_index].name,"auth-token", strlen("auth-token"))) {
+		} else
+		if (!strncmp(long_options[option_index].name,"auth-token", strlen("auth-token")+1)) {
 		    strncpy(est_auth_token, optarg, MAX_AUTH_TOKEN_LEN);
                     token_auth_mode = 1;
-		}
+		} else show_usage_and_exit();
                 break;
             case 'u':
 		strncpy(est_http_uid, optarg, MAX_UID_LEN);
@@ -314,6 +322,7 @@ int main (int argc, char **argv)
             case 'p':
 		est_port = atoi(optarg);
                 break;
+            case '?':
             default:
                 show_usage_and_exit();
                 break;
@@ -329,7 +338,7 @@ int main (int argc, char **argv)
     argv += optind;
 
     if (est_http_uid[0] && !est_http_pwd[0]) {
-	printf ("Error: The password for HTTP authentication must be specified when the HTTP user name is set.\n");
+	printf ("\nError: The password for HTTP authentication must be specified when the HTTP user name is set.\n");
 	exit(1);
     }
 
@@ -339,16 +348,20 @@ int main (int argc, char **argv)
     est_apps_startup();
         
     print_version();
-    printf("\nUsing EST server %s:%d", est_server, est_port);
+    printf("Using EST server %s:%d\n", est_server, est_port);
 
     /*
      * Read in the trusted certificates, which are used by
      * libest to verify the identity of the EST server.
      */
     trustanchor_file = getenv("EST_OPENSSL_CACERT");
+    if (!trustanchor_file) {
+	printf("\nCACERT file not set, set EST_OPENSSL_CACERT to resolve\n");
+	exit(1);
+    }
     cacerts_len = read_binary_file(trustanchor_file, &cacerts);
     if (cacerts_len <= 0) {
-        printf("\nTrusted certs file could not be read.  Did you set EST_OPENSSL_CACERT?\n");
+        printf("\nTrusted certs file %s could not be read.\n", trustanchor_file);
         exit(1);
     }
     
@@ -383,7 +396,7 @@ int main (int argc, char **argv)
     /*
      * Retrieve a copy of the cert
      */
-    new_client_cert = malloc(p7_len);
+    new_client_cert = (unsigned char *)malloc(p7_len);
     if (new_client_cert == NULL){
 	printf("\nFailed to allocate memory for the newly provisioned cert\n");
 	exit(1);
@@ -398,13 +411,15 @@ int main (int argc, char **argv)
     /*
      * Save the cert to local storage
      */
-    write_binary_file(cert_file_name, new_client_cert, p7_len);
+    if (write_binary_file(cert_file_name, new_client_cert, p7_len) < 0) {
+	exit(1);
+    }
     free(new_client_cert);
 
     /*
      * Retrieve a copy of the new trust anchor
      */
-    new_certs = malloc(ca_certs_len);
+    new_certs = (unsigned char *)malloc(ca_certs_len);
     rv = est_client_copy_cacerts(ectx, new_certs);
     if (rv != EST_ERR_NONE) {
         printf("\nFailed to copy new CA certs with code %d (%s)\n", 
@@ -416,17 +431,18 @@ int main (int argc, char **argv)
      * Your appliations should save the CA certs to local storage in case
      * they're needed for future use.
      */
-    write_binary_file(ca_file_name, new_certs, ca_certs_len); 
+    if (write_binary_file(ca_file_name, new_certs, ca_certs_len) < 0) {
+	exit(1);
+    }
     free(new_certs);
 
-    printf("\n\nSuccess!!!\n");
+    // printf("\nSuccess!!!\n");
    
     free(cacerts);
     est_destroy(ectx);
 
     est_apps_shutdown();
 
-    printf("\n");
     return 0;
 }
 

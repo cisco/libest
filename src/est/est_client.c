@@ -1,4 +1,3 @@
-/** @file */
 /*------------------------------------------------------------------
  * est/est_client.c - EST client specific code
  *
@@ -10,24 +9,25 @@
  * April, 2013
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
+
+// 2015-08-28 few stability improvements; made logging slightly more informative
+// 2015-08-13 improved TLS error handling and reporting, introducing general_ssl_error()
+// 2014-04-23 est_client_enroll_csr: priv_key can be NULL if CSR is signed
+// 2014-04-23 added EST_ERR_NO_CERT; slightly improved logging and spelling
+// 2014-06-30 further minor improvements of logging: retry-after is no error
+
+#include "est.h"
 #include <string.h>
 #include <stdlib.h>
-#include <stdint.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <openssl/ssl.h>
-#include <openssl/rand.h>
-#include "est.h"
+#include <errno.h>
 #include "est_locl.h"
 #include "est_ossl_util.h"
-#include <openssl/x509v3.h>
+#include <openssl/x509v3.h> // TODO cleanup: move general OpenSSL-related functions to est_ossl_util
 
 #define SSL_EXDATA_INDEX_INVALID -1
 
@@ -51,7 +51,7 @@ int est_client_set_cert_and_key (SSL_CTX *ctx, X509 *cert, EVP_PKEY *key)
         return 1;
     }
 
-    if (SSL_CTX_use_PrivateKey(ctx, key) <= 0) {
+    if (SSL_CTX_use_PrivateKey(ctx, key) <= 0) { // TODO bug: for RSA key, OpenSSL yields: error code 42 (EST_ERR_CLIENT_INVALID_KEY) ] [ossl_dump_ssl_errors:245]--> OSSL error: 2147860600:error:0B080074:x509 certificate routines:X509_check_private_key:key values mismatch:x509_cmp.c:344:
 
         EST_LOG_ERR("Unable to set private key");
         ossl_dump_ssl_errors();
@@ -76,7 +76,7 @@ int est_client_set_cert_and_key (SSL_CTX *ctx, X509 *cert, EVP_PKEY *key)
  */
 static int est_client_X509_REQ_sign (X509_REQ *x, EVP_PKEY *pkey, const EVP_MD *md)
 {
-    int rv;
+    int ossl_rv;
     EVP_PKEY_CTX *pkctx = NULL;
     EVP_MD_CTX mctx;
 
@@ -93,11 +93,11 @@ static int est_client_X509_REQ_sign (X509_REQ *x, EVP_PKEY *pkey, const EVP_MD *
      * encoding again rather than using the cached copy.
      */
     x->req_info->enc.modified = 1; 
-    rv = X509_REQ_sign_ctx(x, &mctx);
+    ossl_rv = X509_REQ_sign_ctx(x, &mctx);
 
     EVP_MD_CTX_cleanup(&mctx);
 
-    return (rv);
+    return (ossl_rv);
 }
 /*
  * populate_x509_request will build an x509 request buffer.  It does this by
@@ -220,6 +220,7 @@ static EST_ERROR est_generate_pkcs10 (EST_CTX *ctx, char *cn, char *cp,
  * This callback is similar to the ossl routine, but does not alter
  * the verification result.
  */
+// TODO simplify ossl_verify_cb() by calling this function, removing code overlap
 static int est_client_cacert_verify_cb (int ok, X509_STORE_CTX *ctx)
 {
     int cert_error = X509_STORE_CTX_get_error(ctx);
@@ -228,17 +229,13 @@ static int est_client_cacert_verify_cb (int ok, X509_STORE_CTX *ctx)
     EST_LOG_INFO("enter function: ok=%d cert_error=%d", ok, cert_error);
 
     if (!ok) {
-        if (current_cert) {
-            X509_NAME_print_ex_fp(stdout,
-                                  X509_get_subject_name(current_cert),
-                                  0, XN_FLAG_ONELINE);
-            printf("\n");
-        }
-        EST_LOG_INFO("%s error %d at %d depth lookup: %s\n",
-                     X509_STORE_CTX_get0_parent_ctx(ctx) ? "[CRL path]" : "",
+        EST_LOG_INFO("%svalidation error=%d (%s) at depth=%d; cert subject='%s', issuer='%s",
+                     X509_STORE_CTX_get0_parent_ctx(ctx) ? "[CRL path] " : "",
                      cert_error,
+                     X509_verify_cert_error_string(cert_error),
                      X509_STORE_CTX_get_error_depth(ctx),
-                     X509_verify_cert_error_string(cert_error));
+		     current_cert ? current_cert->name : "(no cert)" ,
+		     current_cert ? X509_NAME_oneline(X509_get_issuer_name(current_cert), NULL, 0) : "(no cert)");
     }
     return (ok);
 }
@@ -387,7 +384,7 @@ static EST_ERROR b64_decode_cacerts (unsigned char *cacerts, int *cacerts_len,
         return (EST_ERR_MALLOC);
     }
     in = BIO_push(b64, in);    
-    decoded_buf = malloc(*cacerts_len);
+    decoded_buf = (unsigned char *)malloc(*cacerts_len);
     if (decoded_buf == NULL) {
         EST_LOG_ERR("Unable to allocate CA cert buffer for decode");
         BIO_free_all(in);        
@@ -487,9 +484,8 @@ static EST_ERROR PKCS7_to_stack (PKCS7 *pkcs7, STACK_OF(X509) **stack)
 static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
                                      int *cacerts_len)
 {
-    int rv = 0;
+    EST_ERROR rv = EST_ERR_NONE;
     int failed = 0;
-    EST_ERROR est_rc = EST_ERR_NONE;
     
     X509_STORE  *trusted_cacerts_store = NULL;
     
@@ -562,8 +558,7 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
          * Is it self signed?  If so, add it in the trusted store, otherwise,
          * add it to the untrusted store.
          */
-        rv = X509_check_issued(current_cert, current_cert);
-	if (rv == X509_V_OK) {
+	if (X509_check_issued(current_cert, current_cert) == X509_V_OK) {
             EST_LOG_INFO("Adding cert to trusted store (%s)", current_cert->name);
             X509_STORE_add_cert(trusted_cacerts_store, current_cert);
         }
@@ -601,8 +596,7 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
         EST_LOG_INFO("Adding cert to store (%s)", current_cert->name);
 	X509_STORE_CTX_set_cert(store_ctx, current_cert);
         
-        rv = X509_verify_cert(store_ctx);
-        if (!rv) {
+        if (!X509_verify_cert(store_ctx)) {
             /*
              * this cert failed verification.  Log this and continue on
              */
@@ -614,7 +608,7 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
     /*
      * Finally, remove any CRLs that might be attached.
      */
-    est_rc = est_client_remove_crls(ctx, cacerts, cacerts_len, pkcs7);
+    rv = est_client_remove_crls(ctx, cacerts, cacerts_len, pkcs7);
 
     free(cacerts_decoded);
     X509_STORE_free(trusted_cacerts_store);
@@ -624,7 +618,7 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
     if (failed) {
         return (EST_ERR_CACERT_VERIFICATION);
     } else {
-        return est_rc;
+        return rv;
     }
 }
 
@@ -663,7 +657,7 @@ static int cert_verify_cb (int ok, X509_STORE_CTX *x_ctx)
     cert_error = X509_STORE_CTX_get_error(x_ctx);
     current_cert = X509_STORE_CTX_get_current_cert(x_ctx);
 
-    EST_LOG_INFO("entering: Cert passed up from OpenSSL. error = %d (%s) \n",
+    EST_LOG_INFO("entering: Cert passed up from OpenSSL. error = %d (%s) ",
                  cert_error, X509_verify_cert_error_string(cert_error));
 
     /*
@@ -676,12 +670,12 @@ static int cert_verify_cb (int ok, X509_STORE_CTX *x_ctx)
         return (approve);
     }
         
-    ssl = X509_STORE_CTX_get_ex_data(x_ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+    ssl = (SSL *)X509_STORE_CTX_get_ex_data(x_ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
     if (!ssl) {
         EST_LOG_ERR("NULL pointer retrieved for SSL session pointer from X509 ctx ex_data");
         return (approve);
     }        
-    e_ctx = SSL_get_ex_data(ssl, e_ctx_ssl_exdata_index);
+    e_ctx = (EST_CTX *)SSL_get_ex_data(ssl, e_ctx_ssl_exdata_index);
     if (!e_ctx) {
         EST_LOG_ERR("NULL pointer retrieved for EST context from SSL ex_data");
         return (approve);
@@ -711,13 +705,13 @@ static int cert_verify_cb (int ok, X509_STORE_CTX *x_ctx)
              */            
             if (e_ctx->manual_cert_verify_cb) {
                 
-                EST_LOG_INFO("EST client application server cert verify function is registered\n");
+                EST_LOG_INFO("EST client application server cert verify function is registered");
 
                 approve = e_ctx->manual_cert_verify_cb(current_cert, cert_error);
                 
             } else {
                                 
-                EST_LOG_INFO("NO EST client application server cert verify function registered\n");
+                EST_LOG_INFO("NO EST client application server cert verify function registered");
 
                 if (cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
 
@@ -791,7 +785,7 @@ EST_ERROR est_client_init_ssl_ctx (EST_CTX *ctx)
     }
         
     if ((s_ctx = SSL_CTX_new(SSLv23_client_method())) == NULL) {
-        EST_LOG_ERR("Failed to obtain a new SSL Context\n");
+        EST_LOG_ERR("Failed to obtain a new SSL Context");
         ossl_dump_ssl_errors();
         return EST_ERR_SSL_CTX_NEW;
     }
@@ -807,7 +801,7 @@ EST_ERROR est_client_init_ssl_ctx (EST_CTX *ctx)
      * limit the cipher suites that are offered
      */
     if (!SSL_CTX_set_cipher_list(s_ctx, EST_CIPHER_LIST)) { 
-        EST_LOG_ERR("Failed to set SSL cipher suites\n");
+        EST_LOG_ERR("Failed to set SSL cipher suites");
         ossl_dump_ssl_errors();
         return EST_ERR_SSL_CIPHER_LIST;
     }
@@ -892,7 +886,7 @@ static unsigned char *est_client_generate_auth_digest (EST_CTX *ctx, char *uri,
     char nonce_cnt[9] = "00000001";
     unsigned char digest[EVP_MAX_MD_SIZE];
     unsigned int d_len;
-    unsigned char *rv;
+    unsigned char *result;
 
     /*
      * Calculate HA1 using username, realm, password, and server nonce
@@ -948,14 +942,14 @@ static unsigned char *est_client_generate_auth_digest (EST_CTX *ctx, char *uri,
     EVP_DigestFinal(mdctx, digest, &d_len);
     EVP_MD_CTX_destroy(mdctx);
 
-    rv = malloc(EST_MAX_MD5_DIGEST_STR_LEN);
-    if (rv == NULL) {
+    result = (unsigned char *)malloc(EST_MAX_MD5_DIGEST_STR_LEN);
+    if (result == NULL) {
         EST_LOG_ERR("Unable to allocate memory for digest");
         return NULL;
     }
     
-    est_hex_to_str((char *)rv, digest, d_len);
-    return (rv);
+    est_hex_to_str((char *)result, digest, d_len);
+    return (result);
 }
 
 /*
@@ -1298,7 +1292,7 @@ static int est_client_build_csr_header (EST_CTX *ctx, char *hdr)
  *	ctx:	    EST context
  *	ssl:	    SSL context
  */
-static int est_client_send_csrattrs_request (EST_CTX *ctx, SSL *ssl,
+static EST_ERROR est_client_send_csrattrs_request (EST_CTX *ctx, SSL *ssl,
 					     unsigned char **csrattrs, 
 					     int *csrattrs_len)
 {
@@ -1306,7 +1300,7 @@ static int est_client_send_csrattrs_request (EST_CTX *ctx, SSL *ssl,
     int hdr_len;
     int read_size, write_size;
     unsigned char *csr_attrs_buf = NULL;
-    int rv;
+    EST_ERROR rv;
 
     /* assume defeat */
     *csrattrs = NULL;
@@ -1318,7 +1312,7 @@ static int est_client_send_csrattrs_request (EST_CTX *ctx, SSL *ssl,
      * - no data
      * - terminate it
      */    
-    http_data = malloc(EST_HTTP_REQ_TOTAL_LEN);
+    http_data = (char *)malloc(EST_HTTP_REQ_TOTAL_LEN);
     if (http_data == NULL) {
         EST_LOG_ERR("Unable to allocate memory for http_data");
         return EST_ERR_MALLOC;
@@ -1354,7 +1348,7 @@ static int est_client_send_csrattrs_request (EST_CTX *ctx, SSL *ssl,
 	ossl_dump_ssl_errors();
         rv = EST_ERR_SSL_WRITE;
     } else {
-        EST_LOG_INFO("TLS wrote %d bytes, attempted %d bytes\n",
+        EST_LOG_INFO("TLS wrote %d bytes, attempted %d bytes",
                      write_size, hdr_len);
 
 	/*
@@ -1390,6 +1384,9 @@ static int est_client_send_csrattrs_request (EST_CTX *ctx, SSL *ssl,
  *	ctx:	    EST context
  *	hdr:        pointer to the buffer to hold the header
  *      pkcs10_len: length of the buffer pointed to by hdr 
+ *
+ * Return value:
+ *	Length of the header built, or 0 on error
  */
 static int est_client_build_enroll_header (EST_CTX *ctx, char *hdr, int pkcs10_len)
 {
@@ -1423,6 +1420,9 @@ static int est_client_build_enroll_header (EST_CTX *ctx, char *hdr, int pkcs10_l
  *	ctx:	    EST context
  *	hdr:        pointer to the buffer to hold the header
  *      pkcs10_len: length of the buffer pointed to by hdr 
+ *
+ * Return value:
+ *	Length of the header built, or 0 on error
  */
 static int est_client_build_reenroll_header (EST_CTX *ctx, char *hdr, int pkcs10_len)
 {
@@ -1464,7 +1464,7 @@ static int est_client_build_reenroll_header (EST_CTX *ctx, char *hdr, int pkcs10
  *	reenroll:   Set to 1 to do a reenroll instead of an enroll
  *
  */
-int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
+EST_ERROR est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
                                     unsigned char *pkcs7, int *pkcs7_len,
 				    int reenroll)
 {
@@ -1473,7 +1473,7 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
     int write_size;
     unsigned char *enroll_buf = NULL;
     int enroll_buf_len = 0;
-    int rv;
+    EST_ERROR rv;
 
     /*
      * Assume the enroll will fail, set return length to zero
@@ -1488,7 +1488,7 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
      * - no data
      * - terminate it
      */    
-    http_data = malloc(EST_HTTP_REQ_TOTAL_LEN);
+    http_data = (char *)malloc(EST_HTTP_REQ_TOTAL_LEN);
     if (http_data == NULL) {
         EST_LOG_ERR("Unable to allocate memory for http_data");
         return EST_ERR_MALLOC;
@@ -1536,7 +1536,7 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
 	ossl_dump_ssl_errors();
         rv = EST_ERR_SSL_WRITE;
     } else {
-        EST_LOG_INFO("TLS wrote %d bytes, attempted %d bytes\n",
+        EST_LOG_INFO("TLS wrote %d bytes, attempted %d bytes",
                      write_size, hdr_len);
 
         /*
@@ -1552,8 +1552,11 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
         case EST_ERR_AUTH_FAIL:
             EST_LOG_WARN("HTTP auth failure");
             break;
+        case EST_ERR_CA_ENROLL_RETRY:
+            EST_LOG_INFO("EST request failed with a RETRY AFTER resp");
+            break;
         default:
-            EST_LOG_ERR("EST request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
+	    EST_LOG_ERR("EST request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
             break;
         }
         free(enroll_buf);
@@ -1697,7 +1700,7 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
     /*
      * Get the buffer in which to place the entire response from the server
      */
-    recv_buf = malloc(EST_CA_MAX);
+    recv_buf = (unsigned char *)malloc(EST_CA_MAX);
     new_cert_buf = recv_buf; 
     new_cert_buf_len = 0;
 
@@ -1728,7 +1731,7 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
         if (ctx->enrolled_client_cert != NULL){
             free(ctx->enrolled_client_cert);
         }
-        ctx->enrolled_client_cert = malloc(new_cert_buf_len+1);
+        ctx->enrolled_client_cert = (unsigned char *)malloc(new_cert_buf_len+1);
         if (ctx->enrolled_client_cert == NULL) {
             
             EST_LOG_ERR("Unable to allocate newly enrolled client certificate buffer");
@@ -1744,7 +1747,7 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
          */
         *pkcs7_len = ctx->enrolled_client_cert_len;
         
-        EST_LOG_INFO("Newly Enrolled Client certificate: %s", ctx->enrolled_client_cert);
+        EST_LOG_INFO("Newly Enrolled Client certificate:\n%s", ctx->enrolled_client_cert);
         EST_LOG_INFO("length: %d", ctx->enrolled_client_cert_len);
         break;
 
@@ -1752,10 +1755,12 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
         EST_LOG_INFO("HTTP Authorization failed. Requested auth mode = %d", ctx->auth_mode);
         break;
 
+    case EST_ERR_CA_ENROLL_RETRY:
+        EST_LOG_INFO("EST enrollment failed with a RETRY AFTER resp");
+        break;
+
     default:
-        
-        EST_LOG_ERR("EST enrollment failed, error code is %d (%s)", rv,
-                    EST_ERR_NUM_TO_STR(rv));
+        EST_LOG_ERR("EST enrollment failed, error code is %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
         break;
     }
 
@@ -2061,6 +2066,12 @@ static int est_client_cert_hostcheck(const char *match_pattern, const char *host
 	return 0;
     }
 
+#ifdef _MSC_VER
+    // normalize names for matching modulo localhost alias
+    if (strcmp(match_pattern, "localhost")==0) match_pattern = "127.0.0.1";
+    if (strcmp(hostname     , "localhost")==0) hostname      = "127.0.0.1";
+#endif
+
     /*
      * trival case
      */
@@ -2109,7 +2120,7 @@ static EST_ERROR est_client_verifyhost (char *hostname, X509 *server_cert)
     int addr_is_v4 = 0;
     int addr_is_v6 = 0;
     EST_ERROR res = EST_ERR_NONE;
-    int rv;
+    int rc;
     int numalts;
     int i, j;
     const GENERAL_NAME *check; 
@@ -2123,23 +2134,25 @@ static EST_ERROR est_client_verifyhost (char *hostname, X509 *server_cert)
     /*
      * Attempt to resolve host name to v4 address 
      */
-    rv = inet_pton(AF_INET, hostname, &addr_v4);
-    if (rv) {
+    rc = inet_pton(AF_INET, hostname, &addr_v4);
+    if (rc > 0) {
 	addr_is_v4 = 1;
         addrlen = sizeof(struct in_addr);
     } else {
 	/*
 	 * Try to see if hostname resolves to v6 address
 	 */
-	rv = inet_pton(AF_INET6, hostname, &addr_v6);
-	if (rv) {
+	rc = inet_pton(AF_INET6, hostname, &addr_v6);
+	if (rc > 0) {
 	    addr_is_v6 = 1;
 	    addrlen = sizeof(struct in6_addr);
+	} else {
+	    EST_LOG_WARN("SSL: Cannot resolve '%s' to IP address", hostname);
 	}
     }
 
     /* get a "list" of alternative names */
-    altnames = X509_get_ext_d2i(server_cert, NID_subject_alt_name, NULL, NULL);
+    altnames = (STACK_OF(GENERAL_NAME) *)X509_get_ext_d2i(server_cert, NID_subject_alt_name, NULL, NULL);
 
     if (altnames) {
         /* get amount of alternatives, RFC2459 claims there MUST be at least
@@ -2180,6 +2193,9 @@ static EST_ERROR est_client_verifyhost (char *hostname, X509 *server_cert)
                 break;
 
             case GEN_IPADD: /* IP address comparison */
+		if (altlen == 4) {
+		    EST_LOG_INFO("Comparing FQDN against IPv4 address %s", inet_ntoa(*((struct in_addr *)altptr)));
+		}
                 /* compare alternative IP address if the data chunk is the same size
                    our server IP address is */
                 if ((addr_is_v4) && (altlen == addrlen) && !memcmp(altptr, &addr_v4, altlen)) {
@@ -2197,13 +2213,13 @@ static EST_ERROR est_client_verifyhost (char *hostname, X509 *server_cert)
 
     if (matched == 1) {
         /* an alternative name matched the server hostname */
-        EST_LOG_INFO("subjectAltName: %s matched\n", hostname);
+        EST_LOG_INFO("subjectAltName: %s matched", hostname);
     } else if (matched == 0) {
         /* an alternative name field existed, but didn't match and then
            we MUST fail */
-        EST_LOG_INFO("subjectAltName does not match %s\n", hostname);
+        EST_LOG_INFO("subjectAltName does not match %s", hostname);
         res = EST_ERR_FQDN_MISMATCH;
-    }else  {
+    } else {
         /* we have to look to the last occurrence of a commonName in the
            distinguished one to get the most significant one. */
         i = -1;
@@ -2235,7 +2251,7 @@ static EST_ERROR est_client_verifyhost (char *hostname, X509 *server_cert)
                 if (ASN1_STRING_type(tmp) == V_ASN1_UTF8STRING) {
                     j = ASN1_STRING_length(tmp);
                     if (j >= 0) {
-                        peer_CN = malloc(j + 1);
+                        peer_CN = (unsigned char *)malloc(j + 1);
                         if (peer_CN) {
                             memcpy(peer_CN, ASN1_STRING_data(tmp), j);
                             peer_CN[j] = '\0';
@@ -2322,6 +2338,74 @@ static EST_ERROR est_client_check_fqdn (EST_CTX *ctx, SSL *ssl)
     }
 }
 
+static EST_ERROR general_ssl_error(int ssl_err)
+{
+    EST_ERROR rv = EST_ERR_SSL_CONNECT;
+    switch (ERR_peek_error()) {
+    case 0:
+	if (ssl_err == 0) {
+	    EST_LOG_ERR("Server has disconnected violating the protocol");
+	    rv = EST_ERR_SOCKET_STOP;
+	}
+	if (ssl_err == -1) {
+	    if (errno != 0) {
+		EST_LOG_WARN("SSL_connect resulted in ERRNO %d (%s)", errno, strerror(errno));
+	    }
+	    if (errno == 104) {
+		EST_LOG_WARN("Most likely the server did not accept our authentication");
+		rv = EST_ERR_AUTH_FAIL; // EST_ERR_SSL_CONNECT
+	    } else {
+		rv = EST_ERR_SYSCALL;
+	    }
+	}
+	break;
+    case 0x0D0C5006:
+	EST_LOG_ERR("Certificate/CRL signature verification failure");
+	rv = EST_ERR_AUTH_CERT;
+	break;
+    case 0x140740B5:
+	EST_LOG_ERR("No ciphers available; this may be due to the server requring SRP but the client not being SRP enabled");
+	rv = EST_ERR_SSL_CIPHER_LIST;
+	break;
+    case 0x14077410:
+	EST_LOG_ERR("No shared cipher; this error may be due to the server not being SRP enabled");
+	rv = EST_ERR_SSL_CIPHER_LIST;
+	break;
+    case 0x1407745B:
+	EST_LOG_ERR("Bad SRP username");
+	rv = EST_ERR_AUTH_SRP;
+	break;
+    case 0x1408D173:
+	EST_LOG_ERR("Bad SRP parameters");
+	rv = EST_ERR_AUTH_SRP;
+	break;
+    case 0x14090086:
+	EST_LOG_ERR("Server certificate not accepted, likely due to expiration, mismatch with trust anchor, or missing/invalid CRL");
+	rv = EST_ERR_AUTH_CERT;
+	break;
+    case 0x140943fc:
+	EST_LOG_ERR("Decryption failed or bad record mac; this error is likely due to bad SRP password");
+	rv = EST_ERR_AUTH_SRP;
+	break;
+    case 0x14094414:
+	EST_LOG_ERR("Server certificate revoked");
+	rv = EST_ERR_AUTH_CERT;
+	break;
+    case 0x14094415:
+	EST_LOG_ERR("Our certificate expired");
+	rv = EST_ERR_AUTH_CERT;
+	break;
+    case 0x14094418:
+	EST_LOG_ERR("Our certificate is not accepted, likely due to expiration, mismatch with trust anchor, or missing/invalid CRL"); // OpenSSL said: "Unknown CA"
+	rv = EST_ERR_AUTH_CERT;
+	break;
+    default:
+	ossl_dump_ssl_errors();
+	break;
+    }
+    return rv;
+}
+
 /*
  * This function will open a TCP socket and establish a TLS session
  * with the EST server.  This should be called after est_client_init().
@@ -2330,7 +2414,7 @@ static EST_ERROR est_client_check_fqdn (EST_CTX *ctx, SSL *ssl)
  *	ctx:	    Pointer to EST context for client session
  *      ssl:        pointer to an SSL context structure to return the
  *                  SSL context created,
- * Reurns:
+ * Return value:
  *	EST_ERR_NONE if success
  */
 EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
@@ -2359,7 +2443,7 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
     memset(&hints, '\0', sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_ADDRCONFIG;  
+    hints.ai_flags = AI_ADDRCONFIG;
     if ((rc = getaddrinfo(ctx->est_server, portstr, &hints, &aiptr))) {
         EST_LOG_ERR("Unable to lookup hostname %s. %s", 
 		ctx->est_server, gai_strerror(rc));
@@ -2429,10 +2513,28 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
     if (ctx->sess) {
 	SSL_set_session(*ssl, ctx->sess);
     }
-    if (SSL_connect(*ssl) <= 0) {
-        EST_LOG_ERR("Error connecting TLS context");
-	ossl_dump_ssl_errors();
-        rv = EST_ERR_SSL_CONNECT;
+    int ssl_err = SSL_connect(*ssl);
+    int err_code = SSL_get_error(*ssl, ssl_err);
+    if (ssl_err <= 0) {
+	if (err_code != SSL_ERROR_NONE && err_code != SSL_ERROR_WANT_READ && err_code != SSL_ERROR_WANT_WRITE) {
+	    EST_LOG_ERR("SSL_connect error: %d (%s)", err_code, ossl_error_string(err_code));
+	}
+	switch (err_code) {
+	case SSL_ERROR_SSL:
+	    usleep(50);  /* In case an EST_ERR_AUTH_CERT error occurred on our side, this delay helps
+			    avoiding a race condition causing est_server_handle_request() to obtain:
+			    "SSL_accept error: 5 (SSL_ERROR_SYSCALL)" with "ERRNO 104 (Connection reset by peer)"
+			    This leads the server to report the too general error EST_ERR_AUTH_FAIL, 
+			    while the error code should actually be the more specific EST_ERR_AUTH_CERT,
+			    after reporting in the log: "SSL_read error: 1 (SSL_ERROR_SSL)" */
+	case SSL_ERROR_SYSCALL:
+	    rv = general_ssl_error(ssl_err);
+	    break;
+	default:
+	    ossl_dump_ssl_errors();
+	    rv = EST_ERR_SSL_CONNECT;
+	    break;
+	}
     }
     /*
      * Now that we've established a TLS session with the EST server,
@@ -2444,8 +2546,8 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
 	/*
 	 * The host name did not match, shut down the tunnel and bail
 	 */
+        EST_LOG_ERR("EST server name did not match FQDN in server certificate.");
 	est_client_disconnect(ctx, ssl);
-        EST_LOG_WARN("EST server name did not match FQDN in server certificate.");
         rv = EST_ERR_FQDN_MISMATCH;
     }
 
@@ -2499,13 +2601,13 @@ void est_client_disconnect (EST_CTX *ctx, SSL **ssl)
  *      ca_certs_len: pointer to the unsigned int that will hold the length of the
  *                    returned CA certs.
  */
-static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
+static EST_ERROR est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
                                             int *ca_certs_len)
 {
     char *http_data;
     int  hdr_len;
     int  write_size;
-    int  rv;
+    EST_ERROR rv;
     unsigned char *ca_certs_buf = NULL;
     int  ca_certs_buf_len = 0;
 
@@ -2516,7 +2618,7 @@ static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
      * - no data
      * - terminate it
      */
-    http_data = malloc(EST_HTTP_REQ_TOTAL_LEN);
+    http_data = (char *)malloc(EST_HTTP_REQ_TOTAL_LEN);
     if (http_data == NULL) {
         EST_LOG_ERR("Unable to allocate memory for http_data");
         return EST_ERR_MALLOC;
@@ -2544,7 +2646,7 @@ static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
 	ossl_dump_ssl_errors();
         rv = EST_ERR_SSL_WRITE;
     } else {
-        EST_LOG_INFO("TLS wrote %d bytes, attempted %d bytes\n",
+        EST_LOG_INFO("TLS wrote %d bytes, attempted %d bytes",
                      write_size, hdr_len);
 
         /*
@@ -2579,7 +2681,7 @@ static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
             if (ctx->retrieved_ca_certs != NULL){
                 free(ctx->retrieved_ca_certs);
             }
-            ctx->retrieved_ca_certs = malloc(ca_certs_buf_len+1);
+            ctx->retrieved_ca_certs = (unsigned char *)malloc(ca_certs_buf_len+1);
             if (ctx->retrieved_ca_certs == NULL) {
                 
                 EST_LOG_ERR("Unable to allocate CA certs buffer");
@@ -2611,17 +2713,17 @@ static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
              */
             *ca_certs_len = ctx->retrieved_ca_certs_len;
             
-            EST_LOG_INFO("CACerts buf: %s", ctx->retrieved_ca_certs);
+            EST_LOG_INFO("CACerts buf:\n%s", ctx->retrieved_ca_certs);
             EST_LOG_INFO("CACerts length: %d", ctx->retrieved_ca_certs_len);
             break;
         case EST_ERR_AUTH_FAIL:
             EST_LOG_ERR("HTTP auth failure");
             break;
         case EST_ERR_CA_ENROLL_RETRY:
-            EST_LOG_INFO("HTTP request failed with a RETRY AFTER resp");
+            EST_LOG_INFO("EST CACerts request failed with a RETRY AFTER resp");
             break;
         default:
-            EST_LOG_ERR("EST request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
+            EST_LOG_ERR("EST CACerts request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
             break;
         }
     }
@@ -2870,7 +2972,7 @@ EST_ERROR est_client_enroll (EST_CTX *ctx, char *cn, int *pkcs7_len,
             goto err;
         }
         rv = est_client_enroll_cn(ctx, ssl, cn, pkcs7_len, new_public_key);
-        if (rv != EST_ERR_NONE) {
+        if (rv != EST_ERR_NONE && rv != EST_ERR_CA_ENROLL_RETRY) {
             EST_LOG_ERR("Enroll failed on second attempt during basic/digest authentication");
 
             /*
@@ -2985,7 +3087,7 @@ EST_ERROR est_client_provision_cert (EST_CTX *ctx, char *cn,
     if (rv != EST_ERR_NONE) {
 	return rv;
     }
-    new_ta_p7 = malloc(*ca_cert_len);
+    new_ta_p7 = (unsigned char *)malloc(*ca_cert_len);
     rv = est_client_copy_cacerts(ctx, new_ta_p7);
     if (rv != EST_ERR_NONE) {
 	free(new_ta_p7);
@@ -3147,7 +3249,7 @@ EST_ERROR est_client_reenroll (EST_CTX *ctx, X509 *cert, int *pkcs7_len, EVP_PKE
     if (!req) {
 	EST_LOG_ERR("X509 to CSR conversion failed.");
         ossl_dump_ssl_errors();
-        return (EST_ERR_NO_CSR);
+        return (EST_ERR_NO_CERT);
     }
 
     /*
@@ -3354,7 +3456,7 @@ EST_ERROR est_client_get_cacerts (EST_CTX *ctx, int *ca_certs_len)
     est_client_copy_cacerts() copies the most recently retrieved CA
     certificates from the EST server.  Once these CA certificates are copied
     to the application's buffer pointed to by ca_certs they are removed from
-    the EST clietn context.
+    the EST client context.
 
     Once the CA certificates are retrieved by the application, the EST client
     library must be reset.  When this reset is performed, the CA certificates
@@ -3411,7 +3513,8 @@ EST_ERROR est_client_copy_cacerts (EST_CTX *ctx, unsigned char *ca_certs)
  */
 EST_ERROR est_client_get_csrattrs (EST_CTX *ctx, unsigned char **csr_data, int *csr_len)
 {
-    int rv, new_csr_len, pop_required = 0;
+    EST_ERROR rv;
+    int new_csr_len, pop_required = 0;
     SSL *ssl;
     unsigned char *new_csr_data;
 
@@ -3472,7 +3575,7 @@ EST_ERROR est_client_get_csrattrs (EST_CTX *ctx, unsigned char **csr_data, int *
      * have to allocate the new memory prior to 
      * parsing to be sure it is null terminated.
      */
-    ctx->retrieved_csrattrs = malloc(new_csr_len + 1);
+    ctx->retrieved_csrattrs = (unsigned char *)malloc(new_csr_len + 1);
     if (!ctx->retrieved_csrattrs) {
         free(new_csr_data);
 	return (EST_ERR_MALLOC);
@@ -3530,7 +3633,7 @@ EST_ERROR est_client_get_csrattrs (EST_CTX *ctx, unsigned char **csr_data, int *
 EST_ERROR est_client_enable_srp (EST_CTX *ctx, int strength, char *uid, char *pwd) 
 {
     X509_STORE *store;
-    int rv;
+    int rc;
 
     if (ctx == NULL) {
 	EST_LOG_ERR("Null context passed");
@@ -3547,17 +3650,15 @@ EST_ERROR est_client_enable_srp (EST_CTX *ctx, int strength, char *uid, char *pw
         return (EST_ERR_SRP_STRENGTH_LOW);
     }
 
-    if (uid == NULL) {
+    if (uid == NULL || uid[0] == 0) {
 	EST_LOG_ERR("SRP user ID must be provided");
 	return (EST_ERR_INVALID_PARAMETERS);
     }
 
-    if (pwd == NULL) {
+    if (pwd == NULL || pwd[0] == 0) {
 	EST_LOG_ERR("SRP password must be provided");
 	return (EST_ERR_INVALID_PARAMETERS);
     }
-
-    ctx->enable_srp = 1;
 
     /*
      * Enable just the SRP cipher suites.  When SRP is enabled,
@@ -3568,14 +3669,14 @@ EST_ERROR est_client_enable_srp (EST_CTX *ctx, int strength, char *uid, char *pw
      */
     store = SSL_CTX_get_cert_store(ctx->ssl_ctx);
     if (store && store->objs && sk_X509_OBJECT_num(store->objs) > 0) {
-	EST_LOG_INFO("Enable SSL SRP cipher suites with RSA/DSS\n");
-        rv = SSL_CTX_set_cipher_list(ctx->ssl_ctx, EST_CIPHER_LIST_SRP_AUTH);
+	EST_LOG_INFO("Enabling TLS SRP cipher suites with RSA/DSS");
+        rc = SSL_CTX_set_cipher_list(ctx->ssl_ctx, EST_CIPHER_LIST_SRP_AUTH);
     } else {
-	EST_LOG_INFO("Enable SSL SRP cipher suites w/o RSA/DSS\n");
-        rv = SSL_CTX_set_cipher_list(ctx->ssl_ctx, EST_CIPHER_LIST_SRP_ONLY);
+	EST_LOG_INFO("Enabling TLS SRP cipher suites w/o RSA/DSS");
+        rc = SSL_CTX_set_cipher_list(ctx->ssl_ctx, EST_CIPHER_LIST_SRP_ONLY);
     }
-    if (!rv) { 
-	EST_LOG_ERR("Failed to set SSL SRP cipher suites\n");
+    if (!rc) { 
+	EST_LOG_ERR("Failed to set SSL SRP cipher suites");
 	ossl_dump_ssl_errors();
 	return EST_ERR_SSL_CIPHER_LIST;
     }
@@ -3584,16 +3685,18 @@ EST_ERROR est_client_enable_srp (EST_CTX *ctx, int strength, char *uid, char *pw
      * Set the SRP user name and password.  
      */
     if (!SSL_CTX_set_srp_username(ctx->ssl_ctx, uid)) {
-	EST_LOG_ERR("Unable to set SRP username\n");
+	EST_LOG_ERR("Unable to set SRP username");
 	ossl_dump_ssl_errors();
-	return EST_ERR_UNKNOWN; 
+	return EST_ERR_SRP_USERID_BAD;
     }
     if (!SSL_CTX_set_srp_password(ctx->ssl_ctx, pwd)) {
-	EST_LOG_ERR("Unable to set SRP password\n");
+	EST_LOG_ERR("Unable to set SRP password");
 	ossl_dump_ssl_errors();
-	return EST_ERR_UNKNOWN; 
+	return EST_ERR_SRP_PWD_BAD;
     }
     SSL_CTX_set_srp_strength(ctx->ssl_ctx, strength);
+
+    ctx->enable_srp = 1;
 
     EST_LOG_INFO("TLS-SRP enabled");
 
@@ -3630,7 +3733,7 @@ EST_ERROR est_client_enable_srp (EST_CTX *ctx, int strength, char *uid, char *pw
     @return EST_ERROR.  If error, NULL.
 */
 EST_ERROR est_client_set_auth (EST_CTX *ctx, const char *uid, const char *pwd,
-                               X509 *client_cert, EVP_PKEY *private_key)
+                               X509 *client_cert, EVP_PKEY *client_key)
 {
     EST_ERROR rv = EST_ERR_NONE;
     
@@ -3638,6 +3741,10 @@ EST_ERROR est_client_set_auth (EST_CTX *ctx, const char *uid, const char *pwd,
 	EST_LOG_ERR("Null context passed");
         return (EST_ERR_NO_CTX);
     }    
+
+    if ((uid || pwd) && ctx->enable_srp) {
+	EST_LOG_WARN("http authentication used together with SRP");
+    }
 
     rv = est_client_set_uid_pw(ctx, uid, pwd);
     if (rv != EST_ERR_NONE) {
@@ -3652,11 +3759,11 @@ EST_ERROR est_client_set_auth (EST_CTX *ctx, const char *uid, const char *pwd,
      */
     
     if (client_cert && (uid == NULL && pwd == NULL)) {
-      if (!private_key) {
+      if (!client_key) {
 	return EST_ERR_NO_KEY;
       }
       else {	
-	  rv = ossl_check_cert(client_cert, private_key, ctx->ssl_ctx);
+	  rv = ossl_check_cert(client_cert, client_key, ctx->ssl_ctx);
 	  if (rv != EST_ERR_NONE) {
 	    return (rv);
 	  }
@@ -3668,7 +3775,7 @@ EST_ERROR est_client_set_auth (EST_CTX *ctx, const char *uid, const char *pwd,
      * cache away the client cert and the associated private key, then
      * get them loaded into the SSL context so that they'll be used.
      */
-    ctx->client_key = private_key;
+    ctx->client_key = client_key;
     ctx->client_cert = client_cert;
     
     /*
@@ -3680,7 +3787,7 @@ EST_ERROR est_client_set_auth (EST_CTX *ctx, const char *uid, const char *pwd,
             return EST_ERR_CLIENT_INVALID_KEY;
         }
     } else {
-        EST_LOG_WARN("Not using client certificate for TLS session, HTTP basic or digest auth will be used.");
+        EST_LOG_WARN("Not using client certificate for TLS session");
     }
     
     return EST_ERR_NONE;
@@ -3820,7 +3927,7 @@ EST_CTX *est_client_init (unsigned char *ca_chain, int ca_chain_len,
 {
     EST_CTX *ctx;
     volatile int len;
-    int rv;
+    EST_ERROR rv;
 
     if (cert_format != EST_CERT_FORMAT_PEM) {
         EST_LOG_ERR("Only PEM encoding of certificates is supported.");
@@ -3841,7 +3948,7 @@ EST_CTX *est_client_init (unsigned char *ca_chain, int ca_chain_len,
         }
     }
     
-    ctx = malloc(sizeof(EST_CTX));
+    ctx = (EST_CTX *)malloc(sizeof(EST_CTX));
     if (!ctx) {
         EST_LOG_ERR("Unable to allocate memory for EST Context");
         return NULL;
@@ -3861,7 +3968,7 @@ EST_CTX *est_client_init (unsigned char *ca_chain, int ca_chain_len,
 
     rv = est_client_init_ssl_ctx(ctx);
     if (rv != EST_ERR_NONE) {
-        EST_LOG_ERR("Failed to initialize SSL context with certificiate and private key passed");
+        EST_LOG_ERR("Failed to initialize SSL context with certificate and private key passed");
         est_destroy(ctx);
         return NULL;
     }

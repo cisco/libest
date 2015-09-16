@@ -1,3 +1,18 @@
+/*------------------------------------------------------------------
+ * README for EST server
+ *
+ * March, 2014
+ *
+ * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * Copyright (c) 2014 Siemens AG
+ * License: 3-clause ("New") BSD License
+ * All rights reserved.
+ *------------------------------------------------------------------
+ */
+
+// 2015-08-07 re-added -e option
+// 2014-06-26 minor enhancements; added text on manual/external enrollments
+
 This directory contains a sample EST server application.  It utilizes
 libest for the EST stack and OpenSSL for basic CA services. 
 
@@ -25,31 +40,46 @@ To run the example:
     directory, which contains the CA database.  Your host resident
     copy of openssl should support ECC certificates.
 
-3.  Run the runserver.sh script to start the server.  The server
-    will listen on port 8085.
+3.  Run the runserver.sh script to start the server.
+    The server will listen by default on port 8085.
+    You may use the -v option to obtain verbose status updates.
 
 4.  Use an EST client to exercise the server.
 
+
+CA enrollment
+-------------
+By default, the example server emulates the CA issuing certificates.
+It does so immediately unless you give the -m option for simulating
+manual enrollment. The numerical argument of this option specifies 
+the number of seconds the client shall wait before asking again and 
+eventually obtaining the certificate issued by the server.
+There is also the -e option for enrollment by an external CA: 
+the CSR is then written to a file named 'csr.p10', which may then be
+picked up by an external CA (or by some manual process).
+When a file named 'cert.cer' appears, the EST server returns this as
+its response to the EST client. If supported by the server code,
+the numerical argument of this option specifies the number of seconds
+the client shall wait before checking again if the answer is ready.
 
 
 Certificate Revocation
 ----------------------
 libest supports CRL checks when verifying the client certificate.
 To use this, the CA cert chain file, which is a PEM file, should have
-the CRL records appended to it.  To generate the CRL, follow
-this example:
+the CRL records appended to it. To generate the CRL, follow this example:
 
     # revoke a certificate, repeat as needed
-    openssl ca -config ./estExampleCA.cnf  -revoke certtorevoke.pem 
+    openssl ca -config ./estExampleCA.cnf -revoke certtorevoke.pem 
     # generate the CRL
-    openssl ca -config ./estExampleCA.cnf  -gencrl -out crl.pem
+    openssl ca -config ./estExampleCA.cnf -gencrl -out crl.pem
     # append the CRL to the CA certs
     cat crl.pem >> estCA/cacert.crt 
 
 
 TLS-SRP support
 ---------------------
-To enable TLS-SRP use the -s switch when starting estserver.  You'll
+To enable TLS-SRP use the --srp switch when starting estserver.  You'll
 need to provide the SRP verifier file to be used.  This can be generated
 using OpenSSL.  An example follows:
 

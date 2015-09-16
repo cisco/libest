@@ -4,9 +4,12 @@
  * November, 2012
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
+
 /* Portions of this code (as indicated) are derived from the Internet Draft
 ** draft-ietf-http-authentication-03 and are covered by the following
 ** copyright:
@@ -36,17 +39,19 @@
 ** INFRINGE ANY RIGHTS OR ANY IMPLIED WARRANTIES OF MERCHANTABILITY OR
 ** FITNESS FOR A PARTICULAR PURPOSE.
 **/
+
+// 2015-08-13 improved error reporting and handling
+
+#include "est.h"
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <limits.h>
 #include <openssl/ssl.h>
 #include <assert.h>
-#include "est.h"
 #include "est_locl.h"
 #include "est_server_http.h"
 #include "est_ossl_util.h"
-
-#define INT_MAX         (  2147483647 )
 
 #ifdef RETRY_AFTER_DELAY_TIME_SUPPORT
 
@@ -685,7 +690,7 @@ static char * HTNextField (char ** pstr)
  */
 static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
 {
-    int rv = EST_ERR_NONE;
+    EST_ERROR rv = EST_ERR_NONE;
     char *p = hdr;
     char *token = NULL;
     char *value = NULL;
@@ -786,23 +791,23 @@ typedef struct {
     char *value;         // HTTP header value
 } HTTP_HEADER;
 #define MAX_HEADERS 16
-static HTTP_HEADER * parse_http_headers (unsigned char **buf, int *num_headers)
+static HTTP_HEADER * parse_http_headers (char **buf, int *num_headers)
 {
     int i;
     HTTP_HEADER *hdrs;
     char *hdr_end;
 
     *num_headers = 0;
-    hdrs = malloc(sizeof(HTTP_HEADER) * MAX_HEADERS);
+    hdrs = (HTTP_HEADER *)malloc(sizeof(HTTP_HEADER) * MAX_HEADERS);
     if (!hdrs) {
         EST_LOG_ERR("malloc failure");
         return (NULL);
     }
 
     /*
-     * Find offset of header deliminter
+     * Find offset of header delimiter
      */
-    hdr_end = strstr((const char *)*buf, "\r\n\r\n");
+    hdr_end = strstr(*buf, "\r\n\r\n");
 
     /*
      * Skip the first line
@@ -812,18 +817,16 @@ static HTTP_HEADER * parse_http_headers (unsigned char **buf, int *num_headers)
     for (i = 0; i < MAX_HEADERS; i++) {
         hdrs[i].name = skip_quoted((char **)buf, ":", " ", 0);
         hdrs[i].value = skip((char **)buf, "\r\n");
-        fflush(stdout);
-        EST_LOG_INFO("Found HTTP header -> %s:%s", hdrs[i].name, hdrs[i].value);
-        fflush(stdout);
+        EST_LOG_INFO("Found HTTP header -> %s: %s", hdrs[i].name, hdrs[i].value);
         if (hdrs[i].name[0] == '\0') {
             break;
         }
         *num_headers = i + 1;
-        if ((*buf) > (unsigned char *)hdr_end) {
+        if ((*buf) > hdr_end) {
             break;
         }
     }
-    EST_LOG_INFO("Found %d HTTP headers\n", *num_headers);
+    EST_LOG_INFO("Found %d HTTP headers", *num_headers);
     return (hdrs);
 }
 
@@ -998,7 +1001,7 @@ static EST_ERROR est_io_parse_http_retry_after_resp (EST_CTX *ctx,
              * or is an integer representing the number of seconds
              * that the client must wait.
              */
-            if (isalpha(*(char *)hdrs[i].value)) {
+            if (isalpha((int)*(hdrs[i].value))) {
 #ifdef RETRY_AFTER_DELAY_TIME_SUPPORT
                 int rc;
                 /*
@@ -1045,8 +1048,8 @@ static EST_ERROR est_io_parse_http_retry_after_resp (EST_CTX *ctx,
 
 /*
  * This function verifies the content type header and also
- * returns the length of of the content header.  The
- * content type is important.  For example, the content
+ * returns the length of the content header, or -EST_ERROR.
+ * The content type is important.  For example, the content
  * type is expected to be pkcs7 on a simple enrollment.
  */
 static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
@@ -1070,7 +1073,7 @@ static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
             status_present = 1;
             if (strncmp(hdrs[i].value, "200 OK", 6)) {
                 EST_LOG_ERR("HTTP status is not 200");
-                return 0;
+                return -EST_ERR_UNKNOWN;
             }
         } else {
             /*
@@ -1087,7 +1090,7 @@ static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
                          strnlen(est_op_map[op].content_type, est_op_map[op].length));
                 if (cmp_result) {
                     EST_LOG_ERR("HTTP content type is %s", hdrs[i].value);
-                    return 0;
+                    return -EST_ERR_BAD_CONTENT_TYPE;
                 }
             } else {
                 /*
@@ -1105,15 +1108,19 @@ static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
     /*
      * Make sure all the necessary headers were present.
      */
-    if (status_present == 0 ) {
-        EST_LOG_ERR("Missing HTTP status header");
-        return 0;
-    } else if (content_type_present == 0 ) {
-        EST_LOG_ERR("Missing HTTP content type  header");
-        return 0;
-    } else if (content_length_present == 0 ) {
+    if (op != EST_GET_CSRATTRS) {
+	if (status_present == 0 ) {
+	    EST_LOG_ERR("Missing HTTP status header");
+	    return -EST_ERR_UNKNOWN;
+	} 
+	if (content_type_present == 0 ) {
+	    EST_LOG_ERR("Missing HTTP content type header");
+	    return -EST_ERR_BAD_CONTENT_TYPE;
+	}
+    }
+    if (content_length_present == 0 ) {
         EST_LOG_ERR("Missing HTTP content length header");
-        return 0;
+        return -EST_ERR_BAD_CONTENT_LEN;
     } 
     
     return cl;
@@ -1155,7 +1162,7 @@ static int est_ssl_read (SSL *ssl, unsigned char *buf, int buf_max,
  * This function extracts data from the SSL context and puts
  * it into a buffer.
  */
-static int est_io_read_raw (SSL *ssl, unsigned char *buf, int buf_max,
+static EST_ERROR est_io_read_raw (SSL *ssl, unsigned char *buf, int buf_max,
                             int *read_cnt, int sock_read_timeout)
 {
     int cur_cnt;
@@ -1164,7 +1171,7 @@ static int est_io_read_raw (SSL *ssl, unsigned char *buf, int buf_max,
     *read_cnt = 0;
     cur_cnt  = est_ssl_read(ssl, buf, buf_max, sock_read_timeout);
     if (cur_cnt < 0) {
-        EST_LOG_ERR("TLS read error 1");
+        EST_LOG_ERR("TLS read error");
 	ossl_dump_ssl_errors();
         return (EST_ERR_SSL_READ);
     }
@@ -1205,7 +1212,7 @@ static int est_io_read_raw (SSL *ssl, unsigned char *buf, int buf_max,
 EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
                                unsigned char **buf, int *payload_len)
 {
-    int rv = EST_ERR_NONE;
+    EST_ERROR rv = EST_ERR_NONE;
     HTTP_HEADER *hdrs;
     int hdr_cnt;
     int http_status;
@@ -1213,7 +1220,7 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
     int raw_len = 0;
     
 
-    raw_buf = malloc(EST_CA_MAX);
+    raw_buf = (unsigned char *)malloc(EST_CA_MAX);
     if (raw_buf == NULL) {
         EST_LOG_ERR("Unable to allocate memory");
         return EST_ERR_MALLOC;
@@ -1242,7 +1249,7 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
      * Look for status 200 for success
      */
     http_status = est_io_parse_response_status_code(raw_buf);
-    hdrs = parse_http_headers(&payload, &hdr_cnt);
+    hdrs = parse_http_headers((char **)&payload, &hdr_cnt);
     EST_LOG_INFO("HTTP status %d received", http_status);
 
     /*
@@ -1261,7 +1268,7 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
         } else if (http_status == 404) {
             rv = EST_ERR_HTTP_NOT_FOUND;            
         } else {
-            rv = EST_ERR_UNKNOWN;
+            rv = EST_ERR_HTTP_NO_CONTENT;
         }
         break;
     case 202:
@@ -1309,7 +1316,11 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
          * of data.
          */
         *payload_len = est_io_check_http_hdrs(hdrs, hdr_cnt, op);
-        EST_LOG_INFO("HTTP Content len=%d", *payload_len);
+	if (*payload_len < 0) {
+	    rv = (EST_ERROR)-*payload_len;
+	} else {
+	    EST_LOG_INFO("HTTP Content len=%d", *payload_len);
+	}
 
         if (*payload_len > EST_CA_MAX) {
             EST_LOG_ERR("Content Length larger than maximum value of %d.",
@@ -1317,14 +1328,14 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
             rv = EST_ERR_UNKNOWN;
             *payload_len = 0;
             *buf = NULL;
-        } else if (*payload_len == 0) {
+        } else if (*payload_len <= 0) {
             *payload_len = 0;
             *buf = NULL;
         } else {
             /*
              * Allocate the buffer to hold the payload to be passed back
              */
-            payload_buf = malloc(*payload_len);   
+            payload_buf = (unsigned char *)malloc(*payload_len);
             if (!payload_buf) {
                 EST_LOG_ERR("Unable to allocate memory");
                 free(raw_buf);

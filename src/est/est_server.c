@@ -1,21 +1,27 @@
-/** @file */
 /*------------------------------------------------------------------
  * est/est_server.c - EST Server specific code
  *
  *	       Assumptions:  - Web server using this module utilizes
  *	                       OpenSSL for HTTPS services.
  *	                     - OpenSSL is linked along with this
- *	                       modulue.
+ *	                       module.
  *
  * April, 2013
  *
  * Copyright (c) 2013-2014 by cisco Systems, Inc.
+ * Copyright (c) 2015 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
+
+// 2015-08-13 improved logging and error handling, preventing NULL pointer access
+// 2014-04-23 added est_set_http_auth_required to prevent forcing http auth
+// 2014-04-23 improved error return codes; minor spell corrections
+// 2014-04-23 corrected documentation of callback functions
+
 #include <string.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include "est.h"
 #include "est_server_http.h"
 #include "est_locl.h"
@@ -79,7 +85,7 @@ EST_ERROR est_server_send_http_retry_after (EST_CTX *ctx, void *http_ctx, int de
 	EST_HTTP_HDR_EOL);
 
     conn->status_code = EST_HTTP_STAT_202;
-    if (!mg_write(http_ctx, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
+    if (!mg_write(conn, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
         EST_LOG_ERR("HTTP write error while propagating retry-after");
         return (EST_ERR_HTTP_WRITE);
     }
@@ -90,15 +96,17 @@ EST_ERROR est_server_send_http_retry_after (EST_CTX *ctx, void *http_ctx, int de
  * This function handles an incoming cacerts request from
  * the client.
  */
-int est_handle_cacerts (EST_CTX *ctx, void *http_ctx)
+EST_ERROR est_handle_cacerts (EST_CTX *ctx, void *http_ctx)
 {
     char http_hdr[EST_HTTP_HDR_MAX];
     int hdrlen;
+    struct mg_connection *conn = (struct mg_connection*)http_ctx;
 
     if (ctx->ca_certs  == NULL) {
         return (EST_ERR_HTTP_NOT_FOUND);
     }
-        
+    EST_LOG_INFO("CACerts to be sent:\n%.*s", ctx->ca_certs_len, ctx->ca_certs);
+
     /*
      * Send HTTP header
      */
@@ -113,14 +121,14 @@ int est_handle_cacerts (EST_CTX *ctx, void *http_ctx)
     hdrlen = strnlen(http_hdr, EST_HTTP_HDR_MAX);
     snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
              ctx->ca_certs_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
-    if (!mg_write(http_ctx, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
+    if (!mg_write(conn, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
         return (EST_ERR_HTTP_WRITE);
     }
 
     /*
      * Send the CA certs in the body
      */
-    if (!mg_write(http_ctx, ctx->ca_certs, ctx->ca_certs_len)) {
+    if (!mg_write(conn, ctx->ca_certs, ctx->ca_certs_len)) {
         return (EST_ERR_HTTP_WRITE);
     }
     
@@ -201,7 +209,7 @@ char *est_server_generate_auth_digest (EST_HTTP_AUTH_HDR *ah, char *HA1)
     EVP_DigestFinal(mdctx, digest, &d_len);
     EVP_MD_CTX_destroy(mdctx);
 
-    rv = malloc(33);
+    rv = (char *)malloc(33);
     est_hex_to_str(rv, digest, d_len);
     return (rv);
 }
@@ -216,7 +224,7 @@ static EST_HTTP_AUTH_HDR * est_create_ah()
 {
     EST_HTTP_AUTH_HDR *ah;
 
-    ah = malloc(sizeof(EST_HTTP_AUTH_HDR));
+    ah = (EST_HTTP_AUTH_HDR *)malloc(sizeof(EST_HTTP_AUTH_HDR));
     memset(ah, 0, sizeof(EST_HTTP_AUTH_HDR));
     return (ah);
 }
@@ -330,19 +338,19 @@ EST_AUTH_STATE est_enroll_auth (EST_CTX *ctx, void *http_ctx, SSL *ssl,
 	    }
 	    break;
         case EST_AUTH_HDR_MISSING:
-            // ask client to send us authorization headers
-            mg_send_authorization_request(conn);
-	    EST_LOG_INFO("HTTP auth headers missing, sending HTTP auth request to client.");
-            rv = EST_HTTP_AUTH_PENDING;
+	    if (reenroll && rv == EST_CERT_AUTH) {
+		EST_LOG_INFO("Client cert was authenticated, HTTP auth not required for reenroll");
+	    } else {
+		// ask client to send us authorization headers
+		mg_send_authorization_request(conn);
+		EST_LOG_INFO("HTTP auth headers missing, sending HTTP auth request to client.");
+		rv = EST_HTTP_AUTH_PENDING;
+	    }
 	    break;
         case EST_AUTH_HDR_BAD:
 	default:
-            EST_LOG_WARN("Client sent incomplete HTTP authorization header"); 
-	    if (reenroll && rv == EST_CERT_AUTH) {
-		EST_LOG_INFO("Client cert was authenticated, HTTP auth not required for reenroll"); 
-	    } else {
-		rv = EST_UNAUTHORIZED;
-	    }
+            EST_LOG_ERR("Client sent bad or incomplete HTTP authorization header"); 
+	    rv = EST_UNAUTHORIZED;
 	    break;
 	}
 	est_destroy_ah(ah);
@@ -377,7 +385,7 @@ static int est_check_cmcRA (X509 *cert)
      * loop through the values and look for the ik-kp-cmcRA
      * value in this extension.
      */
-    if((extusage = X509_get_ext_d2i(cert, NID_ext_key_usage, NULL, NULL))) {
+    if((extusage = (EXTENDED_KEY_USAGE *)X509_get_ext_d2i(cert, NID_ext_key_usage, NULL, NULL))) {
 	/*
 	 * Iterate through the extended key usage values
 	 */
@@ -460,7 +468,7 @@ X509_REQ * est_server_parse_csr (unsigned char *pkcs10, int pkcs10_len)
  * Return value:
  *	EST_ERR_NONE when PoP check passes
  */
-int est_tls_uid_auth (EST_CTX *ctx, SSL *ssl, X509_REQ *req) 
+EST_ERROR est_tls_uid_auth (EST_CTX *ctx, SSL *ssl, X509_REQ *req) 
 {
     X509_ATTRIBUTE *attr;
     int i, j;
@@ -468,7 +476,7 @@ int est_tls_uid_auth (EST_CTX *ctx, SSL *ssl, X509_REQ *req)
     ASN1_TYPE *at;
     ASN1_BIT_STRING *bs = NULL;
     ASN1_TYPE *t;
-    int rv = EST_ERR_NONE;
+    EST_ERROR rv = EST_ERR_NONE;
     char *tls_uid;
 
     /*
@@ -683,7 +691,7 @@ static int est_server_csr_asn1_parse (EST_OID_LIST **list, const unsigned char *
 	    if (tag == V_ASN1_OBJECT) {
 		opp = op;
 		if (d2i_ASN1_OBJECT(&a_object, &opp, len+hl) != NULL) {
-		    new_entry = malloc(sizeof(EST_OID_LIST));
+		    new_entry = (EST_OID_LIST *)malloc(sizeof(EST_OID_LIST));
 		    if (!new_entry) {
 			EST_LOG_ERR("malloc failure");
 			est_server_free_csr_oid_list(*list);
@@ -732,7 +740,7 @@ static EST_ERROR est_server_build_csr_oid_list (EST_OID_LIST **list, char *body,
     /*
      * grab some space to hold the decoded CSR data
      */
-    der_ptr = der_data = malloc(body_len*2);
+    der_ptr = der_data = (unsigned char *)malloc(body_len*2);
     if (!der_data) {
 	EST_LOG_ERR("malloc failed");
         return (EST_ERR_MALLOC);
@@ -811,7 +819,7 @@ static EST_ERROR est_server_all_csrattrs_present(EST_CTX *ctx, char *body, int b
 	    return (EST_ERR_CB_FAILED);
 	}
     } else {
-        csr_data = malloc(ctx->server_csrattrs_len + 1);
+        csr_data = (char *)malloc(ctx->server_csrattrs_len + 1);
 	if (!csr_data) {
 	    EST_LOG_ERR("malloc failure");
 	    est_server_free_csr_oid_list(csr_attr_oids);
@@ -837,7 +845,7 @@ static EST_ERROR est_server_all_csrattrs_present(EST_CTX *ctx, char *body, int b
     /*
      * grab some space to hold the decoded CSR data
      */
-    der_data = malloc(csr_len*2);
+    der_data = (unsigned char *)malloc(csr_len*2);
     if (!der_data) {
 	EST_LOG_ERR("malloc failed");
 	est_server_free_csr_oid_list(csr_attr_oids);
@@ -987,7 +995,8 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
                                            const char *ct, char *body, int body_len,
 				     int reenroll)
 {
-    int rv, cert_len;
+    EST_ERROR rv;
+    int cert_len;
     struct mg_connection *conn = (struct mg_connection*)http_ctx;
     unsigned char *cert;
     char http_hdr[EST_HTTP_HDR_MAX];
@@ -1023,7 +1032,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
     case EST_CERT_AUTH:
 	/*
 	 * this means the user was authorized, either through
-	 * HTTP authoriztion or certificate authorization
+	 * HTTP authentication or certificate authentication
 	 */
         break;
     case EST_HTTP_AUTH_PENDING:
@@ -1067,8 +1076,8 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
 
     /*
      * Do the PoP check (Proof of Possession).  The challenge password
-     * in the pkcs10 request should match the TLS uniqe ID.
-     * The PoP check is not performend when the client is an RA.
+     * in the pkcs10 request should match the TLS unique ID.
+     * The PoP check is not performed when the client is an RA.
      */
     if (!client_is_ra) {
 	rv = est_tls_uid_auth(ctx, ssl, csr);
@@ -1081,7 +1090,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
 
     if (reenroll && !client_is_ra && peer_cert) {
 	/*
-	 * As specified in RFC 7030 section 2.3, the TLS peer certitificate
+	 * As specified in RFC 7030 section 2.3, the TLS peer certificate
 	 * is not necessarily the one that is being re-enrolled. Thus:
 	 * TODO generalize this invocation of the subject name match check
 	 * such that it takes into account also other sources of the previous cert.
@@ -1090,7 +1099,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
 	if (rv != EST_ERR_NONE) {
 	    X509_REQ_free(csr);
 	    X509_free(peer_cert);
-	    return (EST_ERR_SUBJECT_MISMATCH);
+	    return (rv);
 	}	
     }
 
@@ -1140,7 +1149,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
         hdrlen = strnlen(http_hdr, EST_HTTP_HDR_MAX);
         snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
                  cert_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
-        if (!mg_write(http_ctx, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
+        if (!mg_write(conn, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
             free(cert);
 	    X509_REQ_free(csr);
             return (EST_ERR_HTTP_WRITE);
@@ -1149,7 +1158,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
         /*
          * Send the signed PKCS7 certificate in the body
          */
-        if (!mg_write(http_ctx, cert, cert_len)) {
+        if (!mg_write(conn, cert, cert_len)) {
             free(cert);
 	    X509_REQ_free(csr);
             return (EST_ERR_HTTP_WRITE);
@@ -1162,7 +1171,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
          * the CA is not configured for automatic enrollment.
          * Send the HTTP retry response to the client.
          */
-        EST_LOG_INFO("CA server requests retry, possibly it's not setup for auto-enroll");
+        EST_LOG_INFO("CA server requests retry, possibly it's not set up for auto-enroll");
         if (EST_ERR_NONE != est_server_send_http_retry_after(ctx, http_ctx, ctx->retry_period)) { 
 	    X509_REQ_free(csr);
             return (EST_ERR_HTTP_WRITE);
@@ -1180,9 +1189,9 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
  * This function is used by the server to process and incoming
  * csr attributes request from the client.
  */
-static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx)
+static EST_ERROR est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx)
 {
-    int rv = EST_ERR_NONE;
+    EST_ERROR rv = EST_ERR_NONE;
     int pop_present;
     char *csr_data, *csr_data_pop;
     int csr_len, csr_pop_len;
@@ -1194,7 +1203,7 @@ static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx)
 		est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NO_CONTENT);
 		return (EST_ERR_NONE);
         } else {
-	  csr_data = malloc(EST_CSRATTRS_POP_LEN + 1);
+	    csr_data = (char *)malloc(EST_CSRATTRS_POP_LEN + 1);
 	    if (!csr_data) {
                 return (EST_ERR_MALLOC);
 	    }
@@ -1236,7 +1245,7 @@ static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx)
 
 	    if (!ctx->csr_pop_present) {
 		if (csr_len == 0) {
-                    csr_data = malloc(EST_CSRATTRS_POP_LEN + 1);
+                    csr_data = (char *)malloc(EST_CSRATTRS_POP_LEN + 1);
 		    if (!csr_data) {
 			return (EST_ERR_MALLOC);
 		    }
@@ -1260,7 +1269,7 @@ static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx)
 	    }
 	}
     } else {
-        csr_data = malloc(ctx->server_csrattrs_len + 1);
+        csr_data = (char *)malloc(ctx->server_csrattrs_len + 1);
 	if (!csr_data) {
             return (EST_ERR_MALLOC);
         }
@@ -1268,6 +1277,7 @@ static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx)
 	csr_data[ctx->server_csrattrs_len] = 0;
 	csr_len = ctx->server_csrattrs_len;
     }
+    EST_LOG_INFO("CSR attributes to be sent:\n%.*s", csr_len, csr_data);
     return (est_send_csrattr_data(ctx, csr_data, csr_len, http_ctx));
 }
 
@@ -1286,12 +1296,13 @@ static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx)
  *	body_len:   length of HTML body
  *	ct:         HTML content type header
  */
-int est_http_request (EST_CTX *ctx, void *http_ctx,
+EST_ERROR est_http_request (EST_CTX *ctx, void *http_ctx,
                       char *method, char *uri,
                       char *body, int body_len, const char *ct)
 {
     SSL *ssl;
-    int rc;
+    EST_ERROR rc;
+    struct mg_connection *conn = (struct mg_connection*)http_ctx;
 
     if (!ctx) {
 	EST_LOG_ERR("Null context");
@@ -1328,12 +1339,12 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     else if (strncmp(uri, EST_SIMPLE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strncmp(method, "POST", 4)) {
-            EST_LOG_WARN("Incoming HTTP request used wrong method\n");
+            EST_LOG_WARN("Incoming HTTP request used wrong method");
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
             return (EST_ERR_WRONG_METHOD);
         }
 	if (!ct) {
-            EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
+            EST_LOG_WARN("Incoming HTTP header has no Content-Type header");
             est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
 	    return (EST_ERR_BAD_CONTENT_TYPE); 
 	}
@@ -1341,7 +1352,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
          * Get the SSL context, which is required for authenticating
          * the client.
          */
-        ssl = (SSL*)mg_get_conn_ssl(http_ctx);
+        ssl = (SSL *)mg_get_conn_ssl(conn);
         if (!ssl) {
             est_send_http_error(ctx, http_ctx, EST_ERR_NO_SSL_CTX);
             return (EST_ERR_NO_SSL_CTX);
@@ -1349,13 +1360,12 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
 
         rc = est_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, 0);
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
-            EST_LOG_WARN("Enrollment failed with rc=%d (%s)\n", 
+            EST_LOG_WARN("Enrollment failed with rc=%d (%s)",
 		         rc, EST_ERR_NUM_TO_STR(rc));
-	    if (rc == EST_ERR_AUTH_FAIL) {
-		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
-	    } else {
-		est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
+	    if (rc != EST_ERR_AUTH_FAIL && rc != EST_ERR_CA_ENROLL_FAIL) {
+		rc = EST_ERR_BAD_PKCS10;
 	    }
+	    est_send_http_error(ctx, http_ctx, rc);
             return rc;
         }
     }
@@ -1366,12 +1376,12 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     else if (strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strncmp(method, "POST", 4)) {
-            EST_LOG_WARN("Incoming HTTP request used wrong method\n");
+            EST_LOG_WARN("Incoming HTTP request used wrong method");
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
             return (EST_ERR_WRONG_METHOD);
         }
 	if (!ct) {
-            EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
+            EST_LOG_WARN("Incoming HTTP header has no Content-Type header");
             est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
 	    return (EST_ERR_BAD_CONTENT_TYPE); 
 	}
@@ -1379,7 +1389,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
          * Get the SSL context, which is required for authenticating
          * the client.
          */
-        ssl = (SSL*)mg_get_conn_ssl(http_ctx);
+        ssl = (SSL *)mg_get_conn_ssl(conn);
         if (!ssl) {
             est_send_http_error(ctx, http_ctx, EST_ERR_NO_SSL_CTX);
             return (EST_ERR_NO_SSL_CTX);
@@ -1387,7 +1397,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
 
         rc = est_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, 1);
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
-            EST_LOG_WARN("Reenroll failed with rc=%d (%s)\n", 
+            EST_LOG_WARN("Re-enrollment failed with rc=%d (%s)",
 		         rc, EST_ERR_NUM_TO_STR(rc));
 	    if (rc == EST_ERR_AUTH_FAIL) {
 		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
@@ -1406,12 +1416,12 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     else if (strncmp(uri, EST_KEYGEN_URI, EST_URI_MAX_LEN) == 0) {
         /* Only POST is allowed */
         if (strncmp(method, "POST", 4)) {
-            EST_LOG_WARN("Incoming HTTP request used wrong method\n");
+            EST_LOG_WARN("Incoming HTTP request used wrong method");
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
             return (EST_ERR_WRONG_METHOD);
         }
 	if (!ct) {
-            EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
+            EST_LOG_WARN("Incoming HTTP header has no Content-Type header");
 	    return (EST_ERR_BAD_CONTENT_TYPE); 
 	}
         if (est_handle_keygen(ctx)) {
@@ -1427,7 +1437,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     else if (strncmp(uri, EST_CSR_ATTRS_URI, EST_URI_MAX_LEN) == 0) {
         /* Only GET is allowed */
         if (strncmp(method, "GET", 4)) {
-            EST_LOG_WARN("Incoming HTTP request used wrong method\n");
+            EST_LOG_WARN("Incoming HTTP request used wrong method");
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
             return (EST_ERR_WRONG_METHOD);
         }
@@ -1473,8 +1483,8 @@ EST_ERROR est_server_start (EST_CTX *ctx)
     }
 
     mgctx = mg_start(ctx);
+    ctx->mg_ctx = mgctx;
     if (mgctx) {
-        ctx->mg_ctx = mgctx;
         return (EST_ERR_NONE);
     } else {
         return (EST_ERR_NO_SSL_CTX);
@@ -1607,7 +1617,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
         return NULL;
     }
 
-    ctx = malloc(sizeof(EST_CTX));
+    ctx = (EST_CTX *)malloc(sizeof(EST_CTX));
     if (!ctx) {
         EST_LOG_ERR("malloc failed");
         return NULL;
@@ -1627,7 +1637,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
         return NULL;
     }
     if (est_load_trusted_certs(ctx, ca_chain, ca_chain_len)) {
-        EST_LOG_ERR("Failed to load trusted certficate store");
+        EST_LOG_ERR("Failed to load trusted certificate store");
 	free(ctx);
         return NULL;
     }
@@ -1697,6 +1707,7 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
 	return (EST_ERR_BAD_MODE);
 	break;
     }
+	return (EST_ERR_NONE); // just to prevent compiler warning on missing function return
 }
 
 /*! @brief est_set_ca_enroll_cb() is used by an application to install
@@ -1705,10 +1716,10 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
-    This function must be called prior to starting the EST server.  The
-    callback function must match the following prototype:
+    This function must be called prior to starting the EST server.
+    The callback function must match the following prototype:
 
-        int func(unsigned char*, int, unsigned char**, int*, char*, X509*)
+        EST_ERROR func(unsigned char*, int, unsigned char**, int*, char*, X509*, void *)
 
     This function is called by libest when a certificate request
     needs to be signed by the CA server.  The application will need
@@ -1717,7 +1728,7 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
  
     @return EST_ERROR.
  */
-EST_ERROR est_set_ca_enroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10, int p10_len,
+EST_ERROR est_set_ca_enroll_cb (EST_CTX *ctx, EST_ERROR (*cb)(unsigned char *pkcs10, int p10_len,
                                                   unsigned char **pkcs7, int *pkcs7_len,
 						  char *user_id, X509 *peer_cert,
 						  void *ex_data))
@@ -1741,7 +1752,7 @@ EST_ERROR est_set_ca_enroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10, i
     This function must be called prior to starting the EST server.  The
     callback function must match the following prototype:
 
-        int func(unsigned char*, int, unsigned char**, int*, char*, X509*)
+        EST_ERROR func(unsigned char*, int, unsigned char**, int*, char*, X509*, void *)
 
     This function is called by libest when a certificate 
     needs to be renewed by the CA server.  The application will need
@@ -1750,7 +1761,7 @@ EST_ERROR est_set_ca_enroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10, i
  
     @return EST_ERROR.
  */
-EST_ERROR est_set_ca_reenroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10, int p10_len,
+EST_ERROR est_set_ca_reenroll_cb (EST_CTX *ctx, EST_ERROR (*cb)(unsigned char *pkcs10, int p10_len,
                                                   unsigned char **pkcs7, int *pkcs7_len,
 						  char *user_id, X509 *peer_cert,
 						  void *ex_data))
@@ -1772,10 +1783,10 @@ EST_ERROR est_set_ca_reenroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10,
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
-    This function must be called prior to starting the EST server.  The
-    callback function must match the following prototype:
+    This function must be called prior to starting the EST server.
+    The callback function must match the following prototype:
 
-        unsigned char *(*cb)(int*csr_len, void *ex_data)
+        unsigned char * func(int *, void *)
 
     This function is called by libest when a CSR attributes 
     request is received.  The attributes are provided by the CA
@@ -1783,7 +1794,7 @@ EST_ERROR est_set_ca_reenroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10,
  
     @return EST_ERROR.
  */
-EST_ERROR est_set_csr_cb (EST_CTX *ctx, unsigned char *(*cb)(int*csr_len, void *ex_data))
+EST_ERROR est_set_csr_cb (EST_CTX *ctx, unsigned char *(*cb)(int *csr_len, void *ex_data))
 {
     if (!ctx) {
 	EST_LOG_ERR("Null context");
@@ -1811,7 +1822,7 @@ EST_ERROR est_set_csr_cb (EST_CTX *ctx, unsigned char *(*cb)(int*csr_len, void *
     This function must be called prior to starting the EST server.  The
     callback function must match the following prototype:
 
-    int (*cb)(EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert, void *ex_data)
+        int func(EST_CTX *, EST_HTTP_AUTH_HDR *, X509 *, void *)
 
     This function is called by libest when a performing HTTP authentication.
     libest will pass the EST_HTTP_AUTH_HDR struct to the application,
@@ -2180,7 +2191,7 @@ EST_ERROR est_server_init_csrattrs (EST_CTX *ctx, char *csrattrs, int csrattrs_l
 	}
     }    
 
-    ctx->server_csrattrs = malloc(csrattrs_len + 1);
+    ctx->server_csrattrs = (unsigned char *)malloc(csrattrs_len + 1);
     if (!ctx->server_csrattrs) {
         if (csrattrs_data_pop) {
             free(csrattrs_data_pop);
