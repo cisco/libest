@@ -286,10 +286,11 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 estclient_simple_includedir = $(includedir)/est
 estclient_simple_SOURCES = estclient-simple.c ../util/utils.c 
-AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -I$(SSL_CFLAGS) -g
+AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est
 @FREEBSD_FALSE@DL = -ldl
 @FREEBSD_TRUE@DL = 
-estclient_simple_LDFLAGS = -L../../src/est/.libs $(DL) -lest -lssl -lcrypto 
+estclient_simple_LDFLAGS = -L../../src/est/.libs -lest
+estclient_simple_DEPENDENCIES = ../../src/est/.libs/libest.*
 all: all-am
 
 .SUFFIXES:
