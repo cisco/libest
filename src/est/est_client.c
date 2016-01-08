@@ -10,9 +10,13 @@
  * April, 2013
  *
  * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2016 Siemens AG
+ * License: 3-clause ("New") BSD License
  * All rights reserved.
  **------------------------------------------------------------------
  */
+// 2016-01-08 verify_cacert_resp(): removed inefficiencies, memory leak, and wrong deallocation order
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -248,7 +252,7 @@ static int est_client_cacert_verify_cb (int ok, X509_STORE_CTX *ctx)
  * This function will remove CRLs from a received cacert response buffer.
  *
  * Parameters:
- *	ctx:	EST Context representing this session
+ *	ctx:	EST Context representing this session - TODO: unused!
  *  cacerts:    pointer to the buffer holding the resulting CA certs 
  *  cacerts_len: length of the cacerts buffer
  *       p7:    pointer to the pkcs7 buffer that was received
@@ -439,7 +443,8 @@ static EST_ERROR create_PKCS7 (unsigned char *cacerts_decoded, int cacerts_decod
 }
 
 
-static EST_ERROR PKCS7_to_stack (PKCS7 *pkcs7, STACK_OF(X509) **stack) 
+// the cert stack returned lives as long as the pkcs7 structure given as parameter
+static EST_ERROR PKCS7_get_cert_stack (PKCS7 *pkcs7, STACK_OF(X509) **stack)
 {
     int nid = 0;
 
@@ -472,11 +477,11 @@ static EST_ERROR PKCS7_to_stack (PKCS7 *pkcs7, STACK_OF(X509) **stack)
  * cert chain is built into a cert store and then each certificate is verified
  * against this store essentially verifying the cert chain against itself to
  * ensure that each intermediate can be verified back to one of the included
- * root certs in the CACerts response.  If CRLs are attached these will be
- * removed and a new PKCS7 buffer is created.
+ * root certs in the CACerts response.
+ * If CRLs are attached these will be removed from the CA certs buffer. - TODO: why?
  *
  * Parameters:
- *	ctx:	EST Context representing this session
+ *	ctx:	EST Context representing this session - TODO: unused!
  *  cacerts:    pointer to the buffer holding the received CA certs 
  *  cacerts_len: length of the cacerts buffer
  *
@@ -487,9 +492,7 @@ static EST_ERROR PKCS7_to_stack (PKCS7 *pkcs7, STACK_OF(X509) **stack)
 static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
                                      int *cacerts_len)
 {
-    int rv = 0;
-    int failed = 0;
-    EST_ERROR est_rc = EST_ERR_NONE;
+    EST_ERROR rv = EST_ERR_NONE;
     
     X509_STORE  *trusted_cacerts_store = NULL;
     
@@ -504,7 +507,7 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
     PKCS7 *pkcs7 = NULL;
     
     if (ctx == NULL || cacerts == NULL || cacerts_len == 0) {
-        EST_LOG_ERR("Invalid parameter. ctx = %x cacerts = %x cacerts_len = %x",
+        EST_LOG_ERR("Invalid parameter. ctx = %x, cacerts = %x, cacerts_len = %x",
                     ctx, cacerts, cacerts_len);
         return (EST_ERR_INVALID_PARAMETERS);
     }    
@@ -522,18 +525,16 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
     }
     rv = create_PKCS7(cacerts_decoded, cacerts_decoded_len, &pkcs7);
     if (rv != EST_ERR_NONE) {
-        EST_LOG_ERR("Failed to build PKCS7 structure from receievd buffer");
-        free(cacerts_decoded);
-        return (rv);
+        EST_LOG_ERR("Failed to build PKCS7 structure from received buffer");
+        goto cleanup;
     }
-    rv = PKCS7_to_stack(pkcs7, &stack);    
+    rv = PKCS7_get_cert_stack(pkcs7, &stack);
     if (rv != EST_ERR_NONE) {
         EST_LOG_ERR("Could not obtain stack of ca certs from PKCS7 structure");
-        free(cacerts_decoded);
-        PKCS7_free(pkcs7);
-        return (rv);
+        goto cleanup;
     }
     
+     rv = EST_ERR_MALLOC; // for the various following initialization error cases
     /*
      * At this point we have the stack of X509 certs that make up
      * the CA certs response sent from the EST server.
@@ -547,10 +548,7 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
         EST_LOG_ERR("Unable to allocate cert store");
         ossl_dump_ssl_errors();
         
-        free(cacerts_decoded);
-        PKCS7_free(pkcs7);
-        
-        return (EST_ERR_MALLOC);
+        goto cleanup;
     }
 
     X509_STORE_set_verify_cb(trusted_cacerts_store, est_client_cacert_verify_cb);
@@ -562,9 +560,8 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
          * Is it self signed?  If so, add it in the trusted store, otherwise,
          * add it to the untrusted store.
          */
-        rv = X509_check_issued(current_cert, current_cert);
-	if (rv == X509_V_OK) {
-            EST_LOG_INFO("Adding cert to trusted store (%s)", current_cert->name);
+	if (X509_check_issued(current_cert, current_cert) == X509_V_OK) {
+            EST_LOG_INFO("Trusting self-signed cert with subject: %s", current_cert->name);
             X509_STORE_add_cert(trusted_cacerts_store, current_cert);
         }
     }
@@ -577,55 +574,49 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
         EST_LOG_ERR("Unable to allocate a new store context");
         ossl_dump_ssl_errors();
         
-        free(cacerts_decoded);
-        PKCS7_free(pkcs7);
-        X509_STORE_free(trusted_cacerts_store);
-        
-        return(EST_ERR_MALLOC);
+        goto cleanup;
     }
 
+    if (!X509_STORE_CTX_init(store_ctx, trusted_cacerts_store, NULL, stack)) {
+	EST_LOG_ERR("Unable to initialize the new store context");
+	ossl_dump_ssl_errors();
+
+	goto cleanup;
+    }
+
+    rv = EST_ERR_NONE;
     for (i=0; i<sk_X509_num(stack); i++) {
-
-        if (!X509_STORE_CTX_init(store_ctx, trusted_cacerts_store, NULL, stack)) {
-            EST_LOG_ERR("Unable to initialize the new store context");
-            ossl_dump_ssl_errors();
-
-            free(cacerts_decoded);
-            PKCS7_free(pkcs7);
-            X509_STORE_free(trusted_cacerts_store);
-            X509_STORE_CTX_free(store_ctx);
-            
-            return ( EST_ERR_MALLOC);
-        }
-        current_cert = sk_X509_value(stack, i);
-        EST_LOG_INFO("Adding cert to store (%s)", current_cert->name);
-	X509_STORE_CTX_set_cert(store_ctx, current_cert);
-        
-        rv = X509_verify_cert(store_ctx);
-        if (!rv) {
-            /*
-             * this cert failed verification.  Log this and continue on
-             */
-            EST_LOG_WARN("Certificate failed verification (%s)", current_cert->name);
-            failed = 1;
-        }
+	current_cert = sk_X509_value(stack, i);
+	if (X509_check_issued(current_cert, current_cert) != X509_V_OK) { // if not self-signed
+	    EST_LOG_INFO("Verifying cert with subject: %s", current_cert->name);
+	    X509_STORE_CTX_set_cert(store_ctx, current_cert);
+	    if (!X509_verify_cert(store_ctx)) {
+		/*
+		 * this cert failed verification.  Log this and continue on
+		 */
+		EST_LOG_WARN("Certificate failed verification: %s", current_cert->name);
+		rv = EST_ERR_CACERT_VERIFICATION;
+	    }
+	}
     }
 
     /*
      * Finally, remove any CRLs that might be attached.
      */
-    est_rc = est_client_remove_crls(ctx, cacerts, cacerts_len, pkcs7);
+    if (rv == EST_ERR_NONE)
+	rv = est_client_remove_crls(ctx, cacerts, cacerts_len, pkcs7);
 
-    free(cacerts_decoded);
-    X509_STORE_free(trusted_cacerts_store);
-    X509_STORE_CTX_free(store_ctx);
-    PKCS7_free(pkcs7);
+    cleanup:
+    if(store_ctx)
+	X509_STORE_CTX_free(store_ctx);
+    if(trusted_cacerts_store)
+	X509_STORE_free(trusted_cacerts_store);
+    if(pkcs7)
+	PKCS7_free(pkcs7);
+    if(cacerts_decoded)
+	free(cacerts_decoded);
     
-    if (failed) {
-        return (EST_ERR_CACERT_VERIFICATION);
-    } else {
-        return est_rc;
-    }
+    return rv;
 }
 
 
@@ -1845,7 +1836,7 @@ static EST_ERROR est_client_enroll_pkcs10 (EST_CTX *ctx, SSL *ssl, X509_REQ *csr
     request
     @param pkcs7_len pointer to an integer in which the length of the recieved
     pkcs7 response is placed.
-    @param pkey The new client public key that is to be enrolled
+    @param pkey The private/public key pair that is to be enrolled
 
     @return EST_ERROR 
  */
@@ -2592,7 +2583,7 @@ static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
             ctx->retrieved_ca_certs_len = ca_certs_buf_len;
 
             /*
-             * Verify the returned CA cert chain
+             * Verify the returned CA cert chain; TODO: why removing CRLs?
              */
             rv = verify_cacert_resp(ctx, ctx->retrieved_ca_certs,
                                     &ctx->retrieved_ca_certs_len);
@@ -3298,9 +3289,9 @@ EST_ERROR est_client_copy_enrolled_cert (EST_CTX *ctx, unsigned char *pkcs7)
     buffer allocated and maintained by the EST client library and a pointer to
     this buffer is returned to the calling application.  The returned CA certs
     are in base64 encoded DER format and is stored in a NULL terminated string
-    buffer.
+    buffer. Any CRLs included are removed - TODO: why?
 
-    Once the CA certificates are retrieved from the EST server, the ET Client
+    Once the CA certificates are retrieved from the EST server, the EST Client
     library must be reset.  The retrieved CA certificates should now be passed
     into the EST client initialization function as the explicit TA database.
  */
