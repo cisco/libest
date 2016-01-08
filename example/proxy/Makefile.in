@@ -284,12 +284,13 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 estproxy_SOURCES = estproxy.c ../util/utils.c ../util/simple_server.c 
-AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -I$(SSL_CFLAGS) -g
+AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est
 @FREEBSD_FALSE@DL = -ldl
 @FREEBSD_TRUE@DL = 
 @DISABLE_PTHREAD_FALSE@PTHREAD = -lpthread
 @DISABLE_PTHREAD_TRUE@PTHREAD = 
-estproxy_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto 
+estproxy_LDFLAGS = -L../../src/est/.libs -lest
+estproxy_DEPENDENCIES = ../../src/est/.libs/libest.*
 EXTRA_DIST = createRA.sh runproxy.sh estExampleCA.cnf
 all: all-am
 

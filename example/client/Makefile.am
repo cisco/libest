@@ -1,7 +1,8 @@
 bin_PROGRAMS = estclient
 estclient_includedir=$(includedir)/est
 estclient_SOURCES = estclient.c ../util/utils.c 
-AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -I$(SSL_CFLAGS) -g
+AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est
+
 if FREEBSD 
 DL=
 else
@@ -13,4 +14,5 @@ PTHREAD=
 else
 PTHREAD=-lpthread
 endif
-estclient_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto 
+estclient_LDFLAGS = -L../../src/est/.libs -lest
+estclient_DEPENDENCIES = ../../src/est/.libs/libest.*

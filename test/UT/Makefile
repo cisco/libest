@@ -44,7 +44,7 @@ CCFLAGS = -Wall -g -DHAVE_CUNIT -DNO_SSL_DL
 CC = gcc
 
 # linker flags
-LDFLAGS += -lcunit -ldl -lpthread -lssl -lcrypto -lest -lcurl
+LDFLAGS += -lcunit -ldl -lpthread -lest -lssl -lcrypto -lcurl
 
 # library paths
 LIBS = -L../../src/est/.libs -L$(OPENSSL_DIR)/lib -L$(CURL_DIR)/lib $(LDFLAGS) 
@@ -57,7 +57,7 @@ default:	runtest
 .c.o:
 	$(CC) $(INCLUDES) $(CCFLAGS) -c $< -o $@
 
-runtest: $(OBJ)
+runtest: $(OBJ) ../../src/est/.libs/libest.*
 	$(CC) -o $(OUT) $(OBJ) $(LIBS) 
 
 clean:

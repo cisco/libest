@@ -285,12 +285,13 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 estclient_includedir = $(includedir)/est
 estserver_SOURCES = estserver.c ossl_srv.c ../util/utils.c ../util/simple_server.c 
-AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -I$(SSL_CFLAGS) -g
+AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est
 @FREEBSD_FALSE@DL = -ldl
 @FREEBSD_TRUE@DL = 
 @DISABLE_PTHREAD_FALSE@PTHREAD = -lpthread
 @DISABLE_PTHREAD_TRUE@PTHREAD = 
-estserver_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto 
+estserver_LDFLAGS = -L../../src/est/.libs -lest
+estserver_DEPENDENCIES = ../../src/est/.libs/libest.*
 EXTRA_DIST = ossl_srv.h apps.h createCA.sh ext.cnf ESTcommon.sh runserver.sh estExampleCA.cnf extExampleCA.cnf
 all: all-am
 
