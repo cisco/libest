@@ -117,7 +117,7 @@ static void show_usage_and_exit (void)
             "  --common-name  <string>     Specify the common name to use in the Suject Name field of the new certificate.\n"
             "                              127.0.0.1 will be used if this option is not specified\n"
             "  --pem-output                Convert the new certificate to PEM format\n"
-            "  --keypass stdin|"PRIV_KEY_PASS"<string>  Specify encryption of private key, password from STDIN or argument\n"
+            "  --keypass stdin|"PRIV_KEY_PASS"<string>  Specify en-/decryption of private key, password read from STDIN or argument\n"
             "  --srp                       Enable TLS-SRP cipher suites.  Use with --srp-user and --srp-password options\n"
             "  --srp-user     <string>     Specify the SRP user name\n"
             "  --srp-password <string>     Specify the SRP password\n"
@@ -791,11 +791,11 @@ static void do_operation ()
 }
 
 
-static int string_password_cb(char *buf, int size, int rwflag, void *key)
+static int string_password_cb(char *buf, int size, int wflag, void *data)
 {
-    strncpy(buf, priv_key_pwd, size-1);
-//  printf("string_password_cb: rwflag=%d, key=%s\n", rwflag, buf);
-    return(strlen(buf));
+    strncpy(buf, priv_key_pwd, size);
+    // printf("string_password_cb: wflag=%d, password=%.*s\n", wflag, size, buf);
+    return(strnlen(buf, size));
 }
 
 int main (int argc, char **argv)
@@ -1032,6 +1032,14 @@ int main (int argc, char **argv)
         }
     }
 
+    est_apps_startup(); // need to do this before decrypting private keys
+
+#if DEBUG_OSSL_LEAKS
+    CRYPTO_malloc_debug_init();
+    CRYPTO_set_mem_debug_options(V_CRYPTO_MDEBUG_ALL);
+    CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_ON);
+#endif
+
     /*
      * Read in the current client certificate
      */
@@ -1064,14 +1072,6 @@ int main (int argc, char **argv)
             exit(1);
         }
     }
-
-    est_apps_startup();
-
-#if DEBUG_OSSL_LEAKS
-    CRYPTO_malloc_debug_init();
-    CRYPTO_set_mem_debug_options(V_CRYPTO_MDEBUG_ALL);
-    CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_ON);
-#endif
 
     if (verbose) {
         est_init_logger(EST_LOG_LVL_INFO, &test_logger_stdout);
@@ -1106,7 +1106,7 @@ int main (int argc, char **argv)
 	/* Read in the private key file */
 	priv_key = ossl_read_private_key(priv_key_file, priv_key_cb);
         if (priv_key == NULL) {
-            printf("\nError reading private key from file %s\n", priv_key_file);
+            printf("\nError reading CSR private key from file %s\n", priv_key_file);
             exit(1);
         }
     }

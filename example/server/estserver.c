@@ -162,7 +162,7 @@ static void show_usage_and_exit (void)
 	    "  -6           Enable IPv6\n"
             "  -w           Dump the CSR to '/tmp/csr.p10' allowing for manual attribute capture on server\n"
 	    "  -?           Print this help message and exit\n"
-            "  --keypass stdin|"PRIV_KEY_PASS"<string>  Specify encryption of server key, password from STDIN or argument\n"
+            "  --keypass stdin|"PRIV_KEY_PASS"<string>  Decrytion password for server key, read from STDIN or argument\n"
 	    "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
 	    "  --enforce-csr  Enable CSR attributes enforcement. The client must provide all the attributes in the CSR.\n"
 	    "  --token <value> Use HTTP Bearer Token auth.\n"
@@ -644,11 +644,11 @@ void cleanup (void)
 
 
 static char priv_key_pwd[MAX_PWD_LEN];
-static int string_password_cb(char *buf, int size, int rwflag, void *key)
+static int string_password_cb(char *buf, int size, int wflag, void *data)
 {
-    strncpy(buf, priv_key_pwd, size-1);
-//  printf("string_password_cb: rwflag=%d, key=%s\n", rwflag, buf);
-    return(strlen(buf));
+    strncpy(buf, priv_key_pwd, size);
+    // printf("string_password_cb: wflag=%d, password=%.*s\n", wflag, size, buf);
+    return(strnlen(buf, size));
 }
 
 /*
