@@ -295,63 +295,6 @@ X509_REQ *est_read_x509_request (unsigned char *csr, int csr_len,
     return (req);
 }
 
-/*! @brief est_load_key() is a helper function that reads
- *  a char* and converts it to an OpenSSL EVP_PKEY*.  The char* data
- *  can be either PEM or DER encoded.   
- 
-    @param key This is the char* that contains the PEM or DER encoded
-               key pair.
-    @param key_len This is the length of the key char*.  DER encoded data
-               may contain zeros, which requires the length to be provided
-	       by the application layer.
-    @param key_format This parameter specifies the encoding method of the
-               key char* that was provided.  Set this to either EST_FORMAT_PEM
-	       or EST_FORMAT_DER.
- 
-    This function converts a PEM or DER encoded char* to the OpenSSL
-    EVP_PKEY* structure.  This function will return NULL if the PEM/DER
-    data is corrupted or unable to be parsed by the OpenSSL library.
-    This function will allocate memory for the EVP_PKEY data.  You must
-    free the memory in your application when it's no longer needed by
-    calling EVP_PKEY_free().
- 
-    @return EVP_PKEY*
- */
-EVP_PKEY *est_load_key (unsigned char *key, int key_len, int format)
-{
-    BIO *in = NULL;
-    EVP_PKEY *pkey = NULL;
-
-    if (key == NULL) {
-        EST_LOG_ERR("no key data provided");
-        return NULL;
-    }
-
-    in = BIO_new_mem_buf(key, key_len);
-    if (in == NULL) {
-        EST_LOG_ERR("Unable to open the provided key buffer");
-        return (NULL);
-    }
-
-    switch (format) {
-    case EST_FORMAT_PEM:
-        pkey = PEM_read_bio_PrivateKey(in, NULL, NULL, NULL);
-        break;
-    case EST_FORMAT_DER:
-        pkey = d2i_PrivateKey_bio(in, NULL);
-        break;
-    default:
-        EST_LOG_ERR("Invalid key format");
-        BIO_free(in);
-        return NULL;
-        break;
-    }
-    BIO_free(in);
-
-    return (pkey);
-}
-
-
 
 /*
  * This function is used to read the CERTS in a BIO and build a

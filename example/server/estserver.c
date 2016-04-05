@@ -25,12 +25,14 @@
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
 #include <openssl/crypto.h>
+#include <openssl/pem.h> // for PEM_def_callback
 #include <est.h>
 #include "ossl_srv.h"
 #include "../util/utils.h"
 #include "../util/simple_server.h"
 
 #define MAX_FILENAME_LEN 255
+#define PRIV_KEY_PASS "pass:"
 
 /*
  * The OpenSSL CA needs this BIO to send errors too
@@ -160,6 +162,7 @@ static void show_usage_and_exit (void)
 	    "  -6           Enable IPv6\n"
             "  -w           Dump the CSR to '/tmp/csr.p10' allowing for manual attribute capture on server\n"
 	    "  -?           Print this help message and exit\n"
+            "  --keypass stdin|"PRIV_KEY_PASS"<string>  Decrytion password for server key, read from STDIN or argument\n"
 	    "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
 	    "  --enforce-csr  Enable CSR attributes enforcement. The client must provide all the attributes in the CSR.\n"
 	    "  --token <value> Use HTTP Bearer Token auth.\n"
@@ -640,6 +643,14 @@ void cleanup (void)
 }
 
 
+static char priv_key_pwd[MAX_PWD_LEN];
+static int string_password_cb(char *buf, int size, int wflag, void *data)
+{
+    strncpy(buf, priv_key_pwd, size);
+    // printf("string_password_cb: wflag=%d, password=%.*s\n", wflag, size, buf);
+    return(strnlen(buf, size));
+}
+
 /*
  * This is the main entry point into the example EST server.
  * This routine parses the command line options, reads in the
@@ -653,8 +664,9 @@ int main (int argc, char **argv)
     int i;
     int size;
     X509 *x;
+    pem_password_cb *priv_key_cb = NULL;
     EVP_PKEY *priv_key;
-    BIO *certin, *keyin;
+    BIO *certin;
     DH *dh;
     EST_ERROR rv;
     int sleep_delay = 0;
@@ -665,6 +677,7 @@ int main (int argc, char **argv)
         {"srp", 1, NULL, 0},
         {"enforce-csr", 0, NULL, 0},
         {"token", 1, 0, 0},
+        {"keypass", 1, 0, 0},
         {NULL, 0, NULL, 0}
     };
     
@@ -695,6 +708,17 @@ int main (int argc, char **argv)
 		http_token_auth = 1;
                 memset(valid_token_value, 0, MAX_AUTH_TOKEN_LEN+1); 
                 strncpy(&(valid_token_value[0]), optarg, MAX_AUTH_TOKEN_LEN);
+            }
+            else if (!strcmp(long_options[option_index].name, "keypass")) {
+                if (!strcmp(optarg, "stdin")) {
+		    priv_key_cb = PEM_def_callback;
+		} else if (!strncmp(optarg, PRIV_KEY_PASS, strlen(PRIV_KEY_PASS))) {
+		    strncpy(priv_key_pwd, optarg+strlen(PRIV_KEY_PASS), MAX_PWD_LEN);
+		    priv_key_cb = string_password_cb;
+		} else {
+		    printf("Error: The --keypass option takes as argument either \'stdin\' or \'pass:\' immediately followed by a string.\n");
+		    exit(1);
+		}
             }
 	    break;
 #ifndef DISABLE_TSEARCH
@@ -829,24 +853,12 @@ int main (int argc, char **argv)
     /* 
      * Read in the server's private key
      */
-    keyin = BIO_new(BIO_s_file_internal());
-    if (BIO_read_filename(keyin, keyfile) <= 0) {
-	printf("\nUnable to read server private key file %s\n", keyfile);
-	exit(1);
-    }
-    /*
-     * This reads in the private key file, which is expected to be a PEM
-     * encoded private key.  If using DER encoding, you would invoke
-     * d2i_PrivateKey_bio() instead. 
-     */
-    priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
+    priv_key = ossl_read_private_key(keyfile, priv_key_cb);
     if (priv_key == NULL) {
-	printf("\nError while reading PEM encoded private key file %s\n", keyfile);
+	printf("\nError while reading PEM encoded server private key file %s\n", keyfile);
 	ERR_print_errors_fp(stderr);
 	exit(1);
     }
-    BIO_free(keyin);
-
 
     bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
     if (!bio_err) {

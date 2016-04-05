@@ -248,6 +248,247 @@ void ossl_dump_ssl_errors ()
 }
 
 
+/*! @brief ossl_generate_private_RSA key() generates a new RSA key
+    of the given size and returns it as a PEM encoded character string.
+    A callback may be provided which is then used to encrypt the key data.
+
+    @param key_size This the requested bit size of the new RSA key.
+    @param cb If not NULL, this must be a pointer to a function that sets a
+              password to be used for encrypting the newly generated key data.
+	      A suitable value is the pre-defined function reading from STDIN:
+	      int PEM_def_callback(char *buf, int size, int wflag, void *data);
+
+    This function will return NULL if an error occurs. Otherwise
+    this function allocates memory for the key data.  You must free()
+    the memory in your application when it's no longer needed.
+
+    @return char*
+ */
+char *ossl_generate_private_RSA_key (int key_size, pem_password_cb *cb)
+{
+    char *key_data = NULL;
+
+    RSA *rsa = RSA_new();
+    if (!rsa) {
+	return NULL;
+    }
+    BIGNUM *bn = BN_new();
+    if (!bn) {
+	RSA_free(rsa);
+	return NULL;
+    }
+
+    BN_set_word(bn, 0x10001);
+    RSA_generate_key_ex(rsa, key_size, bn, NULL);
+
+    do {
+	BIO *out = BIO_new(BIO_s_mem());
+	if (!out) {
+	    break;
+	}
+	PEM_write_bio_RSAPrivateKey(out, rsa, cb ? EST_PRIVATE_KEY_ENC : NULL, NULL, 0, cb, NULL);
+	key_data = (char *)est_ossl_BIO_copy_data(out, NULL);
+	BIO_free(out);
+	if (key_data && !key_data[0]) { // happens if passphrase entered via STDIN does not verify or has less than 4 characters
+	    free(key_data);
+	    key_data = NULL;
+	}
+    } while (cb && !key_data);
+
+    RSA_free(rsa);
+    BN_free(bn);
+    return (key_data);
+}
+
+/*! @brief ossl_generate_private_EC key() generates a new EC key
+    of the given curve and returns it as a PEM encoded character string.
+    A callback may be provided which is then used to encrypt the key data.
+
+    @param curve_nid This the NID of the requested curve type of the new EC key.
+    @param cb If not NULL, this must be a pointer to a function that sets a
+              password to be used for encrypting the newly generated key data.
+	      A suitable value is the pre-defined function reading from STDIN:
+	      int PEM_def_callback(char *buf, int size, int wflag, void *data);
+
+    This function will return NULL if an error occurs. Otherwise
+    this function allocates memory for the key data.  You must free()
+    the memory in your application when it's no longer needed.
+
+    @return char*
+ */
+char *ossl_generate_private_EC_key (int curve_nid, pem_password_cb *cb)
+{
+    EC_KEY *eckey;
+    EC_GROUP *group = NULL;
+    char *key_data = NULL;
+    int	asn1_flag = OPENSSL_EC_NAMED_CURVE;
+    point_conversion_form_t form = POINT_CONVERSION_UNCOMPRESSED;
+
+    /*
+     * Generate an EC key
+     */
+
+    eckey = EC_KEY_new();
+    if (!eckey) {
+	return NULL;
+    }
+
+    group = EC_GROUP_new_by_curve_name(curve_nid);
+    EC_GROUP_set_asn1_flag(group, asn1_flag);
+    EC_GROUP_set_point_conversion_form(group, form);
+    EC_KEY_set_group(eckey, group);
+    if (!EC_KEY_generate_key(eckey)) {
+        return (NULL);
+    }
+
+    do {
+	BIO *out = BIO_new(BIO_s_mem());
+	if (!out) {
+	    break;
+	}
+	PEM_write_bio_ECPKParameters(out, group);
+	PEM_write_bio_ECPrivateKey(out, eckey, cb ? EST_PRIVATE_KEY_ENC : NULL, NULL, 0, cb, NULL);
+	key_data = (char *)est_ossl_BIO_copy_data(out, NULL);
+	BIO_free(out);
+	if (key_data && !strstr(key_data, "-----BEGIN EC PRIVATE KEY-----")) { // happens if passphrase entered via STDIN does not verify or has less than 4 characters
+	    free(key_data);
+	    key_data = NULL;
+	}
+    } while (cb && !key_data);
+
+    EC_KEY_free(eckey);
+    return (key_data);
+}
+
+/*! @brief ossl_private_key_to_PEM() is a helper function that converts
+    an OpenSSL EVP_PKEY* to a PEM encoded character string.
+    A callback may be provided which is then used to encrypt the key data.
+
+    @param pkey This is the private key to be converted.
+    @param cb If not NULL, this must be a pointer to a function that sets a
+              password to be used for encrypting the key data.
+	      A suitable value is the pre-defined function reading from STDIN:
+	      int PEM_def_callback(char *buf, int size, int wflag, void *data);
+
+    This function will return NULL if an error occurs. Otherwise
+    this function allocates memory for the string.  You must free()
+    the memory in your application when it's no longer needed.
+
+    @return char*
+ */
+// currently unused, but helpful when outputting a private key
+char *ossl_private_key_to_PEM (const EVP_PKEY* pkey, pem_password_cb *cb) {
+    char *pkey_pem = NULL;
+    BIO *out = BIO_new(BIO_s_mem());
+    if (out) {
+        PEM_write_bio_PrivateKey(out, (EVP_PKEY *)pkey, cb ? EST_PRIVATE_KEY_ENC : NULL, NULL, 0, cb, NULL);
+	pkey_pem = (char *)est_ossl_BIO_copy_data(out, NULL);
+	BIO_free(out);
+    }
+    return (pkey_pem);
+}
+
+/*! @brief ossl_load_private_key() is a helper function that reads
+    a character string and converts it to an OpenSSL EVP_PKEY*.
+    The unsigned char* data can be either PEM or DER encoded.
+    A callback may be provided which is then used to decrypt the key data.
+
+    @param key This is the string that contains the PEM or DER encoded key.
+    @param key_len This is the length of the key string.  DER encoded data
+               may contain zeros, which requires the length to be provided
+	       by the application layer.
+    @param key_format This specifies the encoding method of the key string
+               provided.  Set this to either EST_FORMAT_PEM or EST_FORMAT_DER.
+    @param cb If not NULL, this must be a pointer to a function that sets a
+              password to be used for decrypting the key data.
+	      A suitable value is the pre-defined function reading from STDIN:
+	      int PEM_def_callback(char *buf, int size, int wflag, void *data);
+
+    This function will return NULL if the PEM/DER data is corrupted or
+    unable to be parsed by the OpenSSL library. This function will allocate
+    memory for the EVP_PKEY data.  You must free the memory in your application
+    when it's no longer needed by calling EVP_PKEY_free().
+
+    @return EVP_PKEY*
+ */
+EVP_PKEY *ossl_load_private_key (const unsigned char *key, int key_len, int format, pem_password_cb *cb)
+{
+    BIO *in = NULL;
+    EVP_PKEY *pkey = NULL;
+
+    if (key == NULL) {
+        EST_LOG_ERR("No key data provided");
+        return NULL;
+    }
+
+    in = BIO_new_mem_buf((unsigned char *)key, key_len);
+    if (in == NULL) {
+        EST_LOG_ERR("Unable to open the provided key buffer");
+        return (NULL);
+    }
+
+    switch (format) {
+    case EST_FORMAT_PEM:
+        pkey = PEM_read_bio_PrivateKey(in, NULL, cb, NULL);
+        break;
+    case EST_FORMAT_DER:
+        pkey = d2i_PrivateKey_bio(in, NULL);
+        break;
+    default:
+        EST_LOG_ERR("Invalid key format");
+        break;
+    }
+    BIO_free(in);
+
+    return (pkey);
+}
+
+/*! @brief ossl_read_private_key() is a helper function that reads a PEM
+    encoded string from the given file converting it to an OpenSSL EVP_PKEY*.
+    A callback may be provided which is then used to decrypt the key data.
+
+    @param key This is the name of the file containing the PEM encoded key.
+    @param cb If not NULL, this must be a pointer to a function that sets a
+              password to be used for decrypting the key data.
+	      A suitable value is the pre-defined function reading from STDIN:
+	      int PEM_def_callback(char *buf, int size, int wflag, void *data);
+
+    This function will return NULL if the file is unreadable, the PEM data is
+    corrupted or cannot be parsed by the OpenSSL library. This function will
+    allocate memory for the EVP_PKEY data.  You must free the memory in your
+    application when it's no longer needed by calling EVP_PKEY_free().
+
+    @return EVP_PKEY*
+ */
+EVP_PKEY *ossl_read_private_key(const char *key_file, pem_password_cb *cb)
+{
+    BIO *keyin;
+    EVP_PKEY *priv_key;
+
+    /*
+     * Read in the private key
+     */
+    keyin = BIO_new(BIO_s_file_internal());
+    if (BIO_read_filename(keyin, key_file) <= 0) {
+	EST_LOG_ERR("Unable to read private key file %s", key_file);
+	return(NULL);
+    }
+    /*
+     * This reads in the private key file, which is expected to be a PEM
+     * encoded private key.  If using DER encoding, you would invoke
+     * d2i_PrivateKey_bio() instead.
+     */
+    priv_key = PEM_read_bio_PrivateKey(keyin, NULL, cb, NULL);
+    if (priv_key == NULL) {
+	EST_LOG_ERR("Error while parsing PEM encoded private key from file %s", key_file);
+	ossl_dump_ssl_errors();
+    }
+    BIO_free(keyin);
+
+    return (priv_key);
+}
+
+
 /*! @brief est_convert_p7b64_to_pem() converts the base64 encoded
     PKCS7 response from the EST server into PEM format.   
  

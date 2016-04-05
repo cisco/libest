@@ -19,6 +19,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
+#include <openssl/pem.h> // for PEM_def_callback
 #include <strings.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -31,6 +32,7 @@
 #define MAX_SERVER_LEN 255
 #define MAX_FILENAME_LEN 255
 #define MAX_CN 64
+#define PRIV_KEY_PASS "pass:"
 
 /*
  * Global variables to hold command line options
@@ -52,8 +54,6 @@ static char priv_key_file[MAX_FILENAME_LEN];
 static char client_key_file[MAX_FILENAME_LEN];
 static char client_cert_file[MAX_FILENAME_LEN];
 static int read_timeout = EST_SSL_READ_TIMEOUT_DEF;
-static unsigned char *new_pkey = NULL;
-static int new_pkey_len = 0;
 static unsigned char *cacerts = NULL;
 static int cacerts_len = 0;
 static char out_dir[MAX_FILENAME_LEN];
@@ -67,6 +67,8 @@ static unsigned char *c_key = NULL;
 static int c_cert_len = 0;
 static int c_key_len = 0;
 
+static char priv_key_pwd[MAX_PWD_LEN];
+static pem_password_cb *priv_key_cb = NULL;
 EVP_PKEY *priv_key = NULL;
 EVP_PKEY *client_priv_key = NULL;
 X509 *client_cert = NULL;
@@ -115,6 +117,7 @@ static void show_usage_and_exit (void)
             "  --common-name  <string>     Specify the common name to use in the Suject Name field of the new certificate.\n"
             "                              127.0.0.1 will be used if this option is not specified\n"
             "  --pem-output                Convert the new certificate to PEM format\n"
+            "  --keypass stdin|"PRIV_KEY_PASS"<string>  Specify en-/decryption of private key, password read from STDIN or argument\n"
             "  --srp                       Enable TLS-SRP cipher suites.  Use with --srp-user and --srp-password options\n"
             "  --srp-user     <string>     Specify the SRP user name\n"
             "  --srp-password <string>     Specify the SRP password\n"
@@ -123,32 +126,6 @@ static void show_usage_and_exit (void)
     exit(255);
 }
 
-
-/*
- *  When the -x option isn't used from the CLI, we will implicitly generate
- *  an RSA key to be used to sign the CSR.
- */
-static unsigned char * generate_private_key (int *key_len)
-{
-    RSA *rsa = RSA_new();
-    BIGNUM *bn = BN_new();
-    BIO *out;
-    unsigned char *tdata;
-    unsigned char *key_data;
-
-    BN_set_word(bn, 0x10001);
-
-    RSA_generate_key_ex(rsa, SRP_MINIMAL_N, bn, NULL);
-    out = BIO_new(BIO_s_mem());
-    PEM_write_bio_RSAPrivateKey(out, rsa, NULL, NULL, 0, NULL, NULL);
-    *key_len = BIO_get_mem_data(out, &tdata);
-    key_data = malloc(*key_len + 1);
-    memcpy(key_data, tdata, *key_len);
-    BIO_free(out);
-    RSA_free(rsa);
-    BN_free(bn);
-    return (key_data);
-}
 
 /*
  * Takes as input the name of the file to write the cert to on the
@@ -405,35 +382,6 @@ static int populate_x509_csr (X509_REQ *req, EVP_PKEY *pkey, char *cn)
     }
 
     return (0);
-}
-
-static EVP_PKEY *read_private_key (char *key_file)
-{
-    BIO *keyin;
-    EVP_PKEY *priv_key;
-
-    /*
-     * Read in the private key
-     */
-    keyin = BIO_new(BIO_s_file_internal());
-    if (BIO_read_filename(keyin, key_file) <= 0) {
-        printf("\nUnable to read private key file %s\n", key_file);
-        return (NULL);
-    }
-    /*
-     * This reads in the private key file, which is expected to be a PEM
-     * encoded private key.  If using DER encoding, you would invoke
-     * d2i_PrivateKey_bio() instead.
-     */
-    priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
-    if (priv_key == NULL) {
-        printf("\nError while reading PEM encoded private key file %s\n", key_file);
-        ERR_print_errors_fp(stderr);
-        return (NULL);
-    }
-    BIO_free(keyin);
-
-    return (priv_key);
 }
 
 static int regular_csr_attempt (EST_CTX *ectx)
@@ -843,12 +791,18 @@ static void do_operation ()
 }
 
 
+static int string_password_cb(char *buf, int size, int wflag, void *data)
+{
+    strncpy(buf, priv_key_pwd, size);
+    // printf("string_password_cb: wflag=%d, password=%.*s\n", wflag, size, buf);
+    return(strnlen(buf, size));
+}
+
 int main (int argc, char **argv)
 {
     signed char c;
     int set_fips_return = 0;
     char file_name[MAX_FILENAME_LEN];
-    BIO *keyin;
     BIO *certin;
     static struct option long_options[] = {
         { "trustanchor",  1, 0,    0 },
@@ -858,6 +812,7 @@ int main (int argc, char **argv)
         { "auth-token",   1, 0,    0 },
         { "common-name",  1, 0,    0 },
         { "pem-output",   0, 0,    0 },
+        { "keypass",      1, 0,    0 },
         { NULL,           0, NULL, 0 }
     };
     int option_index = 0;
@@ -910,6 +865,17 @@ int main (int argc, char **argv)
 	    }
             if (!strncmp(long_options[option_index].name, "common-name", strlen("common-name"))) {
                 strncpy(subj_cn, optarg, MAX_CN);
+            }
+            else if (!strcmp(long_options[option_index].name, "keypass")) {
+                if (!strcmp(optarg, "stdin")) {
+		    priv_key_cb = PEM_def_callback;
+		} else if (!strncmp(optarg, PRIV_KEY_PASS, strlen(PRIV_KEY_PASS))) {
+		    strncpy(priv_key_pwd, optarg+strlen(PRIV_KEY_PASS), MAX_PWD_LEN);
+		    priv_key_cb = string_password_cb;
+		} else {
+		    printf("Error: The --keypass option takes as argument either \'stdin\' or \'pass:\' immediately followed by a string.\n");
+		    exit(1);
+		}
             }
             if (!strncmp(long_options[option_index].name, "pem-output", strlen("pem-output"))) {
                 pem_out = 1;
@@ -1066,6 +1032,14 @@ int main (int argc, char **argv)
         }
     }
 
+    est_apps_startup(); // need to do this before decrypting private keys
+
+#if DEBUG_OSSL_LEAKS
+    CRYPTO_malloc_debug_init();
+    CRYPTO_set_mem_debug_options(V_CRYPTO_MDEBUG_ALL);
+    CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_ON);
+#endif
+
     /*
      * Read in the current client certificate
      */
@@ -1091,32 +1065,13 @@ int main (int argc, char **argv)
      * Read in the client's private key
      */
     if (client_key_file[0]) {
-        keyin = BIO_new(BIO_s_file_internal());
-        if (BIO_read_filename(keyin, client_key_file) <= 0) {
-            printf("\nUnable to read client private key file %s\n", client_key_file);
-            exit(1);
-        }
-        /*
-         * This reads in the private key file, which is expected to be a PEM
-         * encoded private key.  If using DER encoding, you would invoke
-         * d2i_PrivateKey_bio() instead.
-         */
-        client_priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
+        client_priv_key = ossl_read_private_key(client_key_file, priv_key_cb);
         if (client_priv_key == NULL) {
             printf("\nError while reading PEM encoded private key file %s\n", client_key_file);
             ERR_print_errors_fp(stderr);
             exit(1);
         }
-        BIO_free(keyin);
     }
-
-    est_apps_startup();
-
-#if DEBUG_OSSL_LEAKS
-    CRYPTO_malloc_debug_init();
-    CRYPTO_set_mem_debug_options(V_CRYPTO_MDEBUG_ALL);
-    CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_ON);
-#endif
 
     if (verbose) {
         est_init_logger(EST_LOG_LVL_INFO, &test_logger_stdout);
@@ -1126,14 +1081,18 @@ int main (int argc, char **argv)
     }
 
     if (!priv_key_file[0] && enroll && !csr_file[0]) {
-	printf("\nA private key is required for enrolling.  Creating a new RSA key pair since you didn't provide a key using the -x option.");
+	printf("A private key is required for enrolling.  Creating a new RSA key pair since you didn't provide a key using the -x option.\n");
         /*
          * Create a private key that will be used for the
          * enroll operation.
          */
-        new_pkey = generate_private_key(&new_pkey_len);
+        char *new_pkey = ossl_generate_private_RSA_key(SRP_MINIMAL_N, priv_key_cb);
+        if (new_pkey == NULL) {
+            printf("\nError creating key pair\n");
+            exit(1);
+        }
         snprintf(file_name, MAX_FILENAME_LEN, "%s/newkey.pem", out_dir);
-        write_binary_file(file_name, new_pkey, new_pkey_len);
+        write_binary_file(file_name, (unsigned char *)new_pkey, strlen(new_pkey));
         free(new_pkey);
 
         /*
@@ -1145,7 +1104,11 @@ int main (int argc, char **argv)
 
     if (enroll && !csr_file[0]) {
 	/* Read in the private key file */
-	priv_key = read_private_key(priv_key_file);
+	priv_key = ossl_read_private_key(priv_key_file, priv_key_cb);
+        if (priv_key == NULL) {
+            printf("\nError reading CSR private key from file %s\n", priv_key_file);
+            exit(1);
+        }
     }
 
 
