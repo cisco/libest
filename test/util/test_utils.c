@@ -195,37 +195,6 @@ BIO *open_tcp_socket_ipv4 (char *ipaddr, char *port)
 }
 
 
-
-EVP_PKEY *read_private_key(char *key_file)
-{
-    BIO *keyin;
-    EVP_PKEY *priv_key;
-    
-    /* 
-     * Read in the private key
-     */
-    keyin = BIO_new(BIO_s_file_internal());
-    if (BIO_read_filename(keyin, key_file) <= 0) {
-	printf("\nUnable to read private key file %s\n", key_file);
-	return(NULL);
-    }
-    /*
-     * This reads in the private key file, which is expected to be a PEM
-     * encoded private key.  If using DER encoding, you would invoke
-     * d2i_PrivateKey_bio() instead. 
-     */
-    priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
-    if (priv_key == NULL) {
-	printf("\nError while reading PEM encoded private key file %s\n", key_file);
-	ERR_print_errors_fp(stderr);
-	return(NULL);
-    }
-    BIO_free(keyin);
-
-    return (priv_key);
-}
-
-
 void dumpbin (char *buf, size_t len)
 {
     int i;

@@ -433,7 +433,15 @@ EST_ERROR est_decode_attributes_helper(char *csrattrs, int csrattrs_len,
  */
 X509_REQ *est_read_x509_request(unsigned char *csr, int csr_len,
 	                         EST_CERT_FORMAT csr_format);
-EVP_PKEY *est_load_key(unsigned char *key, int key_len, int format);
+#define EST_PRIVATE_KEY_ENC EVP_aes_128_cbc() // The key wrap algorithm optionally used to protect private keys
+char *ossl_generate_private_RSA_key (int key_size, pem_password_cb *cb);
+char *ossl_generate_private_EC_key (int curve_nid, pem_password_cb *cb);
+char *ossl_private_key_to_PEM (const EVP_PKEY* pkey, pem_password_cb *cb);
+EVP_PKEY *ossl_load_private_key (const unsigned char *key, int key_len, int format, pem_password_cb *cb);
+#define est_load_key(key, key_len, format) ossl_load_private_key(key,key_len,format, NULL)
+#define ossl_load_private_key_PEM(key) ossl_load_private_key((unsigned char*)(key),strlen(key),EST_FORMAT_PEM, NULL)
+EVP_PKEY *ossl_read_private_key (const char *key_file, pem_password_cb *cb);
+#define read_private_key(key_file) ossl_read_private_key(key_file, NULL)
 int est_convert_p7b64_to_pem(unsigned char *certs_p7, int certs_len, unsigned char **pem);
 
 /*

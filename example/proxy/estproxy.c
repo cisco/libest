@@ -315,7 +315,7 @@ int main (int argc, char **argv)
     char c;
     int i, size;
     EVP_PKEY *priv_key;
-    BIO *certin, *keyin;
+    BIO *certin;
     X509 *x;
     EST_ERROR rv;
     int sleep_delay = 0;
@@ -478,23 +478,12 @@ int main (int argc, char **argv)
     /* 
      * Read in the server's private key
      */
-    keyin = BIO_new(BIO_s_file_internal());
-    if (BIO_read_filename(keyin, keyfile) <= 0) {
-	printf("\nUnable to read server private key file %s\n", keyfile);
-	exit(1);
-    }
-    /*
-     * This reads in the private key file, which is expected to be a PEM
-     * encoded private key.  If using DER encoding, you would invoke
-     * d2i_PrivateKey_bio() instead. 
-     */
-    priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
+    priv_key = read_private_key(keyfile); // not using password_cb
     if (priv_key == NULL) {
 	printf("\nError while reading PEM encoded private key file %s\n", keyfile);
 	ERR_print_errors_fp(stderr);
 	exit(1);
     }
-    BIO_free(keyin);
 
     est_init_logger(EST_LOG_LVL_INFO, NULL);
     if (verbose) {

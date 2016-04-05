@@ -20,7 +20,6 @@
 int read_binary_file(char *filename, unsigned char **contents);
 int write_binary_file(char *filename, unsigned char *contents, int len); 
 BIO *open_tcp_socket(char *ipaddr, char *port);
-EVP_PKEY *read_private_key(char *key_file);
 
 #endif
 
