@@ -335,6 +335,8 @@ typedef EST_HTTP_AUTH_CRED_RC (*auth_credentials_cb)(EST_HTTP_AUTH_HDR *auth_cre
  * Begin the public API prototypes
  */
 EST_ERROR est_enable_crl(EST_CTX *ctx);
+EST_ERROR est_set_crl_strictness_lookup(EST_CTX *ctx, int require, STACK_OF(X509_CRL) *(*lookup_crls_cb)(X509_STORE_CTX *ctx, X509_NAME *nm));
+EST_ERROR est_set_strong_cert_verify_cb(EST_CTX *ctx, int (*strong_cert_verify_cb)(EST_CTX *, X509_STORE_CTX *, int ok));
 EST_ERROR est_init_logger(EST_LOG_LEVEL lvl, void (*loggerfunc)(char *, va_list));
 int est_get_api_level(void); 
 const char * est_get_version(void); 
@@ -381,7 +383,7 @@ EST_ERROR est_proxy_set_auth_cred_cb(EST_CTX *ctx, auth_credentials_cb);
  */
 EST_CTX *est_client_init(unsigned char *ca_chain, int ca_chain_len,
                          EST_CERT_FORMAT cert_format,
-                         int (*cert_verify_cb)(X509 *, int));
+                         int (*cert_verify_cb)(X509 *, int openssl_cert_error));
 EST_ERROR est_client_set_auth(EST_CTX *ctx, const char *uid, const char *pwd,
                               X509 *client_cert, EVP_PKEY *private_key);
 EST_ERROR est_client_set_auth_cred_cb(EST_CTX *ctx, auth_credentials_cb);

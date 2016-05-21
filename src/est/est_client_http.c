@@ -46,7 +46,9 @@
 #include "est_server_http.h"
 #include "est_ossl_util.h"
 
+#ifndef INT_MAX
 #define INT_MAX         (  2147483647 )
+#endif
 
 #ifdef RETRY_AFTER_DELAY_TIME_SUPPORT
 

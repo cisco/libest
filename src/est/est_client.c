@@ -29,8 +29,6 @@
 #include "est_ossl_util.h"
 #include <openssl/x509v3.h>
 
-#define SSL_EXDATA_INDEX_INVALID -1
-
 int e_ctx_ssl_exdata_index = SSL_EXDATA_INDEX_INVALID;
 
 /*****************************************************************************
@@ -208,39 +206,6 @@ static EST_ERROR est_generate_pkcs10 (EST_CTX *ctx, char *cn, char *cp,
     *pkcs10 = req;
 
     return (EST_ERR_NONE);
-}
-
-
-/*
- * This function is a callback used by OpenSSL's verify_cert function.
- * It's called at the end of a cert verification to allow an opportunity to
- * gather more information regarding a failing cert verification, and to
- * possibly change the result of the verification.
- *
- * This callback is similar to the ossl routine, but does not alter
- * the verification result.
- */
-static int est_client_cacert_verify_cb (int ok, X509_STORE_CTX *ctx)
-{
-    int cert_error = X509_STORE_CTX_get_error(ctx);
-    X509 *current_cert = X509_STORE_CTX_get_current_cert(ctx);
-
-    EST_LOG_INFO("enter function: ok=%d cert_error=%d", ok, cert_error);
-
-    if (!ok) {
-        if (current_cert) {
-            X509_NAME_print_ex_fp(stdout,
-                                  X509_get_subject_name(current_cert),
-                                  0, XN_FLAG_ONELINE);
-            printf("\n");
-        }
-        EST_LOG_INFO("%s error %d at %d depth lookup: %s\n",
-                     X509_STORE_CTX_get0_parent_ctx(ctx) ? "[CRL path]" : "",
-                     cert_error,
-                     X509_STORE_CTX_get_error_depth(ctx),
-                     X509_verify_cert_error_string(cert_error));
-    }
-    return (ok);
 }
 
 
@@ -553,7 +518,8 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
         return (EST_ERR_MALLOC);
     }
 
-    X509_STORE_set_verify_cb(trusted_cacerts_store, est_client_cacert_verify_cb);
+    X509_STORE_set_verify_cb(trusted_cacerts_store, est_cert_verify_cb);
+    X509_STORE_set_lookup_crls_cb(trusted_cacerts_store, ctx->lookup_crls_cb);
 
     for (i=0; i<sk_X509_num(stack); i++) {
         current_cert = sk_X509_value(stack, i);
@@ -630,22 +596,26 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
 
 
 /*
- * This function is registered with SSL to be called during the verification
- * of each certificate in the server's identity cert chain.  The main purpose
- * is to look for the case where the cert could not be verified.  In this case,
- * if the EST client app has registered a callback to receive these untrusted
- * certs, it will be forwarded up to the EST client application.
+ * This function is registered with OpenSSL to be called during the
+ * verification of each certificate in the peer's identity cert chain.
+ * If for any of these certs there is an error checking it and also
+ * in some other cases) the verification callback is invoked to allow
+ * an opportunity to gather more information regarding the verification,
+ * and to possibly change the result of the verification.
+ * If the EST application has registered a simple and/or strong callback
+ * to deal with any such cert, respecitve information is forwarded to it.
  *
  * Parameters:
  *	ok:	The status of this certificate from the SSL verify code.
  *   x_ctx:     Ptr to the X509 certificate store structure  
  *
  * Return value:
- *   int: The potentially modified status after processing this certificate. This cane
- *        be modified by the ET client application if they've provided a callback
+ *   int: The potentially modified status after processing this certificate.
+ *        This can be modified by the EST application if it provided a callback
  *        allowing it to be processed, or modified here in this callback.
  */
-static int cert_verify_cb (int ok, X509_STORE_CTX *x_ctx)
+// TODO better move to est.c, along with e_ctx_ssl_exdata_index
+int est_cert_verify_cb (int ok, X509_STORE_CTX *x_ctx)
 {
     SSL    *ssl;
     EST_CTX *e_ctx;
@@ -663,8 +633,7 @@ static int cert_verify_cb (int ok, X509_STORE_CTX *x_ctx)
     cert_error = X509_STORE_CTX_get_error(x_ctx);
     current_cert = X509_STORE_CTX_get_current_cert(x_ctx);
 
-    EST_LOG_INFO("entering: Cert passed up from OpenSSL. error = %d (%s) \n",
-                 cert_error, X509_verify_cert_error_string(cert_error));
+    (void)ossl_print_cert_verify_cb(ok, x_ctx);
 
     /*
      * Retrieve the pointer to the SSL structure for this connection and then
@@ -678,7 +647,8 @@ static int cert_verify_cb (int ok, X509_STORE_CTX *x_ctx)
         
     ssl = X509_STORE_CTX_get_ex_data(x_ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
     if (!ssl) {
-        EST_LOG_ERR("NULL pointer retrieved for SSL session pointer from X509 ctx ex_data");
+        if (cert_error != 0) // otherwise, ssl==NULL typically is an indication that we're checking our own certs before sending them in ssl3_output_cert_chain()
+            EST_LOG_ERR("NULL pointer retrieved for SSL session pointer from X509 ctx ex_data");
         return (approve);
     }        
     e_ctx = SSL_get_ex_data(ssl, e_ctx_ssl_exdata_index);
@@ -691,11 +661,11 @@ static int cert_verify_cb (int ok, X509_STORE_CTX *x_ctx)
         switch (cert_error) {
 
             /*
-             * Cases where we notify the client application:
+             * Cases where we notify the application:
              *
              * CERT_UNTRUSTED is what is expected, but not what we get in the
-             * case where we cannot verify our server's cert.
-             * SELF_SIGNED_CERT_IN_CHAIN is what currently results with our server
+             * case where we cannot verify our peer's cert.
+             * SELF_SIGNED_CERT_IN_CHAIN is what currently results with our peer
              * when we cannot verify its cert.
              * UNABLE_TO_GET_CRL is passed up to make sure the application knows
              * that although
@@ -711,29 +681,30 @@ static int cert_verify_cb (int ok, X509_STORE_CTX *x_ctx)
              */            
             if (e_ctx->manual_cert_verify_cb) {
                 
-                EST_LOG_INFO("EST client application server cert verify function is registered\n");
+                EST_LOG_INFO("Using simple application-level cert verify function");
 
                 approve = e_ctx->manual_cert_verify_cb(current_cert, cert_error);
                 
             } else {
                                 
-                EST_LOG_INFO("NO EST client application server cert verify function registered\n");
+                EST_LOG_INFO("No simple application-level cert verify function registered");
 
-                if (cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
+                if (cert_error == X509_V_ERR_UNABLE_TO_GET_CRL && !(e_ctx->require_crl)) {
 
                     /*
                      * We've enabled CRL checking in the TLS stack.  If the
                      * application hasn't loaded a CRL, then this verify error
                      * can occur.  The peer's cert is valid, but we can't
                      * confirm if it was revoked.  The app has not provided
-                     * a way for us to notify on this, so our only option is
+                     * a manual_cert_verify_cb for us to notify on this.
+                     * Moreover, strict CRL checking is not required, so it is safe
                      * to log a warning and proceed on.
                      */
-                    EST_LOG_WARN("No CRL loaded, TLS peer will be allowed.");
+                    EST_LOG_WARN("No CRL loaded and strict checking not required, TLS peer should be allowed.");
                     approve = 1;
                 }
             }
-            break;
+            // do not break; thus allow strong callback to override result
 
         /* The remainder of these will result in the ok state remaining unchanged
          * and a EST log warning message being logged.
@@ -756,10 +727,12 @@ static int cert_verify_cb (int ok, X509_STORE_CTX *x_ctx)
         case X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION:
         case X509_V_ERR_CERT_REVOKED:
         default:
-            EST_LOG_WARN("Certificate verify failed (reason = %d) (%s)",
-                         cert_error, X509_verify_cert_error_string(cert_error));
             break;
         }
+    }
+    if (e_ctx->strong_cert_verify_cb) {
+        EST_LOG_INFO("Using strong application-level cert verify function");
+        approve = e_ctx->strong_cert_verify_cb(e_ctx, x_ctx, approve);
     }
     return (approve);
 }
@@ -816,7 +789,7 @@ EST_ERROR est_client_init_ssl_ctx (EST_CTX *ctx)
      * Make sure we're verifying the server
      */
     SSL_CTX_set_verify(s_ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
-                       cert_verify_cb);
+                       est_cert_verify_cb);
 
     /*
      * leverage the cert store we already created from the
@@ -860,7 +833,7 @@ EST_ERROR est_client_init_ssl_ctx (EST_CTX *ctx)
     /*
      * Save the reference to the SSL session
      * This will be used later when matching the EST_CTX to the SSL context
-     * in est_ssl_info_cb().
+     * in est_cert_verify_cb().
      */
     ctx->ssl_ctx = s_ctx;
 
@@ -2944,7 +2917,7 @@ EST_ERROR est_client_enroll (EST_CTX *ctx, char *cn, int *pkcs7_len,
     The provisioning response also includes the latest copy of the trusted
     CA certificates from the EST server.  These should be persisted locally
     by the application for future use.  The ca_cert_len argument will contain the 
-    length of the certicates, which can then be retrieved by invoking 
+    length of the certificates, which can then be retrieved by invoking
     est_client_copy_cacerts().
  */
 EST_ERROR est_client_provision_cert (EST_CTX *ctx, char *cn, 

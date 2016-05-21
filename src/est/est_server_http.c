@@ -1296,14 +1296,24 @@ static int set_ssl_option (struct mg_context *ctx)
         cry(fc(ctx), "SSL_CTX_new (server) error: %s", ssl_error());
         return 0;
     }
+
+    /*
+     * Save the reference to the SSL session.
+     * This will be used also when matching the EST_CTX to the SSL context
+     * in est_cert_verify_cb().
+     */
     ctx->ssl_ctx = ssl_ctx;
+
+    if (e_ctx_ssl_exdata_index == SSL_EXDATA_INDEX_INVALID) {
+        e_ctx_ssl_exdata_index = SSL_get_ex_new_index(0, "EST Context", NULL, NULL, NULL);
+    }
     ectx = ctx->est_ctx;
 
     conn = fc(ctx);
     conn->request_info.ev_data = ctx->ssl_ctx;
 
 
-    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, est_cert_verify_cb);
 
     /*
      * Set the Session ID context to enable OpenSSL session
@@ -1619,6 +1629,15 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
          */
         conn->ssl = SSL_new(conn->ctx->ssl_ctx);
         if (conn->ssl != NULL) {
+            if (e_ctx_ssl_exdata_index == SSL_EXDATA_INDEX_INVALID) {
+                EST_LOG_WARN("Invalid SSL ex_data index for EST context value");
+            } else {
+                /*
+                 * Need to set the EST ctx into the exdata of the SSL session context so
+                 * that it can be retrieved on a per session basis.
+                 */
+                SSL_set_ex_data(conn->ssl, e_ctx_ssl_exdata_index, ctx);
+            }
             SSL_set_fd(conn->ssl, conn->client.sock);
             ssl_err = SSL_accept(conn->ssl); 
             if (ssl_err <= 0) {
