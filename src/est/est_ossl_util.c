@@ -86,61 +86,28 @@
 /*****************************************************************************************
 * Authorization routines
 *****************************************************************************************/
-int ossl_verify_cb (int ok, X509_STORE_CTX *ctx)
+/*
+ * This function is a callback used by OpenSSL's verify_cert function.
+ * It's called at the end of a cert verification to allow an opportunity to
+ * gather more information regarding a failing cert verification, and to
+ * possibly change the result of the verification.
+ *
+ * This callback is just for printing and does not alter the verification result.
+ */
+int ossl_print_cert_verify_cb (int ok, X509_STORE_CTX *ctx)
 {
-    int cert_error = X509_STORE_CTX_get_error(ctx);
-    X509 *current_cert = X509_STORE_CTX_get_current_cert(ctx);
+    if (ctx == NULL) {
+        EST_LOG_ERR("Invalid X509 context pointer");
+    } else {
+	int cert_error = X509_STORE_CTX_get_error(ctx);
+	X509 *current_cert = X509_STORE_CTX_get_current_cert(ctx);
 
-    EST_LOG_INFO("enter function: ok=%d cert_error=%d", ok, cert_error);
-
-    if (!ok) {
-        if (current_cert) {
-            X509_NAME_print_ex_fp(stdout,
-                                  X509_get_subject_name(current_cert),
-                                  0, XN_FLAG_ONELINE);
-            printf("\n");
-        }
-        EST_LOG_INFO("%serror %d at %d depth lookup:%s\n",
-                     X509_STORE_CTX_get0_parent_ctx(ctx) ? "[CRL path]" : "",
-                     cert_error,
-                     X509_STORE_CTX_get_error_depth(ctx),
-                     X509_verify_cert_error_string(cert_error));
-        switch (cert_error) {
-        case X509_V_ERR_UNABLE_TO_GET_CRL:
-            /*
-             * We've enabled CRL checking in the TLS stack.  If
-             * the application hasn't loaded a CRL, then this
-             * verify error can occur.  The peer's cert is valid,
-             * but we can't confirm if it was revoked.  We'll
-             * warn the application.
-             */
-            EST_LOG_WARN("No CRL loaded, TLS peer will be allowed.");
-            ok = 1;
-            break;
-        case X509_V_ERR_NO_EXPLICIT_POLICY:
-        case X509_V_ERR_CERT_HAS_EXPIRED:
-
-        /* since we are just checking the certificates, it is
-         * ok if they are self signed. But we should still warn
-         * the user.
-         */
-
-        case X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT:
-        /* Continue after extension errors too */
-        case X509_V_ERR_INVALID_CA:
-        case X509_V_ERR_INVALID_NON_CA:
-        case X509_V_ERR_PATH_LENGTH_EXCEEDED:
-        case X509_V_ERR_INVALID_PURPOSE:
-        case X509_V_ERR_CRL_HAS_EXPIRED:
-        case X509_V_ERR_CRL_NOT_YET_VALID:
-        case X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION:
-        case X509_V_ERR_CERT_REVOKED:
-        default:
-            EST_LOG_WARN("Certificate verify failed (reason=%d)",
-                         cert_error);
-            break;
-        }
-        return ok;
+	EST_LOG_INFO("%s: depth=%d ok=%d error=%d (%s) for cert subject='%s', issuer='%s'",
+		     X509_STORE_CTX_get0_parent_ctx(ctx) ? "CRL path validation" : "cert verification",
+		     X509_STORE_CTX_get_error_depth(ctx), ok,
+		     cert_error, X509_verify_cert_error_string(cert_error),
+		     current_cert ? X509_NAME_oneline(X509_get_subject_name(current_cert), NULL, 0) : "(no cert)" ,
+		     current_cert ? X509_NAME_oneline(X509_get_issuer_name(current_cert), NULL, 0) : "(no cert)");
     }
     return (ok);
 }

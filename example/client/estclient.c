@@ -26,11 +26,17 @@
 
 #include <est.h>
 #include "../util/utils.h"
+#include "../util/crl.c" // TODO include properly into Makefile
 
 #define EST_UT_MAX_CMD_LEN 255
 #define MAX_SERVER_LEN 255
 #define MAX_FILENAME_LEN 255
 #define MAX_CN 64
+
+/*
+ * The CRL retrieval code in crl.c and client_manual_cert_verify() need this BIO to send errors to
+ */
+BIO *bio_err = NULL;
 
 /*
  * Global variables to hold command line options
@@ -44,6 +50,10 @@ static char est_server[MAX_SERVER_LEN];
 static char est_auth_token[MAX_AUTH_TOKEN_LEN+1];
 static int est_port;
 static int verbose = 0;
+static int enable_crl = 0;
+static int require_crl = 0;
+static int use_cdp = 0;
+static char default_cdp[MAX_FILENAME_LEN] = "";
 static int srp = 0;
 static int token_auth_mode = 0;
 static int pem_out = 0;
@@ -106,6 +116,9 @@ static void show_usage_and_exit (void)
             "  -y <csrfile>      Use existing CSR in the given file\n"
             "  -s <server>       Enrollment server IP address\n"
             "  -p <port>         TCP port number for enrollment server\n"
+            "  -l[+]             Enable CRL checks; +: require strict CRL checking\n"
+            "  -L                Use CDPs, which may be specified in certificates, for CRL checking\n"
+            "  --cdp <url>       Default CDP; URLs may start with 'http://' or 'file:'\n"
             "  -o <dir>          Directory where pkcs7 certs will be written\n"
             "  -w <count>        Timeout in seconds to wait for server response (default=10)\n" //EST_SSL_READ_TIMEOUT_DEF
             "  -f                Runs EST Client in FIPS MODE = ON\n"
@@ -235,12 +248,10 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
 
 static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
 {
-    if (openssl_cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
+    if (openssl_cert_error == X509_V_ERR_UNABLE_TO_GET_CRL && !require_crl) { // this part could now be handled by the library alone
         return 1; // accepted
     }
 
-    BIO *bio_err;
-    bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
     int approve = 0;
 
     /*
@@ -258,8 +269,6 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
      * whether or not the server's cert should be approved.
      */
     X509_signature_print(bio_err, cur_cert->sig_alg, cur_cert->signature);
-
-    BIO_free(bio_err);
 
     return approve;
 }
@@ -634,6 +643,11 @@ static void retry_enroll_delay (int retry_delay, time_t retry_time)
     }
 }
 
+static STACK_OF(X509_CRL) *lookup_crls_cb(X509_STORE_CTX *ctx, X509_NAME *nm)
+{
+    return load_crls_from_cdps(ctx, nm, default_cdp);
+}
+
 
 static void do_operation ()
 {
@@ -652,6 +666,25 @@ static void do_operation ()
                            client_manual_cert_verify);
     if (!ectx) {
         printf("\nUnable to initialize EST context.  Aborting!!!\n");
+        exit(1);
+    }
+
+    if (enable_crl) {
+        rv = est_enable_crl(ectx);
+        if (rv != EST_ERR_NONE) {
+            printf("\nUnable to enable CRL checking.  Aborting!!!\n");
+            exit(1);
+        }
+    }
+    rv = est_set_crl_strictness_lookup(ectx, require_crl, use_cdp ? lookup_crls_cb : NULL);
+    if (rv != EST_ERR_NONE) {
+        printf("\nUnable to set CRL checking.  Aborting!!!\n");
+        exit(1);
+    }
+
+    if (rv != EST_ERR_NONE) {
+        printf("\nUnable to enable CRL checking.  Aborting!!!\n");
+        printf("EST error code %d (%s)\n", rv, EST_ERR_NUM_TO_STR(rv));
         exit(1);
     }
 
@@ -852,6 +885,7 @@ int main (int argc, char **argv)
     BIO *certin;
     static struct option long_options[] = {
         { "trustanchor",  1, 0,    0 },
+        { "cdp",          1, 0,    0 },
         { "srp",          0, 0,    0 },
         { "srp-user",     1, 0,    0 },
         { "srp-password", 1, 0,    0 },
@@ -863,6 +897,12 @@ int main (int argc, char **argv)
     int option_index = 0;
     int trustanchor = 1; /* default to require a trust anchor */
     char *trustanchor_file = NULL;
+
+    bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
+    if (!bio_err) {
+        printf("\nBIO not working\n");
+        exit(1);
+    }
 
     est_http_uid[0] = 0x0;
     est_http_pwd[0] = 0x0;
@@ -878,7 +918,7 @@ int main (int argc, char **argv)
     memset(client_cert_file, 0, 1);
     memset(out_dir, 0, 1);
 
-    while ((c = getopt_long(argc, argv, "?zfvagerx:y:k:s:p:o:c:w:u:h:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "?zfvagerx:y:k:s:p:o:c:w:u:h:l::L", long_options, &option_index)) != -1) {
         switch (c) {
         case 0:
 #if 0
@@ -894,6 +934,10 @@ int main (int argc, char **argv)
                 } else {
                     trustanchor_file = optarg;
                 }
+            }
+            if (!strcmp(long_options[option_index].name, "cdp")) {
+                use_cdp = 1;
+                strncpy(default_cdp, optarg, MAX_FILENAME_LEN);
             }
             if (!strncmp(long_options[option_index].name, "srp", strlen("srp"))) {
                 srp = 1;
@@ -917,6 +961,20 @@ int main (int argc, char **argv)
             break;
         case 'v':
             verbose = 1;
+            break;
+        case 'l':
+            enable_crl = 1;
+            if (optarg) {
+                if (!strcmp(optarg, "+")) {
+                    require_crl = 1;
+                } else {
+                    fprintf(stderr, "Unrecognized -l option parameter '%s'.  Aborting!!!\n", optarg);
+                    exit(1);
+                }
+            }
+            break;
+        case 'L':
+            use_cdp = 1;
             break;
         case 'z':
             force_pop = 1;
@@ -1172,13 +1230,11 @@ int main (int argc, char **argv)
     est_apps_shutdown();
 
 #if DEBUG_OSSL_LEAKS
-    BIO *bio_err;
-    bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
     CRYPTO_mem_leaks(bio_err);
-    BIO_free(bio_err);
 #endif
 
     printf("\n");
+    BIO_free(bio_err);
     return 0;
 }
 

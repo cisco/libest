@@ -275,8 +275,8 @@ EST_AUTH_STATE est_enroll_auth (EST_CTX *ctx, void *http_ctx, SSL *ssl,
             EST_LOG_INFO("TLS: client certificate is valid");
 	    rv = EST_CERT_AUTH;
 	}
-	else if (X509_V_ERR_UNABLE_TO_GET_CRL == v_result) {
-            EST_LOG_WARN("Peer cert is valid, but no CRL was loaded. Unable to determine if peer cert is revoked.");
+	else if (X509_V_ERR_UNABLE_TO_GET_CRL == v_result &&  !(ctx->require_crl)) {
+            EST_LOG_WARN("Peer cert is valid but no CRL was found. Although unable to determine if peer cert is revoked, passing because strict checking is not required.");
 	    rv = EST_CERT_AUTH;
         } else {
             EST_LOG_INFO("TLS: client certificate not verified (v_result=%d)",

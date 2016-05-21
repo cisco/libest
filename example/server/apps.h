@@ -130,8 +130,6 @@ long app_RAND_load_files(char *file); /* `file' is a list of files to read,
                                        * (see e_os.h).  The string is
                                        * destroyed! */
 
-CONF *config=NULL;
-
 extern CONF *config;
 extern char *default_config_file;
 extern BIO *bio_err;
@@ -235,6 +233,7 @@ typedef struct ca_db_st
 #define FORMAT_ASN1RSA	10	/* DER RSAPubicKey format */
 #define FORMAT_MSBLOB	11	/* MS Key blob format */
 #define FORMAT_PVK	12	/* MS PVK file format */
+#define FORMAT_HTTP	13      /* Download using HTTP */
 
 #define EXT_COPY_NONE	0
 #define EXT_COPY_ADD	1

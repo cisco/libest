@@ -50,6 +50,7 @@ static void est_logger_stderr (char *format, va_list l)
     funlockfile(stderr);
 }
 
+#ifndef DISABLE_BACKTRACE
 static void est_log_msg (char *format, ...)
 {
     va_list arguments;
@@ -66,6 +67,7 @@ static void est_log_msg (char *format, ...)
     }
     va_end(arguments);
 }
+#endif
 
 /*
  * Global function to be called to log something
@@ -587,7 +589,8 @@ EST_ERROR est_load_trusted_certs (EST_CTX *ctx, unsigned char *certs, int certs_
         EST_LOG_ERR("Unable to allocate combined cert store");
         return (EST_ERR_LOAD_TRUST_CERTS);
     }
-    X509_STORE_set_verify_cb(ctx->trusted_certs_store, ossl_verify_cb);
+    X509_STORE_set_verify_cb(ctx->trusted_certs_store, est_cert_verify_cb);
+    X509_STORE_set_lookup_crls_cb(ctx->trusted_certs_store, ctx->lookup_crls_cb);
     rv = ossl_init_cert_store(ctx->trusted_certs_store, certs, certs_len);
     if (rv != EST_ERR_NONE) {
         EST_LOG_ERR("Unable to populate combined cert store");
@@ -960,6 +963,74 @@ EST_ERROR est_enable_crl (EST_CTX *ctx)
     }
 
     ctx->enable_crl = 1;
+    return (EST_ERR_NONE);
+}
+
+/*! @brief est_set_crl_strictness_lookup() is used by an application
+     to set the strictness of CRL checking for TLS peer certificates
+     and optionally set an OpenSSL callback function for retrieving CRLs,
+     e.g., from CDP entries in certificates during the TLS handshake.
+     This may update CRL entries set by est_load_trusted_certs(), which is
+     called also from est_client_init(), est_server_init(), and est_proxy_init().
+
+    @param ctx Pointer to the EST context
+    @param require  Whether the presence of CRLs is strictly required
+    @param lookup_crls_cb  NULL or callback for retrieving CRLs
+
+    @return EST_ERROR.
+
+    NOTE: This should be done soon after calling est_client_init(), est_server_init(),
+          or est_proxy_init() and cannot affect cacerts loading in these functions.
+ */
+EST_ERROR est_set_crl_strictness_lookup (EST_CTX *ctx, int require,
+              STACK_OF(X509_CRL) *(*lookup_crls_cb)(X509_STORE_CTX *ctx, X509_NAME *nm))
+// TODO ideally, this should become part of est_client_init(), est_server_init(), and est_server_init()
+{
+    if (!ctx) {
+        EST_LOG_ERR("Null context");
+        return (EST_ERR_NO_CTX);
+    }
+
+    ctx->require_crl = require;
+    ctx->lookup_crls_cb = lookup_crls_cb;
+
+    X509_STORE *trusted_certs_store = ctx->trusted_certs_store;
+    if (!trusted_certs_store) // check if it has been forwarded by est_client_init[_ssl_ctx]()
+        trusted_certs_store = SSL_CTX_get_cert_store(ctx->ssl_ctx);
+    if (!trusted_certs_store) {
+        EST_LOG_ERR("Null trusted cert store");
+        return (EST_ERR_NO_CTX);
+    }
+
+    X509_STORE_set_lookup_crls_cb(trusted_certs_store, lookup_crls_cb);
+    return (EST_ERR_NONE);
+}
+
+/*! @brief est_set_strong_cert_verify_cb() can be used by an application
+    to set a certificate verification callback function that is stronger
+    than the one optionally given as parameter of est_client_init():
+    It will be called for any current status (ok = 0, 1, or 2) of certificate
+    verification by OpenSSL. It is given access to the EST context, the full
+    store context, and the current outcome of the verification decision.
+
+    @param ctx Pointer to the EST context
+    @param strong_cert_verify_cb  NULL or callback for managing the cert verify
+      outcome, see also http://linux.die.net/man/3/x509_store_ctx_set_verify_cb
+
+    @return EST_ERROR.
+
+    NOTE: This should be done soon after calling est_client_init(), est_server_init(),
+          or est_proxy_init() and cannot affect cacerts loading in these functions.
+*/
+EST_ERROR est_set_strong_cert_verify_cb (EST_CTX *ctx, int (*strong_cert_verify_cb)(EST_CTX *, X509_STORE_CTX *, int ok))
+// TODO ideally, this should become part of est_client_init(), est_server_init(), and est_server_init()
+{
+    if (!ctx) {
+        EST_LOG_ERR("Null context");
+        return (EST_ERR_NO_CTX);
+    }
+
+    ctx->strong_cert_verify_cb = strong_cert_verify_cb;
     return (EST_ERR_NONE);
 }
 

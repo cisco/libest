@@ -28,21 +28,26 @@
 #include <est.h>
 #include "ossl_srv.h"
 #include "../util/utils.h"
+#include "../util/crl.c" // TODO include properly into Makefile
 #include "../util/simple_server.h"
 
 #define MAX_FILENAME_LEN 255
 
 /*
- * The OpenSSL CA needs this BIO to send errors too
+ * The CRL retrieval code in crl.c and the OpenSSL CA need this BIO to send errors to
  */
 BIO *bio_err = NULL;
+CONF *config=NULL;
 
 /*
  * These are the command line options with defaults provided below
  */
 static int verbose = 0;
 static int write_csr = 0;
-static int crl = 0;
+static int enable_crl = 0;
+static int require_crl = 0;
+static int use_cdp = 0;
+static char default_cdp[MAX_FILENAME_LEN] = "";
 static int pop = 0;
 static int v6 = 0;
 static int srp = 0;
@@ -143,7 +148,9 @@ static void show_usage_and_exit (void)
             "  -c <file>    PEM file to use for server cert\n"
             "  -k <file>    PEM file to use for server key\n"
             "  -r <value>   HTTP realm to present to clients\n"
-            "  -l           Enable CRL checks\n"
+            "  -l[+]        Enable CRL checks; +: require strict CRL checking\n"
+            "  -L           Use CDPs, which may be specified in certificates, for CRL checking\n"
+            "  --cdp <url>  Default CDP; URLs may start with 'http://' or 'file:'\n"
             "  -t           Enable check for binding client PoP to the TLS UID\n"
 #ifndef DISABLE_TSEARCH
             "  -m <seconds> Simulate manual CA enrollment\n"
@@ -640,6 +647,31 @@ void cleanup (void)
 }
 
 
+static int server_strong_cert_verify(EST_CTX *ectx, X509_STORE_CTX *store_ctx, int ok) // just a demo
+{
+    if (store_ctx->untrusted) {
+	printf("Subjects of currently untrusted certs:\n");
+	for (int i = 0; i<sk_X509_num(store_ctx->untrusted); i++)
+	    printf("%s\n", sk_X509_value(store_ctx->untrusted, i)->name);
+    } else {
+	printf("No currently untrusted certs\n");
+    }
+
+    printf("Current CRL score: 0x%04x\n", store_ctx->current_crl_score);
+    if (store_ctx->current_crl && store_ctx->current_crl->crl) {
+	printf("Issuer of currently used CRL: %s\n", X509_NAME_oneline(store_ctx->current_crl->crl->issuer, NULL, 0));
+    } else {
+	printf("No currently used CRL\n");
+    }
+
+    return ok;
+}
+
+static STACK_OF(X509_CRL) *lookup_crls_cb(X509_STORE_CTX *ctx, X509_NAME *nm)
+{
+    return load_crls_from_cdps(ctx, nm, default_cdp);
+}
+
 /*
  * This is the main entry point into the example EST server.
  * This routine parses the command line options, reads in the
@@ -662,6 +694,7 @@ int main (int argc, char **argv)
     char vfile[255];
     int option_index = 0;
     static struct option long_options[] = {
+        {"cdp", 1, 0, 0},
         {"srp", 1, NULL, 0},
         {"enforce-csr", 0, NULL, 0},
         {"token", 1, 0, 0},
@@ -674,7 +707,7 @@ int main (int argc, char **argv)
         show_usage_and_exit();
     }
 
-    while ((c = getopt_long(argc, argv, "?fhbwnovr:c:k:m:p:d:lt6", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "?fhbwnovr:c:k:m:p:d:l::Lt6", long_options, &option_index)) != -1) {
         switch (c) {
 	case 0:
 #if 0
@@ -684,6 +717,10 @@ int main (int argc, char **argv)
 	    }
             printf ("\n");
 #endif
+            if (!strcmp(long_options[option_index].name, "cdp")) {
+                use_cdp = 1;
+                strncpy(default_cdp, optarg, MAX_FILENAME_LEN);
+            }
             if (!strncmp(long_options[option_index].name,"srp", strlen("srp"))) {
 		srp = 1;
                 strncpy(vfile, optarg, 255);
@@ -722,7 +759,18 @@ int main (int argc, char **argv)
             verbose = 1;
             break;
         case 'l':
-            crl = 1;
+            enable_crl = 1;
+            if (optarg) {
+                if (!strcmp(optarg, "+")) {
+                    require_crl = 1;
+                } else {
+                    fprintf(stderr, "Unrecognized -l option parameter '%s'.  Aborting!!!\n", optarg);
+                    exit(1);
+                }
+            }
+            break;
+        case 'L':
+            use_cdp = 1;
             break;
         case 't':
             pop = 1;
@@ -868,6 +916,7 @@ int main (int argc, char **argv)
         exit(1);
     }
     est_set_ex_data(ectx, &test_app_data);
+    est_set_strong_cert_verify_cb(ectx, server_strong_cert_verify);
 
     if (enforce_csr) {
 	est_server_enforce_csrattr(ectx);
@@ -880,9 +929,15 @@ int main (int argc, char **argv)
     if (verbose) printf("\nRetry period being set to: %d \n", retry_period);
     est_server_set_retry_period(ectx, retry_period);
 
-    if (crl) {
+    if (enable_crl) {
 	est_enable_crl(ectx);
     }
+    rv = est_set_crl_strictness_lookup(ectx, require_crl, use_cdp ? lookup_crls_cb : NULL);
+    if (rv != EST_ERR_NONE) {
+        printf("\nUnable to set CRL checking.  Aborting!!!\n");
+        exit(1);
+    }
+
     if (!pop) {
 	if (verbose) printf("\nDisabling PoP check");
 	est_server_disable_pop(ectx);

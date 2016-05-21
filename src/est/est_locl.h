@@ -172,6 +172,8 @@ struct est_ctx {
     char realm[MAX_REALM+1];
     SSL_CTX         *ssl_ctx;
     int              enable_crl;
+    int              require_crl;
+    STACK_OF(X509_CRL) *(*lookup_crls_cb)(X509_STORE_CTX *ctx, X509_NAME *nm);
 
     char             token_error[MAX_TOKEN_ERROR+1];
     char             token_error_desc[MAX_TOKEN_ERROR_DESC+1];
@@ -207,6 +209,7 @@ struct est_ctx {
     SSL_SESSION *sess;
     int  read_timeout;
     int  (*manual_cert_verify_cb)(X509 *cur_cert, int openssl_cert_error);
+    int  (*strong_cert_verify_cb)(EST_CTX *, X509_STORE_CTX *, int ok);
     const EVP_MD *signing_digest;
     int  retry_after_delay;
     time_t retry_after_date;
@@ -311,6 +314,11 @@ int est_client_send_enroll_request(EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
 void est_client_disconnect(EST_CTX *ctx, SSL **ssl);
 int est_client_set_cert_and_key(SSL_CTX *ctx, X509 *cert, EVP_PKEY *key);
 EST_ERROR est_client_set_uid_pw(EST_CTX *ctx, const char *uid, const char *pwd);
+
+int est_cert_verify_cb (int ok, X509_STORE_CTX *x_ctx);
+// used for referencing the EST_CTX in est_cert_verify_cb(), currently defined in est_client.c:
+#define SSL_EXDATA_INDEX_INVALID -1
+extern int e_ctx_ssl_exdata_index;
 
 /* From est_client_http.c */
 EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
