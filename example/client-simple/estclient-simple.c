@@ -6,7 +6,7 @@
  *
  * October, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -17,13 +17,26 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
+#ifndef WIN32
 #include <strings.h>
+#endif
 #include <stdlib.h>
 #include <est.h>
 #include "../util/utils.h"
 
 #define MAX_SERVER_LEN 32
 #define MAX_FILENAME_LEN 255
+
+#ifdef WIN32
+static CRITICAL_SECTION logger_critical_section;  
+static void windows_logger_stderr (char *format, va_list l) 
+{
+    EnterCriticalSection(&logger_critical_section);
+	vfprintf(stderr, format, l);
+	fflush(stderr);
+    LeaveCriticalSection(&logger_critical_section); 
+}
+#endif
 
 /*
  * Global variables to hold command line options
@@ -250,7 +263,7 @@ static EST_CTX * setup_est_context (void)
     /*
      * Specify the EST server address and TCP port#
      */
-    rv = est_client_set_server(ectx, est_server, est_port);
+    rv = est_client_set_server(ectx, est_server, est_port, NULL);
     if (rv != EST_ERR_NONE) {
         printf("\nUnable to configure server address.  Aborting!!!\n");
         printf("EST error code %d (%s)\n", rv, EST_ERR_NUM_TO_STR(rv));
@@ -343,7 +356,7 @@ int main (int argc, char **argv)
 
     /*
      * Read in the trusted certificates, which are used by
-     * libest to verify the identity of the EST server.
+     * CiscoEST to verify the identity of the EST server.
      */
     trustanchor_file = getenv("EST_OPENSSL_CACERT");
     cacerts_len = read_binary_file(trustanchor_file, &cacerts);
@@ -355,7 +368,13 @@ int main (int argc, char **argv)
     /*
      * This is not required, but we'll enable full debugs
      */
+#ifndef WIN32
+    /* Initialize the EST logging */
     est_init_logger(EST_LOG_LVL_INFO, NULL);
+#else
+    InitializeCriticalSection (&logger_critical_section);
+    est_init_logger(EST_LOG_LVL_INFO, &windows_logger_stderr);
+#endif 
 
     /*
      * Create a public/private key pair that will be used for 

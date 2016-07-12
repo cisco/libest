@@ -9,19 +9,38 @@
  *
  * November, 2012
  *
- * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * Copyright (c) 2012-2014, 2016 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
-#include <string.h>
+
+
 #include <stdlib.h>
+#ifdef WIN32
+#ifndef DISABLE_BACKTRACE
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
+#endif /* DISABLE_BACKTRACE*/
+#endif /*WIN32*/
 #include <stdarg.h>
-#ifndef DISABLE_BACKTRACE 
-#include <execinfo.h>
-#endif
+#include <string.h>
 #include "est.h"
 #include "est_locl.h"
 #include "est_ossl_util.h"
+#include "safe_mem_lib.h"
+#include "safe_str_lib.h"
+#ifdef HAVE_URIPARSER
+#include "uriparser/Uri.h"
+#endif
+#ifndef WIN32
+#ifndef DISABLE_BACKTRACE
+#include <execinfo.h>
+#endif
+#else /* DISABLE_BACKTRACE*/
+#ifndef DISABLE_BACKTRACE
+#include <DbgHelp.h>
+#endif  /* DISABLE_BACKTRACE*/
+#endif /* WIN32*/
 
 static char hex_chpw[] = {0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 
 			  0xF7, 0x0D, 0x01, 0x09, 0x07};
@@ -44,10 +63,14 @@ static int est_backtrace_enabled = 0;
  */
 static void est_logger_stderr (char *format, va_list l)
 {
-    flockfile(stderr);
-    vfprintf(stderr, format, l);
-    fflush(stderr);
-    funlockfile(stderr);
+#ifndef WIN32
+	flockfile(stderr);
+#endif
+	vfprintf(stderr, format, l);
+	fflush(stderr);
+#ifndef WIN32
+	funlockfile(stderr);
+#endif
 }
 
 static void est_log_msg (char *format, ...)
@@ -95,12 +118,48 @@ void est_log (EST_LOG_LEVEL lvl, char *format, ...)
 
 }
 
+#ifdef WIN32
+#ifndef DISABLE_BACKTRACE
+static void printStackTrace(void) {
+	unsigned int i;
+	void *stack[100];
+	unsigned short frames;
+	SYMBOL_INFO * symbol;
+	HANDLE        process;
+
+	process = GetCurrentProcess();
+
+	SymInitialize(process, NULL, TRUE);
+
+	frames = CaptureStackBackTrace(0, 100, stack, NULL);
+	symbol = (SYMBOL_INFO *)calloc(sizeof(SYMBOL_INFO) + 256 * sizeof(char), 1);
+	symbol->MaxNameLen = 255;
+	symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+	for (i = 0; i < frames; i++) {
+		SymFromAddr(process, (DWORD64)(stack[i]), 0, symbol);
+		est_log_msg("\n%i: [0x%0X] %s", (frames - i - 1), symbol->Address, symbol->Name);
+
+	}
+
+	free(symbol);
+}
+#endif /* DISABLE_BACKTRACE */ 
+#endif /* WIN32 */
+
 /*
  * Global function to be called to log something
  */
 void est_log_backtrace (void)
 {
 #ifndef DISABLE_BACKTRACE
+#ifdef WIN32
+	/*
+	* Spit out a backtrace if this is enabled globally
+	*/
+	if (est_backtrace_enabled) {
+		printStackTrace();
+	}
+#else
     void* callstack[128];
     char **strs;
     int i, frames;
@@ -118,11 +177,12 @@ void est_log_backtrace (void)
 	est_log_msg("\n\n");
         free(strs);
     }
-#endif
+#endif /* WIN32*/
+#endif /* DISABLE_BACKTRACE*/
 }
 
 /*! @brief est_get_version() allows the application to retrieve
-    the libest version string.  Returns a char* array containing
+    the libEST version string.  Returns a char* array containing
     the full version string value for the library.
  
     @return const char*
@@ -132,11 +192,11 @@ const char * est_get_version (void) {
 }
 
 /*! @brief est_get_api_level() allows the application to retrieve
-    the libest API level.  This is a numeric value that
+    the libEST API level.  This is a numeric value that
     indicates the API level of the library.  When new versions of
-    libest are released and the API changes, this value will be
+    libEST are released and the API changes, this value will be
     incremented.  Applications can use this to determine which capabilities
-    in the libest library should or should not be attempted.
+    in the libEST library should or should not be attempted.
  
     @return int
  */
@@ -145,7 +205,7 @@ int est_get_api_level (void) {
 }
 
 /*
- * Use this to log the libest version to an information
+ * Use this to log the libEST version to an information
  * log message.  Also logs the compile-time and run-time 
  * OpenSSL versions.
  */
@@ -201,13 +261,13 @@ EST_ERROR est_init_logger (EST_LOG_LEVEL lvl, void (*loggerfunc)(char *, va_list
 
 /*! @brief est_enable_backtrace() allows the application to toggle
     whether the stack trace is displayed for WARNING and ERROR
-    log messages coming from libest.   
+    log messages coming from libEST.
  
     @param enable Set to zero to disable stack traces, non-zero to
                   enable stack traces through the logging facility.
  
     This function allows an application to enable stack traces, which
-    may be useful for troubleshooting the libest library.  Stack
+    may be useful for troubleshooting the libEST library.  Stack
     traces are disabled by default.  Call this function with a 
     non-zero argument to enable stack traces for both WARNING and
     ERROR log messages.  This setting is global to the library and
@@ -400,8 +460,8 @@ static int est_add_certs_from_BIO (STACK_OF(X509) *stack, BIO *in)
  * applies base64 encoding to the output.  This is used
  * when creating the cached cacerts response.  The returned
  * BIO contains the PKCS7 encoded certs.  The response
- * can optionially be base64 encoded by passing in a
- * non-zero value for the do_base_66 argument.  The caller
+ * can optionally be base64 encoded by passing in a
+ * non-zero value for the do_base_64 argument.  The caller
  * of this function should invoke BIO_free_all() on the
  * return value to avoid memory leaks.  Note, BIO_free() 
  * will not be sufficient.
@@ -442,7 +502,7 @@ static BIO * est_get_certs_pkcs7 (BIO *in, int do_base_64)
      * Create a stack of X509 certs
      */
     if ((cert_stack = sk_X509_new_null()) == NULL) {
-        EST_LOG_ERR("stack mallock failed");
+        EST_LOG_ERR("stack malloc failed");
 	goto cleanup;
     }
 
@@ -469,6 +529,11 @@ static BIO * est_get_certs_pkcs7 (BIO *in, int do_base_64)
      */
     if (do_base_64) {
 	b64 = BIO_new(BIO_f_base64());
+        if (b64 == NULL) {
+            EST_LOG_ERR("BIO_new failed while attempting to create base64 BIO");
+            ossl_dump_ssl_errors();
+            goto cleanup;
+        }    
 	out = BIO_push(b64, out);
     }
 
@@ -506,9 +571,10 @@ cleanup:
 
 /*
  * Takes a raw char array containg the CA certificates, reads the data
- * in loads the certificates on to the context as pkcs7 certs.  This is
+ * in and loads the certificates on to the context as pkcs7 certs.  This is
  * stored on the EST context and used to respond to the /cacerts request,
  * which requires PKCS7 encoding.
+ *
  * This function also loads the x509 store on the context used to
  * verify the peer.
  */
@@ -558,7 +624,7 @@ EST_ERROR est_load_ca_certs (EST_CTX *ctx, unsigned char *raw, int size)
         BIO_free(in);
         return (EST_ERR_LOAD_CACERTS);
     }
-    memcpy(ctx->ca_certs, retval, ctx->ca_certs_len);
+    memcpy_s(ctx->ca_certs, ctx->ca_certs_len, retval, ctx->ca_certs_len);
     BIO_free_all(cacerts);
     BIO_free(in);
     return (EST_ERR_NONE);
@@ -608,12 +674,12 @@ EST_ERROR est_load_trusted_certs (EST_CTX *ctx, unsigned char *certs, int certs_
 
     This function is used to link application specific data to the
     EST_CTX structure.  This can be used by an application to bind
-    application specific data to an EST operation.  libest does 
+    application specific data to an EST operation.  libEST does
     not use the application specific data.  The *ex_data pointer is
-    passed back to the application when libest invokes the 
+    passed back to the application when libEST invokes the
     enroll, re-enroll, CSR attributes, and HTTP auth callbacks.
 
-    libest will not free the memory referenced by the *ex_data
+    libEST will not free the memory referenced by the *ex_data
     parameter when est_destroy() is invoked.  The application is
     responsible for releasing its application specific data. 
  */
@@ -694,6 +760,10 @@ EST_ERROR est_destroy (EST_CTX *ctx)
         free(ctx->ca_chain_raw);
     }
 
+    if (ctx->uri_path_segment) {
+        free(ctx->uri_path_segment);
+    }
+
     if (ctx->dh_tmp) {
 	DH_free(ctx->dh_tmp);
     }
@@ -725,54 +795,6 @@ EST_ERROR est_destroy (EST_CTX *ctx)
     return (EST_ERR_NONE);
 }
 
-/*
- * The following function was taken from Mongoose.  The
- * Mongoose copyright is included to comply with COSI.
- */
-// Copyright (c) 2004-2012 Sergey Lyubka
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-void est_base64_encode (const unsigned char *src, int src_len, char *dst)
-{
-    static const char *b64 =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    int i, j, a, b, c;
-
-    for (i = j = 0; i < src_len; i += 3) {
-        a = src[i];
-        b = i + 1 >= src_len ? 0 : src[i + 1];
-        c = i + 2 >= src_len ? 0 : src[i + 2];
-
-        dst[j++] = b64[a >> 2];
-        dst[j++] = b64[((a & 3) << 4) | (b >> 4)];
-        if (i + 1 < src_len) {
-            dst[j++] = b64[(b & 15) << 2 | (c >> 6)];
-        }
-        if (i + 2 < src_len) {
-            dst[j++] = b64[c & 63];
-        }
-    }
-    while (j % 4 != 0) {
-        dst[j++] = '=';
-    }
-    dst[j++] = '\0';
-}
 
 /*
  * This routine is used to determine whether the BIO_FLAGS_BASE64_NO_NL 
@@ -823,22 +845,36 @@ int est_base64_decode (const char *src, char *dst, int dst_size)
     int max_in;
 
     /*
-     * Calculate the max size of the base64 encoded data based
-     * on the maximum size of the destination buffer.  Base64
-     * grows the original data by 4/3.
+     * When decoding base64, the output will always be smaller by a
+     * ratio of 4:3.  Determine what the max size can be for the input
+     * based on the size of the given output buffer and then make sure that
+     * the actual input buffer is not too big.
      */
     max_in = ((dst_size * 4) / 3) + 1;
-
     /*
-     * Get the length of the base64 encoded data.
+     * Get the length of the base64 encoded data.  Make sure it's not too
+     * big
      */
-    len = strnlen(src, max_in); 
-    if (len <= 0) {
-	return (len);
+    len = strnlen_s(src, max_in+1); 
+    if (len > max_in) {
+        EST_LOG_ERR("Source buffer for base64 decode is loo large for destination buffer. "
+                    "source buf len = %d, max input len = %d, max dest len = %d",
+                    len, max_in, dst_size);
+	return (0);
     }
 
     b64 = BIO_new(BIO_f_base64());
+    if (b64 == NULL) {
+        EST_LOG_ERR("BIO_new failed while attempting to create base64 BIO");
+        ossl_dump_ssl_errors();
+	return (0);
+    }
     b64in = BIO_new_mem_buf((char *)src, len); 
+    if (b64in == NULL) {
+        EST_LOG_ERR("BIO_new failed while attempting to create mem BIO");
+        ossl_dump_ssl_errors();
+	return (0);
+    }
     if (!est_base64_contains_nl (src, len)) {
 	/*
 	 * Enable the no newlines option if the input
@@ -862,6 +898,83 @@ int est_base64_decode (const char *src, char *dst, int dst_size)
     return (len);
 }
 
+
+/*
+ * This routine is used to encode base64 data.
+ * Pass in the unencoded data, the length of the source buffer,
+ * and a pointer to a buffer to receive the encoded data.
+ * The length of the encoded data is returned.  If the return value
+ * is zero, then an error occurred.  The max_dest_len parameter
+ * is the maximum allowed size of the encoded data.
+ */
+int est_base64_encode (const char *src, int actual_src_len, char *dst,
+                       int max_dst_len)
+{
+    BIO *b64;
+    BIO *out;
+    int max_src_len;
+    int actual_dst_len = 0;
+    int write_cnt = 0;
+    BUF_MEM *bptr = NULL;
+    
+    /*
+     * When encoding base64, the output will always be larger by a
+     * ratio of 3:4.  Determine what the max size can be for the input
+     * based on the size of the given output buffer and then make sure that
+     * the actual input buffer is not too big.
+     */
+    max_src_len = ((max_dst_len * 3) / 4) + 1;
+    if (actual_src_len > max_src_len) {
+        EST_LOG_ERR("Source buffer for base64 encode is loo large for destination buffer. "
+                    "max source len = %d, actual_source len = %d",
+                    max_src_len, actual_src_len);
+	return 0;
+    }
+
+    b64 = BIO_new(BIO_f_base64());
+    if (b64 == NULL) {
+        EST_LOG_ERR("BIO_new failed while attempting to create base64 BIO");
+        ossl_dump_ssl_errors();
+        return 0;
+    }    
+
+    out = BIO_new(BIO_s_mem());
+    if (out == NULL) {
+        EST_LOG_ERR("BIO_new failed while attempting to create mem based BIO");
+        ossl_dump_ssl_errors();
+        BIO_free_all(b64);
+        return 0;
+    }
+    out = BIO_push(b64, out);
+
+    /*
+     * We don't ever insert new lines
+     */
+    BIO_set_flags(out, BIO_FLAGS_BASE64_NO_NL);
+
+    /*
+     * Write the source buffer through the BIOs and then get a pointer
+     * to the resulting memory buffer on the other side to obtain the
+     * result.
+     */
+    write_cnt = BIO_write(out, src, actual_src_len);
+    (void)BIO_flush(out);
+    BIO_get_mem_ptr(out, &bptr);
+    if (write_cnt <= 0) {
+	EST_LOG_WARN("BIO_write failed while encoding base64 data (%d)", write_cnt);
+    } else {
+        /*
+         * copy out the resulting base64 encoded string, make sure it's
+         * null terminated, and return the length
+         */
+        memcpy_s(dst, max_dst_len, bptr->data, bptr->length);
+        dst[bptr->length] = '\0';
+        actual_dst_len = bptr->length;
+    }
+
+    BIO_free_all(b64);
+    return (actual_dst_len);
+}
 
 
 /*
@@ -895,7 +1008,17 @@ char * est_get_tls_uid (SSL *ssl, int is_client)
     }
 
     b64 = BIO_new(BIO_f_base64());
+    if (b64 == NULL) {
+        EST_LOG_ERR("BIO_new failed while attempting to create base64 BIO");
+        ossl_dump_ssl_errors();
+	return rv;
+    }
     bio = BIO_new(BIO_s_mem());
+    if (bio == NULL) {
+        EST_LOG_ERR("BIO_new failed while attempting to create mem based BIO");
+        ossl_dump_ssl_errors();
+	return rv;
+    }
     (void)BIO_flush(bio);
     bio = BIO_push(b64, bio);
     BIO_write(bio, finished, len);
@@ -911,7 +1034,11 @@ char * est_get_tls_uid (SSL *ssl, int is_client)
                      EST_TLS_UID_LEN);
     } else {
         rv = malloc(EST_TLS_UID_LEN + 1);
-        memcpy(rv, bptr->data, EST_TLS_UID_LEN);
+        if (rv == NULL) {
+            EST_LOG_ERR("Failed to allocate buffer");
+            return rv;
+        }    
+        memcpy_s(rv, EST_TLS_UID_LEN, bptr->data, EST_TLS_UID_LEN);
         rv[EST_TLS_UID_LEN-1] = '\0';
         EST_LOG_INFO("TLS UID was found");
     }
@@ -988,7 +1115,7 @@ EST_ERROR est_asn1_sanity_test (const unsigned char *string, long out_len,
 
     /* make sure its long enough to be ASN.1 */
     if (out_len < MIN_ASN1_CSRATTRS) {
-        return (EST_ERR_INVALID_PARAMETERS);
+        return (EST_ERR_BAD_ASN1_HEX_TOO_SHORT);
     }
 
     while (out_len > 0) {
@@ -1027,7 +1154,7 @@ EST_ERROR est_asn1_sanity_test (const unsigned char *string, long out_len,
         return (EST_ERR_BAD_ASN1_HEX);
     }
     if (out_len_save > max_len) {
-        return (EST_ERR_INVALID_PARAMETERS);
+        return (EST_ERR_BAD_ASN1_HEX_TOO_LONG);
     }
     return (EST_ERR_NONE);
 }
@@ -1086,14 +1213,14 @@ EST_ERROR est_asn1_parse_attributes (const char *p, int len, int *pop_present)
 
     rv = est_asn1_sanity_test(der_ptr, der_len, pop_present);
     if (rv != EST_ERR_NONE) {
-        EST_LOG_ERR("Invalid ASN1 encoded data");
+        EST_LOG_ERR("Invalid ASN1 encoded data. rv = %d (%s)",
+                    rv, EST_ERR_NUM_TO_STR(rv));
 	free(der_ptr);
 	return (rv);
     }
     free(der_ptr);
     return (EST_ERR_NONE);
 }
-
 
 
 /* 
@@ -1109,6 +1236,7 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
     char *orig_ptr, *new_der = NULL, *csrattrs;
     int der_len, tag, xclass, new_len;
     long len;
+    int enc_len;
 
     der_ptr = malloc(b64_len*2);
     if (!der_ptr) {
@@ -1145,10 +1273,11 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
 	    free(orig_ptr);
 	    return (EST_ERR_MALLOC);
 	}
+        memzero_s(new_der, new_len);
 	*(new_der + 1) = 0x82;
         *(new_der + 2) = (new_len - 4) >> 8;
         *(new_der + 3) = ((new_len - 4) & 0xff);
-        memcpy(new_der+4, der_ptr, der_len - len);
+        memcpy_s(new_der+4, der_len - (unsigned int) len, der_ptr, der_len - (unsigned int)len);
 	/* if <= 256, but >= 128 need 3 byte Seq header */
     } else if ((der_len - len + sizeof(hex_chpw)) >= 128) {
         new_len += 3;
@@ -1157,9 +1286,10 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
 	    free(orig_ptr);
 	    return (EST_ERR_MALLOC);
 	}
+        memzero_s(new_der, new_len);
         *(new_der + 1) = 0x81;
         *(new_der + 2) = new_len - 3;
-        memcpy(new_der+3, der_ptr, der_len - len);
+        memcpy_s(new_der+3, der_len - ((rsize_t) len), der_ptr, der_len - ((rsize_t) len));
         /* else just need 2 byte header */
     } else {
         new_len += 2;
@@ -1168,13 +1298,14 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
 	    free(orig_ptr);
 	    return (EST_ERR_MALLOC);
 	}
+        memzero_s(new_der, new_len);
         *(new_der + 1) = new_len - 2;
 	if ((der_len - len) != 0) {
-            memcpy(new_der+2, der_ptr, der_len - len);
+            memcpy_s(new_der+2, der_len - ((rsize_t) len), der_ptr, der_len - ((rsize_t) len));
 	}
     }
     *new_der = 0x30;
-    memcpy(new_der + (new_len - sizeof(hex_chpw)), 
+    memcpy_s(new_der + (new_len - sizeof(hex_chpw)), sizeof(hex_chpw),
 	     hex_chpw, sizeof(hex_chpw));
 
     csrattrs = malloc(new_len*2);
@@ -1183,11 +1314,19 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
         free(new_der);
 	return (EST_ERR_MALLOC);
     }
-    est_base64_encode((const unsigned char *)new_der, 
- 		       new_len, (char *)csrattrs);
+    memzero_s(csrattrs, new_len*2);
+    
+    enc_len = est_base64_encode((const char *)new_der, new_len, (char *)csrattrs, new_len*2);
+    if (enc_len <= 0) {
+        EST_LOG_ERR("Invalid base64 encoded data");
+        free(orig_ptr);
+        free(new_der);
+        free(csrattrs);
+        return (EST_ERR_BAD_BASE64);
+    }
 
     *new_csr = csrattrs;
-    *pop_len = (int) strlen(csrattrs);
+    *pop_len = (int) strnlen_s(csrattrs, new_len*2);
     EST_LOG_INFO("CSR reconstituted attributes are(%d/%d): %s", b64_len, *pop_len, csrattrs);
 
     if (new_der) {
@@ -1384,57 +1523,57 @@ void cleanse_auth_credentials(EST_HTTP_AUTH_HDR *auth_cred)
     }
     
     if (auth_cred->user) {
-        OPENSSL_cleanse(auth_cred->user, strnlen(auth_cred->user, MAX_UIDPWD));
+        OPENSSL_cleanse(auth_cred->user, strnlen_s(auth_cred->user, MAX_UIDPWD));
         free(auth_cred->user);
         auth_cred->user = NULL;
     }
     
     if (auth_cred->pwd) {
-        OPENSSL_cleanse(auth_cred->pwd, strnlen(auth_cred->pwd, MAX_UIDPWD));
+        OPENSSL_cleanse(auth_cred->pwd, strnlen_s(auth_cred->pwd, MAX_UIDPWD));
         free(auth_cred->pwd);
         auth_cred->pwd = NULL;
     }
     
     if (auth_cred->uri) {
-        OPENSSL_cleanse(auth_cred->uri, strnlen(auth_cred->uri, EST_URI_MAX_LEN));
+        OPENSSL_cleanse(auth_cred->uri, strnlen_s(auth_cred->uri, EST_URI_MAX_LEN));
         free(auth_cred->uri);
         auth_cred->uri = NULL;
     }
     
     if (auth_cred->cnonce) {
-        OPENSSL_cleanse(auth_cred->cnonce, strnlen(auth_cred->cnonce, MAX_NONCE));
+        OPENSSL_cleanse(auth_cred->cnonce, strnlen_s(auth_cred->cnonce, MAX_NONCE));
         free(auth_cred->cnonce);
         auth_cred->cnonce = NULL;
     }
     
     if (auth_cred->qop) {
-        OPENSSL_cleanse(auth_cred->qop, strnlen(auth_cred->qop, MAX_QOP));
+        OPENSSL_cleanse(auth_cred->qop, strnlen_s(auth_cred->qop, MAX_QOP));
         free(auth_cred->qop);
         auth_cred->qop = NULL;
     }
     
     if (auth_cred->nc) {
-        OPENSSL_cleanse(auth_cred->nc, strnlen(auth_cred->nc, MAX_NC));
+        OPENSSL_cleanse(auth_cred->nc, strnlen_s(auth_cred->nc, MAX_NC));
         free(auth_cred->nc);
         auth_cred->nc = NULL;
     }
     
     if (auth_cred->nonce) {
-        OPENSSL_cleanse(auth_cred->nonce, strnlen(auth_cred->nonce,
+        OPENSSL_cleanse(auth_cred->nonce, strnlen_s(auth_cred->nonce,
                                                     MAX_NONCE));
         free(auth_cred->nonce);
         auth_cred->nonce = NULL;
     }
     
     if (auth_cred->response) {
-        OPENSSL_cleanse(auth_cred->response, strnlen(auth_cred->response,
+        OPENSSL_cleanse(auth_cred->response, strnlen_s(auth_cred->response,
                                                        MAX_RESPONSE));
         free(auth_cred->response);
         auth_cred->response = NULL;
     }
     
     if (auth_cred->auth_token) {
-        OPENSSL_cleanse(auth_cred->auth_token, strnlen(auth_cred->auth_token,
+        OPENSSL_cleanse(auth_cred->auth_token, strnlen_s(auth_cred->auth_token,
                                                          MAX_AUTH_TOKEN_LEN));
         free(auth_cred->auth_token);
         auth_cred->auth_token = NULL;
@@ -1442,3 +1581,271 @@ void cleanse_auth_credentials(EST_HTTP_AUTH_HDR *auth_cred)
     
     return;
 }
+
+
+/*
+ * Given an input string, look for the four valid operations
+ */
+EST_OPERATION est_parse_operation (char *op_path) 
+{
+    EST_OPERATION operation;
+
+    if (!est_strcasecmp_s(op_path, EST_GET_CACERTS)) {
+        operation = EST_OP_CACERTS;
+    } else if (!est_strcasecmp_s(op_path, EST_GET_CSRATTRS)) {
+        operation = EST_OP_CSRATTRS;
+    } else if (!est_strcasecmp_s(op_path, EST_SIMPLE_ENROLL)) {
+        operation = EST_OP_SIMPLE_ENROLL;
+    } else if (!est_strcasecmp_s(op_path, EST_SIMPLE_REENROLL)) {
+        operation = EST_OP_SIMPLE_REENROLL;
+    } else {
+        operation = EST_OP_MAX;
+    }
+    
+    return (operation);
+}
+
+/*
+ * Given a URI string, parse it up and return the optional path
+ * segment if it exists and the operation value
+ */
+#ifdef HAVE_URIPARSER
+EST_ERROR est_parse_uri (char *uri, EST_OPERATION *operation,
+                         char **path_seg) 
+{
+    /* char *path_seg_end; */
+    /* int   path_seg_len = 0; */
+    UriParserStateA state;
+    UriUriA parsed_uri;
+    EST_ERROR rv = EST_ERR_NONE;
+    int uriparse_rc;
+    errno_t safec_rc;    
+    int diff;
+
+    *path_seg = NULL;
+    state.uri = &parsed_uri;
+    uriparse_rc = uriParseUriA(&state, uri);
+    if (uriparse_rc != URI_SUCCESS) {
+        uriFreeUriMembersA(state.uri);
+        return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+    }
+
+    if (parsed_uri.pathHead) {
+        
+        /*
+         * validate the URI
+         * - parse the path-prefix (/.well-known/est)
+         * - look to see if there is a path segment extension
+         * - determine which operation it is
+         */        
+        UriPathSegmentA *cur_seg = parsed_uri.pathHead;
+        char *cur_seg_str = (char *)cur_seg->text.first;
+        int cur_seg_len = 0;
+        char *segment = NULL;
+        
+        safec_rc = memcmp_s(cur_seg_str, WELL_KNOWN_SEGMENT_LEN,
+                            ".well-known", WELL_KNOWN_SEGMENT_LEN, &diff);
+        if (diff || safec_rc != EOK) {
+            EST_LOG_ERR("URI path does not start with %s, safec_rc = 0x%xO\n",
+                        WELL_KNOWN_SEGMENT, safec_rc);
+            uriFreeUriMembersA(state.uri);
+            return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+        }
+        
+        cur_seg = cur_seg->next;
+        cur_seg_str = (char *)cur_seg->text.first;
+        safec_rc = memcmp_s(cur_seg_str, EST_SEGMENT_LEN,
+                            "est", EST_SEGMENT_LEN, &diff);
+        if (diff || safec_rc != EOK) {
+            EST_LOG_ERR("URI does not contain %s segment 0x%xO\n",
+                        EST_SEGMENT, safec_rc);
+            uriFreeUriMembersA(state.uri);
+            return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+        }
+        
+        /*
+         * This next segment is either a segment extension
+         * or it's the operation 
+         */
+        cur_seg = cur_seg->next;
+        cur_seg_str = (char *)cur_seg->text.first;
+
+        /*
+         * If there's another segment after this one then use it
+         * to find the end, else walk this one for the length
+         */
+        if (cur_seg->text.afterLast) {
+            cur_seg_len = ((char *)cur_seg->text.afterLast) - cur_seg_str;
+        } else {
+            cur_seg_len = strnlen_s(cur_seg_str, EST_MAX_PATH_SEGMENT_LEN+1);
+        }
+        if (cur_seg_len > EST_MAX_PATH_SEGMENT_LEN) {
+            EST_LOG_ERR("path segment exceeds maximum of %d\n",
+                        EST_MAX_PATH_SEGMENT_LEN);
+            uriFreeUriMembersA(state.uri);
+            return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+        }
+
+        /*
+         * See if the current segment needs to be put into its own
+         * string
+         */
+        if ((cur_seg->text.afterLast != NULL) &&
+            *(cur_seg->text.afterLast) != '\0') {
+            segment = STRNDUP(cur_seg_str, cur_seg_len);
+        } else {
+            segment = STRNDUP(cur_seg_str, EST_MAX_PATH_SEGMENT_LEN);
+        }
+        
+        /*
+         * look to see if the operation path comes next:
+         * cacerts, csrattrs, simpleenroll, simplereenroll
+         */
+        *operation = est_parse_operation(segment);
+        if (*operation == EST_OP_MAX) {
+            
+            /*
+             * It wasn't one of the 4 known operations so
+             * it must be a path segment.  parse it out.
+             *
+             * Find the end of the path segment,
+             * determine the length,
+             * save it away
+             */
+            /* path_seg_end = (char *)cur_seg->text.afterLast; */
+            
+            /* if (path_seg_end != NULL) { */
+            /*     path_seg_len = path_seg_end - cur_seg_str; */
+            /* } */
+            
+            *path_seg = malloc(cur_seg_len+1);
+            if (*path_seg == NULL) {
+                free(segment);
+                uriFreeUriMembersA(state.uri);
+                return (EST_ERR_MALLOC);
+            }
+            
+            safec_rc = memcpy_s(*path_seg, cur_seg_len+1,
+                                segment, cur_seg_len);
+            if (safec_rc != EOK) {
+                EST_LOG_ERR("URI path seg could not copied into the context");
+                free(segment);
+                free(*path_seg);
+                *path_seg = NULL;
+                uriFreeUriMembersA(state.uri);                
+                return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+            }
+            *((*path_seg)+cur_seg_len) = '\0';
+            
+            /*
+             * now that we have the path segment parsed, try
+             * for the operation again.  jump over the path segment
+             * and the next '/'
+             */
+            cur_seg_str = cur_seg_str + cur_seg_len + 1;
+            *operation = est_parse_operation(cur_seg_str);
+            
+            if (*operation == EST_OP_MAX) {
+                /*
+                 * Operation code was suppose to be next but is not
+                 */
+                free(segment);
+                free(*path_seg);
+                *path_seg = NULL;
+                uriFreeUriMembersA(state.uri);                
+                return (EST_ERR_HTTP_BAD_REQ);
+            }
+        } else {
+            /*
+             * It was one of the operations, make sure it's the end
+             */
+            if ((cur_seg->text.afterLast != NULL) &&
+                *(cur_seg->text.afterLast) != '\0') {
+                EST_LOG_ERR("Invalid path segment: contains an operation value");
+                free(segment);
+                free(*path_seg);
+                *path_seg = NULL;
+                *operation = EST_OP_MAX;
+                uriFreeUriMembersA(state.uri);
+                return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+            }
+        }
+        free(segment);
+        uriFreeUriMembersA(state.uri);        
+    }    
+    return (rv);
+}
+#else
+EST_ERROR est_parse_uri (char *uri, EST_OPERATION *operation,
+                         char **path_seg) 
+{
+    EST_ERROR rc = EST_ERR_NONE;
+    *path_seg = NULL;
+    /*
+     * Assume that the uri is pointing to
+     *   /.well-known/est/<operation>
+     */
+    if (strncmp(uri, EST_CACERTS_URI, EST_URI_MAX_LEN) == 0) {
+        *operation = EST_OP_CACERTS;
+    } else if (strncmp(uri, EST_SIMPLE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
+        *operation = EST_OP_SIMPLE_ENROLL;
+    } else if (strncmp(uri, EST_RE_ENROLL_URI, EST_URI_MAX_LEN) == 0) {
+        *operation = EST_OP_SIMPLE_REENROLL;
+    } else if (strncmp(uri, EST_CSR_ATTRS_URI, EST_URI_MAX_LEN) == 0) {
+        *operation = EST_OP_CSRATTRS;
+    } else {
+        *operation = EST_OP_MAX;
+        rc = EST_ERR_HTTP_INVALID_PATH_SEGMENT;
+        
+    }
+    
+    return rc;
+}
+#endif
+
+/*
+ * Store the path segment into the context.
+ */
+EST_ERROR est_store_path_segment (EST_CTX *ctx, char *path_segment,
+                                  int path_segment_len)
+{
+    /*
+     * reset what might already be cached
+     */
+    if (ctx->uri_path_segment) {
+        free(ctx->uri_path_segment);
+        ctx->uri_path_segment = NULL;
+    }
+    
+    ctx->uri_path_segment = malloc(strnlen_s(path_segment, path_segment_len)+1);
+    if (ctx->uri_path_segment == NULL) {
+        return EST_ERR_MALLOC;
+    }
+    
+    if (EOK != strncpy_s(ctx->uri_path_segment, path_segment_len+1,
+                         path_segment, path_segment_len)) {
+        return EST_ERR_HTTP_INVALID_PATH_SEGMENT;
+    }
+    ctx->uri_path_segment[path_segment_len] = '\0';
+
+    return EST_ERR_NONE;   
+}
+
+
+int est_strcasecmp_s (char *s1, char *s2)
+{
+    errno_t safec_rc;
+    int diff;
+    
+    safec_rc = strcasecmp_s(s1, strnlen_s(s1, RSIZE_MAX_STR), s2, &diff);
+
+    if (safec_rc != EOK) {
+    	/*
+    	 * Log that we encountered a SafeC error
+     	 */
+     	EST_LOG_INFO("strcasecmp_s error 0x%xO\n", safec_rc);
+    } 
+
+    return diff;
+}
+

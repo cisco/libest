@@ -9,13 +9,10 @@ Directory contents:
 		target built from this directory is libest.a.
     /example	This directory contains sample code for implementing
                 an EST client or server.
-    /test	This directory contains unit test code to verify
-                the libest capabilities.
-
 
 Getting started
 ---------------
-1.  ./configure; make; make install
+1.  ./configure; make
 2.  Descend into the example/server directory and run
     the sample EST server.  There is a README in this directory
     with detailed instructions.
@@ -23,15 +20,59 @@ Getting started
     the sample EST client.  There is a README in this directory
     with detailed instructions.
 
+Getting started - Windows
+--------------------------
+libEST can be built natively on Windows, but only client
+functionality has been explictly tested. libEST uses Gradle for Windows
+build automation and the Visual Studio toolchain.
 
+To build using Gradle you must have Visual Studio 2010, 2012, or 2013
+and at least Gradle 2.12 on your system. Follow the steps below to
+build an EST dll with Gradle:
 
+1.  Have OpenSSL built and installed on your Windows system
+
+2.  Set the following environment variables to tell the Gradle build script 
+    where to find your installations of OpenSSL and EST
+
+    SSL_DIR - must contain an "include" subdirectory for the OpenSSL header files,
+              a "bin" subdirectory for the OpenSSL dll binaries, and a "lib" subdirectory
+              for the OpenSSL link files
+    
+    set SSL_DIR=C:\PathToYourLibraryInstalls\OpenSSL
+    
+    URIPARSER_DIR - Specify only if path segment support is required. Must contain
+                    an "include" subdirectory for uriparser header files and a "lib"
+                    subdirectory for the uriparser.lib static library file.
+    
+    set URIPARSER_DIR=C:\PathToYourLibraryInstalls\uriparser
+    
+    PATH - must contain the path to your Visual Studio 2010/2012/2013 VC bin directory 
+           prior to any other Visual Studio bin directory and the path to 
+           your Gradle executable (which should already be in PATH)
+           
+    set PATH=C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin;%PATH%
+    
+3.  Invoke Gradle:
+
+    gradle estReleaseSharedLibrary
+    
+    The est.dll binary and est.lib link file can then be found at the path below:
+    
+    build\libs\est\shared\release
+    
+    To see all build related tasks Gradle can perform for EST, type:
+    
+    gradle tasks
+      
 Cross-compiling
 ---------------
-libest has been cross-compiled for Android, but no testing
+libEST has been cross-compiled for Android, but no testing
 has been performed.  Follow these steps to compile using the 
 Android NDK:
 
-1.  Compile and install OpenSSL for Android.  
+1.  Compile and install OpenSSL for Android.  See OpenSSL docs
+    for details.
 
 2.  Set the following environment variables to setup your cross-compile.
     This assumes you've installed OpenSSL into /usr/local/OpenSSL-Android:
@@ -43,7 +84,7 @@ Android NDK:
     **Note: you may not need all the CFLAGS values above depending
             on your tool chain.
 
-3.  Configure libest for cross-compiling and specify the location
+3.  Configure libEST for cross-compiling and specify the location
     of your OpenSSL build:
 
     ./configure --with-ssl-dir=/usr/local/OpenSSL-Android \
@@ -55,4 +96,7 @@ Android NDK:
 
     make
     make install
+
+
+
 

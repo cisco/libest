@@ -77,7 +77,7 @@ void write_binary_file (char *filename, unsigned char *contents, int len)
  * Simple function to display hex data to stdout
  * This is used for debugging
  */
-void dumpbin (unsigned char *buf, size_t len)
+void dumpbin (unsigned char *buf, int len)
 {
     int i;
 

@@ -8,7 +8,7 @@
  *
  * November, 2012
  *
- * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * Copyright (c) 2012-2014, 2016 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -78,10 +78,10 @@
 #include <openssl/x509v3.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
-#include <openssl/x509.h>
 #include "est_ossl_util.h"
 #include "est.h"
 #include "est_locl.h"
+#include "safe_mem_lib.h"
 
 /*****************************************************************************************
 * Authorization routines
@@ -303,6 +303,12 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
      * X509 certs
      */
     p7bio_in = BIO_new_mem_buf(cacerts_decoded, cacerts_decoded_len);
+    if (!p7bio_in) {
+        EST_LOG_ERR("BIO_new failed while attempting to create mem BIO");
+        ossl_dump_ssl_errors();
+        free(cacerts_decoded);
+        return (-1);
+    }
     p7 = d2i_PKCS7_bio(p7bio_in, NULL);
     if (!p7) {
 	EST_LOG_ERR("PEM_read_bio_PKCS7 failed");
@@ -371,338 +377,10 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
 	PKCS7_free(p7);
 	return (-1);
     }
-    memcpy(*pem, pem_data, pem_len);   
+    memcpy_s(*pem, pem_len, pem_data, pem_len);   
     (*pem)[pem_len] = 0;  //Make sure it's null termianted
     BIO_free_all(out);
     PKCS7_free(p7);
     return (pem_len);
 }
 
-/*! @brief est_ossl_BIO_copy_data() returns a copy of the contents of the given BIO.
- 
-    @param out       Pointer to BIO to be read
-    @param data_lenp Pointer (or NULL) to variable that will receive the length of the data. 
-
-    This function will allocate memory for the data
-    On success, the caller is responsible for freeing this memory.
- 
-    @return the pointer to the allocated copy, or NULL
- */
-
-unsigned char *est_ossl_BIO_copy_data(BIO *out, int *data_lenp) {
-    unsigned char *data, *tdata;
-    int data_len;
-
-    data_len = BIO_get_mem_data(out, &tdata);
-    data = malloc(data_len+1);
-    if (data) {
-        memcpy(data, tdata, data_len);
-	data[data_len]='\0';  // Make sure it's \0 terminated, in case used as string
-	if (data_lenp) {
-	    *data_lenp = data_len;
-	}
-    } else {
-        EST_LOG_ERR("malloc failed");
-    }
-    return data;
-}
-
-
-int X509_REQ_get_extension(X509_REQ *req, int nid, int lastpos, STACK_OF(X509_EXTENSION) **pexts, 
-			   int delete_exts, int *pnid_deleted_exts)
-{
-	X509_ATTRIBUTE *attr;
-	STACK_OF(X509_EXTENSION) *exts;
-	ASN1_TYPE *ext = NULL;
-	int *pnid, idx, elem, item;
-	const unsigned char *p;
-	int *ext_nids = X509_REQ_get_extension_nids();
-
-	if (req == NULL)
-		return(-2);
-	if (req->req_info == NULL || !ext_nids)
-		return(-1);
-	lastpos++;
-	if (lastpos < 0)
-		lastpos = 0;
-	pnid = ext_nids-1; 
-	int pos = -1;
-     next_nid:
-	if (*++pnid == NID_undef)
-    		return -1;
-	idx = -1;
-    next_attr:
-	idx = X509_REQ_get_attr_by_NID(req, *pnid, idx);
-	if (idx == -1)
-		goto next_nid;
-	attr = X509_REQ_get_attr(req, idx);
-	elem = -1;
-    next_elem:
-	elem++;
-	ext = NULL;
-	if (attr->single == 1&& elem == 0)
-		ext = attr->value.single;
-	else if (attr->single == 0 && elem < sk_ASN1_TYPE_num(attr->value.set))
-		ext = sk_ASN1_TYPE_value(attr->value.set, elem);
-	if (!ext)
-		goto next_attr;
-	if (ext->type != V_ASN1_SEQUENCE)
-		goto next_elem;
-	p = ext->value.sequence->data;
-	exts = (STACK_OF(X509_EXTENSION) *)
-		ASN1_item_d2i(NULL, &p, ext->value.sequence->length,
-			      ASN1_ITEM_rptr(X509_EXTENSIONS));
-	item = -1;
-    next_item:
-	item = X509v3_get_ext_by_NID(exts, nid, item);
-	if (item == -1) {
-		sk_X509_EXTENSION_pop_free(exts, X509_EXTENSION_free);
-		goto next_elem;
-	}
-	if (++pos < lastpos)
-		goto next_item;
-
-	// found
-	if (pexts)
-		*pexts = exts;
-	else
-		sk_X509_EXTENSION_pop_free(exts, X509_EXTENSION_free);
-	if (delete_exts) {
-		if (attr->single || sk_ASN1_TYPE_num(attr->value.set) == 1)
-			X509_REQ_delete_attr(req, idx);
-		else 
-			(void)sk_ASN1_TYPE_delete(attr->value.set, elem);
-		if (pnid_deleted_exts)
-			*pnid_deleted_exts = *pnid;
-	}
-	return pos;
-}
-
-
-/* The caller is responsible for freeing the string returned. */
-
-unsigned char *ossl_get_extension_value (const X509_EXTENSION *ext)
-{
-    unsigned char *val = NULL;
-
-    if (ext) {
-        BIO *out = BIO_new(BIO_s_mem());
-	if (out) {
-	    if (!X509V3_EXT_print(out, (X509_EXTENSION *)ext, XN_FLAG_COMPAT, X509_FLAG_COMPAT))
-	    {
-	        BIO_printf(out, "%16s", "");
-		M_ASN1_OCTET_STRING_print(out, ext->value);
-	    }
-	    val = est_ossl_BIO_copy_data(out, NULL);
-	    BIO_free(out);
-	}
-    }
-    return val;
-}
-
-/* The caller is responsible for freeing the string returned. */
-unsigned char *ossl_get_csr_subject_alt_name (const X509_REQ *csr)
-{
-    STACK_OF(X509_EXTENSION) *exts;
-    // would be incomplete: exts = X509_REQ_get_extensions(csr);
-    const X509_EXTENSION *ext = NULL;
-    if (X509_REQ_get_extension((X509_REQ *)csr, NID_subject_alt_name, -1, &exts, 0, NULL) >= 0) {
-        ext = sk_X509_EXTENSION_value(exts, X509v3_get_ext_by_NID(exts, NID_subject_alt_name, -1));
-    }
-    unsigned char *str = ossl_get_extension_value(ext);
-    if (ext)
-        sk_X509_EXTENSION_pop_free(exts, X509_EXTENSION_free);
-    return str;
-}
-
-/* The caller is responsible for freeing the string returned. */
-unsigned char *ossl_get_cert_subject_alt_name (const X509 *cert)
-{
-    const X509_EXTENSION *ext = X509_get_ext((X509 *)cert, X509_get_ext_by_NID((X509 *)cert, NID_subject_alt_name, -1));
-    return ossl_get_extension_value(ext);
-}
-
-int ossl_name_entries_inclusion (X509_NAME *name1, X509_NAME *name2)
-{
-    int pos1, pos2;
-    for (pos1 = 0; pos1 < X509_NAME_entry_count(name1); pos1++) {
-	X509_NAME_ENTRY *ne1 = X509_NAME_get_entry(name1, pos1);
-	int found = 0;
-	for (pos2 = 0; pos2 < X509_NAME_entry_count(name2); pos2++) {
-	    X509_NAME_ENTRY *ne2 = X509_NAME_get_entry(name2, pos2);
-	    if (OBJ_obj2nid(X509_NAME_ENTRY_get_object(ne1)) == 
-		OBJ_obj2nid(X509_NAME_ENTRY_get_object(ne2)) &&
-		!ASN1_STRING_cmp(X509_NAME_ENTRY_get_data(ne1), 
-				 X509_NAME_ENTRY_get_data(ne2))) {
-		found = 1;
-		break;
-	    }
-	}
-	if (!found) {
-	    return 0;
-	}
-    }
-    return 1;
-}
-
-EST_ERROR ossl_check_subjects_agree(const X509_REQ *csr, const X509 *cer)
-{
-    X509_NAME *subj1 = X509_REQ_get_subject_name((X509_REQ *)csr);
-    X509_NAME *subj2 = X509_get_subject_name    ((X509     *)cer);
-    EST_ERROR rv = EST_ERR_SUBJECT_MISMATCH;
-
-    char *csr_subject = X509_NAME_oneline(X509_REQ_get_subject_name((X509_REQ *)csr), NULL, 0);
-    char *cer_subject = X509_NAME_oneline(X509_get_subject_name    ((X509     *)cer), NULL, 0);
-
-    if (!(ossl_name_entries_inclusion (subj1, subj2) &&
-	  ossl_name_entries_inclusion (subj2, subj1))) {
-	EST_LOG_ERR("Subject name entries disagree for CSR ('%s') and cert ('%s')", 
-		    csr_subject ? csr_subject : "(none)", 
-		    cer_subject ? cer_subject : "(none)");
-	goto cleanup1;
-    }
-
-    /* Limitation: Comparing only the first Subject Alternative Names (if present), in the given order. */
-    char *csr_subject_alt = (char *)ossl_get_csr_subject_alt_name (csr);
-    char *cer_subject_alt = (char *)ossl_get_cert_subject_alt_name(cer);
-
-    if (!cer_subject_alt && !csr_subject_alt) {
-        rv = EST_ERR_NONE;
-    }
-    else if (cer_subject_alt && csr_subject_alt) {
-	if (!strcmp(cer_subject_alt, csr_subject_alt)) {
-	    rv = EST_ERR_NONE;
-	}
-    }
-    if (rv != EST_ERR_NONE) {
-        EST_LOG_ERR("Subject Alternative Names disagree for CSR ('%s') and cert ('%s') with common Subject '%s'", 
-		    csr_subject_alt, cer_subject_alt, csr_subject ? csr_subject : "(none)");
-    }
-    if (csr_subject_alt) free (csr_subject_alt);
-    if (cer_subject_alt) free (cer_subject_alt);
- cleanup1:
-    if (csr_subject) free (csr_subject);
-    if (cer_subject) free (cer_subject);
-    return rv;
-}
-
-/*
- * This function does a sanity check on the X509.
- * Used by clients prior to attempting to convert the X509
- * to a CSR for a re-enroll operation, and after
- * a new certificate has been received.
- * Also used by est_check_cert() for validating identity certs.
- *
- * Returns an EST_ERROR code
- */
-EST_ERROR ossl_check_x509 (const X509 *cert, const EVP_PKEY *priv_key) 
-{
-    /*
-     * Make sure the cert is signed
-     */
-    if (!cert->signature) {
-	EST_LOG_ERR("The certificate provided does not contain a signature.");
-	return (EST_ERR_BAD_X509);
-    }
-
-    /*
-     * Make sure the signature length is not invalid 
-     */
-    if (cert->signature->length <= 0) {
-	EST_LOG_ERR("The certificate provided contains an invalid signature length.");
-	return (EST_ERR_BAD_X509);
-    }
-
-    /*
-     * Check that the private key matches the public key
-     * in the cert.
-     */
-    if (X509_check_private_key((X509 *)cert, (EVP_PKEY *)priv_key) <= 0) {
-        EST_LOG_ERR("Private key does not match the certificate public key");
-        return (EST_ERR_NO_KEY);
-    }
-
-    return (EST_ERR_NONE);
-}
-
-/*
- * This function checks the given certificate for consistency with
- * the given private key (if any) and the given cert chain (if any).
- *
- * Parameters:
- *      cert:	Pointer to a X509 structure representing the certificate
- *      priv_key: Pointer to EVP_PKEY structure, or NULL
- *      ssl_ctx: Pointer to the ssl_ctx
- *
- * Returns:
- *	EST_ERR_NONE if success
- */
-EST_ERROR ossl_check_cert (X509 *cert, const EVP_PKEY *priv_key, SSL_CTX *ssl_ctx)
-{
-  X509_STORE_CTX *store_ctx = NULL;
-  X509_STORE *store = NULL;
-  EST_ERROR rv = EST_ERR_NONE;
-
-  if (!cert) {
-	return EST_ERR_NO_CERT;
-  }
-
-    if (priv_key) {
-        /*
-	 * Check that the private key matches the public key in the cert.
-	 */
-        rv = ossl_check_x509 (cert, priv_key);
-	if (rv != EST_ERR_NONE) {
-	    goto cleanup;
-	}
-    }
-
-    /*
-     * Get trusted certs store from SSL_CTX and add cert to the trust chain
-     */    
-    store = SSL_CTX_get_cert_store(ssl_ctx);
-
-    if (store) {
-      X509_STORE_add_cert(store, cert);
-    }
-    
-   
-    /*
-     * Optionally verify the cert relative to the given trust anchor.
-     */
-    if (store) {
-	if (X509_check_issued((X509 *)cert, (X509 *)cert) == X509_V_OK) {
-	    EST_LOG_ERR("With a trust anchor given, our identity certificate must not be self-signed");
-	    rv = EST_ERR_CERT_VERIFICATION;
-	    goto cleanup;
-	}
-	/*
-	 * Set up a X509 Store Context
-	 */
-	store_ctx= X509_STORE_CTX_new();
-	if (store_ctx == NULL) {
-	  EST_LOG_ERR("Unable to allocate a new store context");
-	  rv = EST_ERR_MALLOC;
-	  goto cleanup;
-	}
-	if (!X509_STORE_CTX_init(store_ctx, store, cert, NULL)) {
-	  EST_LOG_ERR("Unable to initialize the new store context");
-	  rv = EST_ERR_MALLOC;
-	  goto cleanup;
-	}
-  
-	if (!X509_verify_cert(store_ctx)) {
-            /*
-             * This cert failed verification.  Log this and continue on
-             */
-            EST_LOG_WARN("Certificate failed verification (%s)", cert->name);
-            rv = EST_ERR_CERT_VERIFICATION;
-	}
-    }
-    
- cleanup:
-    if (store_ctx) {
-	X509_STORE_CTX_free(store_ctx);
-    }
-    return (rv);
-}

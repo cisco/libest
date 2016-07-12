@@ -5,7 +5,7 @@
  *
  * August, 2013
  *
- * Copyright (c) 2013-2014 by cisco Systems, Inc.
+ * Copyright (c) 2013-2014, 2016 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -272,6 +272,7 @@ void start_simple_server (EST_CTX *ectx, int port, int delay, int v6)
 #ifndef DISABLE_PTHREADS
     int i;
 #endif
+    struct sigaction   sig_act;
 
     /*
      * Save a global reference to the context.
@@ -287,8 +288,24 @@ void start_simple_server (EST_CTX *ectx, int port, int delay, int v6)
     /*
      * Install handler to catch ctrl-C to stop the process gracefully
      */
-    signal(SIGINT, catch_int);
+    memset(&sig_act, 0, sizeof(struct sigaction));
+    sig_act.sa_handler = catch_int;
+    sigemptyset(&sig_act.sa_mask);
+    if (sigaction(SIGINT, &sig_act, NULL) == -1) {
+        printf("\nCannot set handler for SIGINT\n");
+    }
 
+    /*
+     * Indicate that the broken pipe signal during writes should be
+     * ignored
+     */
+    memset(&sig_act, 0, sizeof(struct sigaction));
+    sig_act.sa_handler = SIG_IGN;
+    sigemptyset(&sig_act.sa_mask);
+    if (sigaction(SIGPIPE, &sig_act, NULL) == -1) {
+        printf("\nCannot set ignore action for SIGPIPE\n");
+    }    
+    
 #ifndef DISABLE_PTHREADS
     pthread_mutex_init(&mutex, NULL);
     pthread_cond_init(&cond, NULL);

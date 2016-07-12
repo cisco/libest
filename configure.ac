@@ -1,5 +1,5 @@
 dnl Process this file with autoconf to produce a configure script.
-AC_INIT([libest],[1.1.1p],[libest-dev])
+AC_INIT([libest],[2.0.0p],[libest-dev])
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(src/est/est.c)
 AC_CONFIG_SRCDIR(example/client/estclient.c)
@@ -8,9 +8,11 @@ AC_CONFIG_SRCDIR(example/server/estserver.c)
 AC_CONFIG_SRCDIR(example/proxy/estproxy.c)
 AC_CONFIG_MACRO_DIR([m4])
 
-AM_INIT_AUTOMAKE([subdir-objects])
+AM_INIT_AUTOMAKE
+AM_MAINTAINER_MODE
 
 AC_PROG_CC
+AM_PROG_CC_C_O
 LT_INIT
 AC_CANONICAL_HOST
 case $host in
@@ -26,18 +28,18 @@ AM_COND_IF([FREEBSD], AC_MSG_RESULT([FreeBSD is set]), AC_MSG_RESULT([FreeBSD no
 AM_COND_IF([FREEBSD], AC_MSG_RESULT([Skipping libdl check]),
 		    AC_CHECK_LIB([dl], [dlopen], [],
 				[AC_MSG_FAILURE([can't find libdl])]))
-
 AC_ARG_ENABLE([jni], 
 	       [AS_HELP_STRING([--enable-jni],
 			       [Enable support for JNI library])],
 		[jni_on=1],
 		[jni_on=0])
 AM_CONDITIONAL([ENABLE_JNI], [test x$jni_on = x1])
- AM_COND_IF([ENABLE_JNI], 
+AM_COND_IF([ENABLE_JNI], 
 	   AC_MSG_RESULT([JNI support enabled])
 	   AC_DEFINE([ENABLE_JNI]),
 	   AC_MSG_RESULT([JNI support is disabled]))
 AM_CONDITIONAL([JAVA_HOME_SET], [test ! -z "$JAVA_HOME"]) 
+
 
 AC_ARG_ENABLE([pthreads], 
 	       [AS_HELP_STRING([--disable-pthreads],
@@ -75,9 +77,47 @@ fi
 AC_CHECK_LIB([ssl], [SSL_CTX_new], [],
              [AC_MSG_FAILURE([can't find openssl ssl lib])])
 
+AC_ARG_WITH([uriparser-dir],
+ [AS_HELP_STRING([--with-uriparser-dir],
+				 [enable support for path segments using uriparser])],
+ [uriparserdir="$withval"],
+ [with_uriparserdir=no])
+          
+ dnl CFLAGS="$CFLAGS -Wall -I$uriparserdir/include"
+ dnl CPPFLAGS="$CPPFLAGS -I$uriparser/include"
+ dnl LDFLAGS="$LDFLAGS -L$uriparserdir/lib -luriparser"
+
+  AS_IF(
+        [test "x$with_uriparserdir" != xno],
+        [[CFLAGS="$CFLAGS -Wall -I$uriparserdir/include"]
+         [LDFLAGS="$LDFLAGS -L$uriparserdir/lib -luriparser"]
+         AC_CHECK_LIB(
+              [uriparser], 
+              [uriParseUriA],
+			  [
+               AC_SUBST([URIPARSER_CFLAGS], "$uriparserdir/include")
+			   AC_SUBST([URIPARSER_LDFLAGS], "$uriparserdir/lib -luriparser")
+               AC_DEFINE([HAVE_URIPARSER],[1],[Define if you hve uriparser]) 
+              ],
+              [AC_MSG_FAILURE([--with-uriparser was given, but test for uriparser failed])]
+             )
+        ]
+       )
+
+SAFEC_STUB_DIR='$(abs_top_builddir)/safe_c_stub'
+AC_SUBST(SAFEC_STUB_DIR)
+safecdir="$SAFEC_STUB_DIR" 
+AC_SUBST([SAFEC_DIR], "$safecdir")
+AC_SUBST([SAFEC_CFLAGS], "$safecdir/include")
+AC_SUBST([SAFEC_LDFLAGS], "$safecdir/lib")
+
+CFLAGS="$CFLAGS -Wall -I$safecdir/include"
+LDFLAGS="$LDFLAGS -L$safecdir/lib"
+LIBS="$LIBS -lsafe_lib"
+
 AC_PREFIX_DEFAULT([/usr/local/est])
 
 cp confdefs.h est_config.h
 
-AC_CONFIG_FILES([Makefile version java/jni/Makefile src/Makefile src/est/Makefile example/client/Makefile example/client-simple/Makefile example/server/Makefile example/proxy/Makefile])
+AC_CONFIG_FILES([Makefile version safe_c_stub/Makefile safe_c_stub/lib/Makefile java/jni/Makefile src/Makefile src/est/Makefile example/client/Makefile example/client-simple/Makefile example/server/Makefile example/proxy/Makefile])
 AC_OUTPUT

@@ -4,7 +4,7 @@
  *  Created on: July 1, 2014
  *      Author: foleyj
  *
- * Copyright (c) 2014 by cisco Systems, Inc.
+ * Copyright (c) 2014, 2015, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *
  */
@@ -14,6 +14,7 @@
 #include <est/est.h>
 #include <openssl/x509v3.h>
 #include <openssl/bio.h>
+#include "safe_mem_lib.h"
 
 #define EST_CLASS_ENROLL_EXCEPTION 			"com/cisco/c3m/est/EnrollException"
 #define EST_CLASS_BUFSIZ_EXCEPTION 			"com/cisco/c3m/est/BufferSizeException"
@@ -68,6 +69,12 @@
 #define SRP_BITS		1024
 
 /*
+ * This is the default signing algorithm to be used when
+ * a new CSR is created and signed by the JNI code
+ */
+#define SIGNING_ALGORITHM EVP_sha256()
+
+/*
  * This is a configurable value that limits how large of a certificate
  * can be generated.  The Java layer will read this value so it knows
  * how large of a byte array to allocate prior to invoking the JNI
@@ -116,6 +123,38 @@ static void est_client_raise_exception(JNIEnv *env, char *class, char *desc,
 }
 
 /*
+ * Sign an X509 certificate request using the digest and the key passed.
+ * Returns OpenSSL error code from X509_REQ_sign_ctx();
+ */
+static int jni_est_client_X509_REQ_sign (X509_REQ *x, EVP_PKEY *pkey, const EVP_MD *md)
+{
+    int rv;
+    EVP_PKEY_CTX *pkctx = NULL;
+    EVP_MD_CTX mctx;
+
+    EVP_MD_CTX_init(&mctx);
+
+    if (!EVP_DigestSignInit(&mctx, &pkctx, md, NULL, pkey)) {
+        return 0;
+    }
+
+    /*
+     * Encode using DER (ASN.1) 
+     *
+     * We have to set the modified flag on the X509_REQ because
+     * OpenSSL keeps a cached copy of the DER encoded data in some
+     * cases.  Setting this flag tells OpenSSL to run the ASN
+     * encoding again rather than using the cached copy.
+     */
+    x->req_info->enc.modified = 1; 
+    rv = X509_REQ_sign_ctx(x, &mctx);
+
+    EVP_MD_CTX_cleanup(&mctx);
+
+    return (rv);
+}
+
+/*
  * Attempts to put OpenSSL into FIPS mode.
  * Returns zero on success, -1 for failure.
  */
@@ -130,7 +169,7 @@ JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_ESTClient_enable_1fips(
 }
 
 /*
- * Sets the CiscoEST log level to 'errors'
+ * Sets the libEST log level to 'errors'
  * Returns zero on success
  */
 JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_ESTClient_enable_1logs_1errors(
@@ -140,7 +179,7 @@ JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_ESTClient_enable_1logs_1errors(
 }
 
 /*
- * Sets the CiscoEST log level to 'warnings'
+ * Sets the libEST log level to 'warnings'
  * Returns zero on success
  */
 JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_ESTClient_enable_1logs_1warnings(
@@ -150,7 +189,7 @@ JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_ESTClient_enable_1logs_1warnings(
 }
 
 /*
- * Sets the CiscoEST log level to 'info'
+ * Sets the libEST log level to 'info'
  * Returns zero on success
  */
 JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_ESTClient_enable_1logs_1info(
@@ -356,6 +395,15 @@ JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_PKCS10CertificateRequest_create_1c
 		goto cleanup_req;
 	}
 
+        /*
+         * Sign the CSR
+         */
+        if(!jni_est_client_X509_REQ_sign(req,l_pub_key,SIGNING_ALGORITHM)) {
+        	est_client_raise_exception(env, EST_CLASS_PKCS10_EXCEPTION,
+                	"Unable to sign the CSR", 0, 1);
+        	goto cleanup_req;
+	}
+
 	/*
 	 * Serialize the CSR using DER encoding, we use an OpenSSL memory
 	 * BIO to achieve this.
@@ -372,10 +420,10 @@ JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_PKCS10CertificateRequest_create_1c
 				"Unable to encode CSR", 0, 1);
 		goto cleanup_req;
 	}
-	BIO_flush(out);
+	(void)BIO_flush(out);
 	BIO_get_mem_ptr(out, &bptr);
 	if (bptr->length > 0 && bptr->length < max_buffer_length) {
-		memcpy(l_new_csr, bptr->data, bptr->length);
+		memcpy_s(l_new_csr, max_buffer_length, bptr->data, bptr->length);
 		rv = bptr->length;
 	} else {
 		if (bptr->length >= max_buffer_length) {
@@ -662,7 +710,7 @@ static jint send_enroll_request (
     	}
     }
 
-	rv = est_client_set_server(ectx, l_server_name, port);
+    rv = est_client_set_server(ectx, l_server_name, port, NULL);
 	if (rv != EST_ERR_NONE) {
 		est_client_raise_exception(env, EST_CLASS_ENROLL_EXCEPTION,
 				"est_client_set_server failed", rv, 0);
@@ -734,7 +782,7 @@ static jint send_enroll_request (
 			&new_cert_pem);
 
 	if (new_cert_len > 0 && new_cert_len < max_buffer_length) {
-		memcpy(l_new_cert, new_cert_pem, new_cert_len);
+		memcpy_s(l_new_cert, max_buffer_length, new_cert_pem, new_cert_len);
 		ret_val = new_cert_len;
 	} else {
 		if (new_cert_len >= max_buffer_length) {
@@ -1124,7 +1172,7 @@ JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_ESTClient_send_1cacerts_1request(
 		goto cleanup_cacerts;
 	}
 
-	rv = est_client_set_server(ectx, l_server_name, port);
+	rv = est_client_set_server(ectx, l_server_name, port, NULL);
 	if (rv != EST_ERR_NONE) {
 		est_client_raise_exception(env, EST_CLASS_CACERTS_EXCEPTION, "est_client_set_server failed", rv, 0);
 		goto cleanup_cacerts;
@@ -1175,7 +1223,7 @@ JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_ESTClient_send_1cacerts_1request(
 	ca_certs_len = est_convert_p7b64_to_pem(new_ca_certs, pkcs7_len, &new_certs_pem);
 
 	if (ca_certs_len > 0 && ca_certs_len < max_buffer_length) {
-		memcpy(l_new_certs, new_certs_pem, ca_certs_len);
+		memcpy_s(l_new_certs, max_buffer_length, new_certs_pem, ca_certs_len);
 		ret_val = ca_certs_len;
 	} else {
 		if (ca_certs_len >= max_buffer_length) {

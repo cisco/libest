@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # default variables and config options
+EST_SCRIPTNAME=$0
 EST_OPENSSL_CACNF=./estExampleCA.cnf
 EST_SERVER_SUBJ="/CN=127.0.0.1"
 EST_SERVER_CERTREQ=tmp/proxy-csr.pem
@@ -12,17 +13,21 @@ OPENSSLCMD=openssl
 function iferrorlogandexit ()
 {
     if [ $? -ne 0 ] ; then
-       logandexit "$1" "$2" 
+        echo "###########..EXIT..##########"
+        echo "SCRIPT $EST_SCRIPTNAME EXIT: $1 ($2)"
+        echo "###########^^EXIT^^##########"
+        echo ""
+        exit $2
     fi
 }
 
 if [ -e tmp ] ; then 
-rm -r tmp 
+    rm -r tmp 
 fi
 mkdir tmp
 
-eval $OPENSSLCMD ecparam -out $EST_ECPARMS -name prime192v1 -genkey
-eval $OPENSSLCMD ecparam -in $ES_ECPARMS -check
+eval $OPENSSLCMD ecparam -out $EST_ECPARMS -name prime256v1 -genkey
+eval $OPENSSLCMD ecparam -in $EST_ECPARMS -check
 
 # Create a certificate for our est server
 # TODO: add extension for est server

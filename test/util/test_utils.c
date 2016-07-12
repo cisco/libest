@@ -3,20 +3,26 @@
  *
  * June, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
 #include <stdio.h>
+#ifndef WIN32
 #include <unistd.h>
+#endif 
 #include <string.h>
 #include <stdlib.h>
 #include <openssl/bio.h>
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#ifndef WIN32
 #include <sys/socket.h>
 #include <netdb.h>
+#include <regex.h>
+#endif 
+#include <est.h>
 
 /*
  * Reads a file into an unsigned char array.
@@ -79,7 +85,7 @@ int write_binary_file (char *filename, unsigned char *contents, int len)
     fclose(fp);
     return 1;
 }
-
+#ifndef WIN32 
 /*
  * This function simply opens a TCP connection using
  * the BIO interface.
@@ -170,7 +176,7 @@ BIO *open_tcp_socket (char *ipaddr, char *port)
 */
     return tcp;
 }
-
+#endif 
 /*
  * This function simply opens a TCP connection using
  * the BIO interface. This only works for IPv4
@@ -228,7 +234,7 @@ EVP_PKEY *read_private_key(char *key_file)
 
 void dumpbin (char *buf, size_t len)
 {
-    int i;
+    size_t i;
 
     fflush(stdout);
     printf("\ndumpbin (%d bytes):\n", (int)len);
@@ -238,6 +244,102 @@ void dumpbin (char *buf, size_t len)
     }
     printf("\n");
     fflush(stdout);
+}
+
+/*
+* Quick function to look for 2 specific strings (regexp)
+* on the same line in a text file.
+* Used to mine for specific EST log messages.
+* 0 = SUCCESS, 1 = FAIL
+*/
+int grep2(char *filename, char *string1, char *string2) {
+
+	char line[1024];
+
+#ifdef WIN32
+	sprintf(line, "findstr /R /C:\"%s\" %s | findstr /R /C:\"%s\"",
+		string1, filename, string2);
+	return system(line);
+#else
+
+	int rc;
+	long line_number = 1;
+	FILE *fd;
+
+	/* Allocate space for both strings */
+	regex_t *regexp1 = calloc(1, sizeof(regex_t));
+	if (regexp1 == NULL) {
+		printf("%s: Memory Allocation FAILURE\n", __FUNCTION__);
+		return 1;
+	}
+	regex_t *regexp2 = calloc(1, sizeof(regex_t));
+	if (regexp2 == NULL) {
+		printf("%s: Memory Allocation FAILURE\n", __FUNCTION__);
+		free(regexp1);
+		return 1;
+	}
+
+	/* Compile the regexp string */
+	rc = regcomp(regexp1, string1, REG_EXTENDED | REG_NOSUB);
+	if (rc) {
+		printf("%s: Problems compiling 1st regexp '%s'\n",
+			__FUNCTION__, string1);
+		goto cleanup;
+	}
+	/* Compile the regexp string */
+	rc = regcomp(regexp2, string2, REG_EXTENDED | REG_NOSUB);
+	if (rc) {
+		printf("%s: Problems compiling 2nd regexp '%s'\n",
+			__FUNCTION__, string2);
+		goto cleanup;
+	}
+
+	/* Open the file to perform the regexp upon */
+	fd = fopen(filename, "r");
+	if (fd == NULL) {
+		printf("%s: Problems opening file '%s'\n", __FUNCTION__, filename);
+		rc = 1;
+		goto cleanup;
+	}
+
+	/* Read in the file, line-by-line */
+	rc = 1;
+	while (fgets(line, sizeof(line), fd)) {
+		if (regexec(regexp1, line, 0, 0, 0)) {
+			line_number++;
+			continue;
+		}
+		if (regexec(regexp2, line, 0, 0, 0)) {
+			line_number++;
+			continue;
+		}
+		printf("grep[%ld]: %s", line_number, line);
+		rc = 0;
+		break;
+	}
+	fclose(fd);
+
+	/* If no match, print out a message */
+	/* This is kind of chatty, comment it out for right now
+	if (rc) {
+	printf("grep[NO MATCH]: '%s''%s'\n", string1, string2);
+	}
+	*/
+
+	/* Return results */
+cleanup:
+	free(regexp1);
+	free(regexp2);
+	return rc;
+#endif
+}
+
+/*
+* Quick function to look for a specific string (regexp) in a text file.
+* Used to mine for specific EST log messages.
+*/
+int grep(char *filename, char *string) {
+	return grep2(filename, string, ".*");
 }
 
 

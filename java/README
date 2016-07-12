@@ -1,0 +1,28 @@
+This directory contains the JEST project, which is a reduced functionality 
+reference implementation of a Java EST client using a JNI layer to libEST. 
+At this time, it has been decided that no further development will be done 
+on JEST. For users who require a more robust implemenation of EST in Java,
+projects like Jester (https://github.com/jscep/jester) which aim to be 100%
+compatible with libest would be a suggested alternative (Please note that 
+this is not an endorsement for Jester and we will not provide support for it).
+JEST requires you have a JDK and Apache Ant installed on your system.
+
+Getting started
+---------------
+1.  Set the JAVA_HOME environment variable to the location of your JDK
+2.  ./configure --with-ssl-dir=/your/path/to/install --with-safec-dir=/your/path/to/install --prefix=/where/you/want/it/installed --enable-jni
+    make clean
+    make -j4
+    make install
+3.  Navigate down to the src directory and type:
+    
+    ant
+    ant -f buildjar.xml
+
+    To build the javadoc:
+
+    javadoc -d ./doc -sourcepath . -subpackages com -exclude com.cisco.c3m.est.test.DT:com.cisco.c3m.est.test.UT
+
+
+ 
+

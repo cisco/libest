@@ -12,7 +12,7 @@
  *
  * May, 2013
  *
- * Copyright (c) 2013-2014 by cisco Systems, Inc.
+ * Copyright (c) 2013-2014, 2016 by cisco Systems, Inc.
  * All rights reserved.
  ***------------------------------------------------------------------
  */
@@ -36,6 +36,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+#include "safe_lib.h"
+#include "safe_str_lib.h"
+#include "safe_mem_lib.h"
+#ifdef WIN32
+#include <WS2tcpip.h>
+#endif 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
@@ -64,6 +70,9 @@
 #ifndef _WIN32_WCE // Some ANSI #includes are not available on Windows CE
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifndef WIN32
+#include <sys/poll.h>
+#endif 
 #include <errno.h>
 #include <signal.h>
 #include <fcntl.h>
@@ -119,7 +128,6 @@ typedef int socklen_t;
 #endif
 
 
-
 // Describes a string (chunk of memory).
 struct vec {
     const char *ptr;
@@ -153,7 +161,7 @@ static void sockaddr_to_string (char *buf, size_t len,
               (void*)&usa->sin6.sin6_addr, buf, (socklen_t) len);
 #elif defined(_WIN32)
     // Only Windoze Vista (and newer) have inet_ntop()
-    strncpy(buf, inet_ntoa(usa->sin.sin_addr), len);
+    strncpy_s(buf, MAX_SRC_ADDR, inet_ntoa(usa->sin.sin_addr), len);
 #else
     inet_ntop(usa->sa.sa_family, (void*)&usa->sin.sin_addr, buf, len);
 #endif
@@ -210,12 +218,23 @@ struct mg_request_info *mg_get_request_info (struct mg_connection *conn)
 }
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
-static void mg_strlcpy (register char *dst, register const char *src, size_t n)
+void mg_strlcpy (register char *dst, register const char *src, size_t n)
 {
     for (; *src != '\0' && n > 1; n--) {
         *dst++ = *src++;
     }
     *dst = '\0';
+}
+
+char * mg_strndup(const char *ptr, size_t len) {
+
+	char *p;
+
+	if ((p = (char *)malloc(len + 1)) != NULL) {
+		mg_strlcpy(p, ptr, len + 1);
+	}
+
+	return p;
 }
 #endif
 
@@ -293,6 +312,47 @@ static int mg_snprintf (struct mg_connection *conn, char *buf, size_t buflen,
     return n;
 }
 
+static size_t est_strcspn(const char * str1,const char * str2){
+
+    rsize_t count;
+    errno_t safec_rc; 
+
+    if ((str1 != NULL) && (str1[0] == '\0')) {
+        return 0; 
+    }
+
+    safec_rc = strcspn_s(str1, strnlen_s(str1, RSIZE_MAX_STR),
+            str2, RSIZE_MAX_STR, &count);
+    if (safec_rc != EOK) {
+        EST_LOG_INFO("strcspn_s error 0x%xO\n", safec_rc);
+        return 0;
+    }
+
+    return count; 
+
+
+}
+
+static size_t est_strspn(const char * str1,const char  * str2) {
+
+    rsize_t count;
+    errno_t safec_rc; 
+
+    if ((str1 != NULL) && (str1[0] == '\0')) {
+        return 0; 
+    }
+
+    safec_rc = strspn_s(str1, strnlen_s(str1, RSIZE_MAX_STR), 
+            str2, RSIZE_MAX_STR, &count);
+    if (safec_rc != EOK) {
+        EST_LOG_INFO("strspn_s error 0x%xO\n", safec_rc);
+        return 0; 
+    }
+
+    return count; 
+
+}
+
 // Skip the characters until one of the delimiters characters found.
 // 0-terminate resulting word. Skip the delimiter and following whitespaces.
 // Advance pointer to buffer to the next word. Return found 0-terminated word.
@@ -303,7 +363,8 @@ char *skip_quoted (char **buf, const char *delimiters,
     char *p, *begin_word, *end_word, *end_whitespace;
 
     begin_word = *buf;
-    end_word = begin_word + strcspn(begin_word, delimiters);
+
+    end_word = begin_word + est_strcspn(begin_word,delimiters);
 
     // Check for quotechar
     if (end_word > begin_word) {
@@ -314,8 +375,9 @@ char *skip_quoted (char **buf, const char *delimiters,
                 *p = '\0';
                 break;
             } else {
-                size_t end_off = strcspn(end_word + 1, delimiters);
-                memmove(p, end_word, end_off + 1);
+
+                rsize_t end_off = (rsize_t) est_strcspn(end_word + 1, delimiters);
+                memmove_s(p, end_off + 1, end_word, end_off + 1);
                 p += end_off; // p must correspond to end_word - 1
                 end_word += end_off + 1;
             }
@@ -328,7 +390,8 @@ char *skip_quoted (char **buf, const char *delimiters,
     if (*end_word == '\0') {
         *buf = end_word;
     } else {
-        end_whitespace = end_word + 1 + strspn(end_word + 1, whitespace);
+
+        end_whitespace = end_word + 1 + est_strspn(end_word + 1, whitespace);
 
         for (p = end_word; p < end_whitespace; p++) {
             *p = '\0';
@@ -387,7 +450,7 @@ static int should_keep_alive (const struct mg_connection *conn)
         conn->status_code >= 400 ||
         !conn->ctx->enable_keepalives ||
         (header != NULL && mg_strcasecmp(header, "keep-alive") != 0) ||
-        (header == NULL && http_version && strcmp(http_version, "1.1"))) {
+        (header == NULL && http_version && strncmp(http_version, "1.1", 3))) {
         return 0;
     }
     return 1;
@@ -443,8 +506,9 @@ static void change_slashes_to_backslashes (char *path)
         // i > 0 check is to preserve UNC paths, like \\server\file.txt
         if (path[i] == '\\' && i > 0) {
             while (path[i + 1] == '\\' || path[i + 1] == '/') {
-                (void)memmove(path + i + 1, path + i + 2, strnlen(path + i + 1, 
-	                      EST_URI_MAX_LEN));
+                (void)memmove_s(path + i + 1, EST_URI_MAX_LEN,
+                                path + i + 2, strnlen_s(path + i + 1, 
+				                      EST_URI_MAX_LEN));
             }
         }
     }
@@ -460,11 +524,11 @@ static void to_unicode (const char *path, wchar_t *wbuf, size_t wbuf_len)
     change_slashes_to_backslashes(buf);
 
     // Point p to the end of the file name
-    p = buf + strnlen(buf, EST_URI_MAX_LEN) - 1;
+    p = buf + strnlen_s(buf, EST_URI_MAX_LEN) - 1;
 
     // Convert to Unicode and back. If doubly-converted string does not
     // match the original, something is fishy, reject.
-    memset_s(wbuf, 0, wbuf_len * sizeof(wchar_t));
+    memzero_s(wbuf, wbuf_len * sizeof(wchar_t));
     MultiByteToWideChar(CP_UTF8, 0, buf, -1, wbuf, (int)wbuf_len);
     WideCharToMultiByte(CP_UTF8, 0, wbuf, (int)wbuf_len, buf2, sizeof(buf2),
                         NULL, NULL);
@@ -480,7 +544,7 @@ static void to_unicode (const char *path, wchar_t *wbuf, size_t wbuf_len)
 static int path_cannot_disclose_cgi (const char *path)
 {
     static const char *allowed_last_characters = "_-";
-    int last = path[strnlen(path, EST_URI_MAX_LEN) - 1];
+    int last = path[strnlen_s(path, EST_URI_MAX_LEN) - 1];
 
     return isalnum(last) || strchr(allowed_last_characters, last) != NULL;
 }
@@ -530,28 +594,58 @@ static int64_t push (FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
     return sent;
 }
 
+
+/*
+ * Number of msecs for the poll call to wait before returning
+ */
+#define MSEC_POLL_WAIT_TIME 250  /* .25 second wait on the the poll */
+
 // This function is needed to prevent Mongoose to be stuck in a blocking
-// socket read when user requested exit. To do that, we sleep in select
+// socket read when user requested exit. To do that, we sleep in poll
 // with a timeout, and when returned, check the context for the stop flag.
 // If it is set, we return 0, and this means that we must not continue
 // reading, must give up and close the connection and exit serving thread.
 static int wait_until_socket_is_readable (struct mg_connection *conn)
 {
+    struct pollfd pfd;
     int result;
-    struct timeval tv;
-    fd_set set;
+    int times_up = 0;
+    EST_UINT total_wait_time = 0;
+    EST_UINT read_timeout = conn->read_timeout * 1000;
 
     do {
-        tv.tv_sec = 0;
-        tv.tv_usec = 300 * 1000;
-        FD_ZERO(&set);
-        FD_SET(conn->client.sock, &set);
-        result = select(conn->client.sock + 1, &set, NULL, NULL, &tv);
+        /* accumlate the total amount of time waited */
+        total_wait_time += MSEC_POLL_WAIT_TIME;
+
+        pfd.fd = conn->client.sock;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+
+        errno = 0;
+        result = POLL(&pfd, 1, MSEC_POLL_WAIT_TIME);
         if (result == 0 && conn->ssl != NULL) {
             result = SSL_pending(conn->ssl);
         }
+        
+        /*
+         * check to see if it's time to give up.  If it is, set
+         * things accordingly to close the session down
+         */
+        if ((total_wait_time > read_timeout) && result == 0) {
+            times_up = 1;
+            conn->must_close = 1;
+            result = -1;
+        }
+        /*
+         * Continue waiting,
+         * - while there's nothing to read from the socket or
+         *   the poll was interrupted by a signal AND
+         * - the master process has not indicated to stop AND
+         * - the waiting for read timeout has not occurred
+         */                
     } while ((result == 0 || (result < 0 && ERRNO == EINTR)) &&
-             conn->ctx->stop_flag == 0);
+             conn->ctx->stop_flag == 0 &&
+             !times_up);
 
     return conn->ctx->stop_flag || result < 0 ? 0 : 1;
 }
@@ -610,8 +704,10 @@ int mg_read (struct mg_connection *conn, void *buf, size_t len)
 {
     int n, buffered_len, nread;
     const char *body;
+    rsize_t max_len;
 
     nread = 0;
+    max_len = (rsize_t) len;
     if (conn->consumed_content < conn->content_len) {
         // Adjust number of bytes to read.
         int64_t to_read = conn->content_len - conn->consumed_content;
@@ -621,12 +717,12 @@ int mg_read (struct mg_connection *conn, void *buf, size_t len)
 
         // Return buffered data
         body = conn->buf + conn->request_len + conn->consumed_content;
-        buffered_len = &conn->buf[conn->data_len] - body;
+        buffered_len = (int) (&conn->buf[conn->data_len] - body);
         if (buffered_len > 0) {
             if (len < (size_t)buffered_len) {
                 buffered_len = (int)len;
             }
-            memcpy(buf, body, (size_t)buffered_len);
+            memcpy_s(buf, max_len, body, (rsize_t)buffered_len);
             len -= buffered_len;
             conn->consumed_content += buffered_len;
             nread += buffered_len;
@@ -781,7 +877,7 @@ static void remove_double_dots_and_double_slashes (char *s)
     *p = '\0';
 }
 
-#define MAX_AUTH_HDR_LEN 256
+#define MAX_AUTH_HDR_LEN (256)+(EST_MAX_PATH_SEGMENT_LEN)
 /*
  * Performs parsing of HTTP Authentication header from
  * the client when Basic authentication is used.
@@ -793,8 +889,10 @@ static void mg_parse_auth_hdr_basic (struct mg_connection *conn,
     char *value, *s;
     char *save_ptr;
     char both[MAX_UIDPWD*2+2]; /* will contain both UID and PWD */
-    int len;
-    const char *sep = ":";
+    rsize_t len;
+    char *sep = ":";
+    int colon_found;
+    char *possible_pw;
     
     s = (char *) auth_header + 6;
 
@@ -810,13 +908,44 @@ static void mg_parse_auth_hdr_basic (struct mg_connection *conn,
 	return;
     }
 
-    /* Parse the username and password, which are separated by a ":" */
-    value = strtok_r(both, sep, &save_ptr);
-    if (value) {
-	ah->user = strndup(value, MAX_UIDPWD);
-        ah->pwd = strndup(save_ptr, MAX_UIDPWD);
-	ah->mode = AUTH_BASIC;
+    /*
+     * Make sure there's a ':' in the string
+     */
+    colon_found = strstr_s(both, len, ":", 1, &possible_pw);
+    if (colon_found != EOK) {
+	EST_LOG_WARN("Invalid format of Basic HTTP credentials, missing :");
+        memzero_s(both, (MAX_UIDPWD*2+2));
+	return;
     }
+
+    /*
+     * did it start with a colon, meaning no userid?
+     */
+    if (both[0] == ':') {
+        if (len > 1) {
+            /* just a password */
+            possible_pw++;
+            ah->pwd = STRNDUP(possible_pw, MAX_UIDPWD);
+            EST_LOG_INFO("HTTP Authentication header contains only password");
+        } else {
+            /* We got neither userid nor password */
+            EST_LOG_INFO("HTTP Authentication header contains no userid or password");            
+            memzero_s(both, (MAX_UIDPWD*2+2));
+            return;
+        }
+    } else {
+        /* Started with a userid, 
+         * Parse the username and password, which are separated by a ":"
+         */
+        value = strtok_s(both, &len, sep, &save_ptr);
+        if (value) {
+            ah->user = STRNDUP(value, MAX_UIDPWD);
+            ah->pwd = STRNDUP(save_ptr, MAX_UIDPWD);
+        }
+    }
+    ah->mode = AUTH_BASIC;
+    
+    memzero_s(both, (MAX_UIDPWD*2+2));
 }
 
 /*
@@ -834,7 +963,7 @@ static void mg_parse_auth_hdr_digest (struct mg_connection *conn,
     ah->mode = AUTH_DIGEST;
 
     // Make modifiable copy of the auth header
-    strncpy(buf, auth_header + 7, MAX_AUTH_HDR_LEN);
+    strncpy_s(buf, MAX_AUTH_HDR_LEN, auth_header + 7, MAX_AUTH_HDR_LEN);
     s = buf;
 
     // Parse authorization header
@@ -858,45 +987,45 @@ static void mg_parse_auth_hdr_digest (struct mg_connection *conn,
 	    break;
 	}
 
-        i = strncmp(name, "username", 8);
+        strcmp_s(name, 8, "username", &i);
         if (!i) {
-	    ah->user = strndup(value, MAX_UIDPWD);
+	    ah->user = STRNDUP(value, MAX_UIDPWD);
 	    continue;
 	} 
 
-        i = strncmp(name, "cnonce", 6);
+        strcmp_s(name, 6, "cnonce", &i);
 	if (!i) {
-            ah->cnonce = strndup(value, MAX_NONCE);
+            ah->cnonce = STRNDUP(value, MAX_NONCE);
 	    continue;
 	} 
 
-	i = strncmp(name, "response", 8);
+	strcmp_s(name, 8, "response", &i);
 	if (!i) {
-            ah->response = strndup(value, MAX_RESPONSE);
+            ah->response = STRNDUP(value, MAX_RESPONSE);
 	    continue;
         } 
 
-	i = strncmp(name, "uri", 3);
+	strcmp_s(name, 3, "uri", &i);
 	if (!i) {
-	    ah->uri = strndup(value, MAX_REALM);
+	    ah->uri = STRNDUP(value, MAX_REALM);
 	    continue;
 	} 
 
-	i = strncmp(name, "qop", 3);
+	strcmp_s(name, 3, "qop", &i);
 	if (!i) {
-            ah->qop = strndup(value, MAX_QOP);
+            ah->qop = STRNDUP(value, MAX_QOP);
 	    continue;
 	} 
 
-	i = strncmp(name, "nc", 2);
+	strcmp_s(name, 2, "nc", &i);
 	if (!i) {
-	    ah->nc = strndup(value, MAX_NC);
+	    ah->nc = STRNDUP(value, MAX_NC);
 	    continue;
         } 
 
-	i = strncmp(name, "nonce", 5); 
+	strcmp_s(name, 5, "nonce", &i); 
 	if (!i) {
-	    ah->nonce = strndup(value, MAX_NONCE);
+	    ah->nonce = STRNDUP(value, MAX_NONCE);
 	}
     }
 }
@@ -922,7 +1051,7 @@ static void mg_parse_auth_hdr_token (struct mg_connection *conn,
     }
 
     value = s;
-    memset(value_decoded, 0, MAX_AUTH_TOKEN_LEN*2);
+    memzero_s(value_decoded, MAX_AUTH_TOKEN_LEN*2);
     len = est_base64_decode(value, value_decoded, (MAX_AUTH_TOKEN_LEN*2));
     if (len <= 0) {
 	EST_LOG_WARN("Base64 decode of HTTP auth credentials failed, HTTP auth will fail");
@@ -931,7 +1060,7 @@ static void mg_parse_auth_hdr_token (struct mg_connection *conn,
 
     if (*s != '\0') {
         /*Copy the token into the auth header structure. */
-        ah->auth_token = strndup(value_decoded, MAX_AUTH_TOKEN_LEN);
+        ah->auth_token = STRNDUP(value_decoded, MAX_AUTH_TOKEN_LEN);
         ah->mode = AUTH_TOKEN;
         if (ah->auth_token == NULL) {
             EST_LOG_ERR("Failed to obtain memory for authentication token buffer");
@@ -1001,8 +1130,7 @@ EST_HTTP_AUTH_HDR_RESULT mg_parse_auth_header (struct mg_connection *conn,
 	return EST_AUTH_HDR_BAD;
     }
 
-    /*
-     * If we were not able to parse a user ID and we're not
+    /* If we were not able to parse a user ID and we're not
      * in token auth mode, then make sure we fail the authentication.
      */
     if (ah->user == NULL && ah->mode != AUTH_TOKEN) {
@@ -1014,9 +1142,9 @@ EST_HTTP_AUTH_HDR_RESULT mg_parse_auth_header (struct mg_connection *conn,
          * Save the user ID on the connection context.
          * We will want to pass this to the CA later.
          */
-        strncpy(conn->user_id, ah->user, MG_UID_MAX);
+        strncpy_s(conn->user_id, MG_UID_MAX, ah->user, MG_UID_MAX);
     }
-
+    
     return EST_AUTH_HDR_GOOD;
 }
 
@@ -1085,7 +1213,7 @@ static void parse_http_headers (char **buf, struct mg_request_info *ri)
 static int is_valid_http_method (const char *method)
 {
     /* EST only allows GET & POST */
-    return !strcmp(method, "GET") || !strncmp(method, "POST", 4);
+    return !strncmp(method, "GET", 3) || !strncmp(method, "POST", 4);
 }
 
 // Parse HTTP request, fill in mg_request_info structure.
@@ -1097,7 +1225,7 @@ static int parse_http_message (char *buf, int len, struct mg_request_info *ri)
 
     if (request_length > 0) {
         // Reset attributes. DO NOT TOUCH is_ssl, remote_ip, remote_port
-        ri->remote_user = ri->request_method = ri->uri = ri->http_version = NULL;
+        ri->request_method = ri->uri = ri->http_version = NULL;
         ri->num_headers = 0;
 
         buf[request_length - 1] = '\0';
@@ -1111,7 +1239,8 @@ static int parse_http_message (char *buf, int len, struct mg_request_info *ri)
         ri->http_version = skip(&buf, "\r\n");
         parse_http_headers(&buf, ri);
     }
-    EST_LOG_INFO("request_len=%d\n", request_length);
+    EST_LOG_INFO("request_len=%d", request_length);
+    EST_LOG_INFO("request uri=%s", ri->uri);
     return request_length;
 }
 
@@ -1155,7 +1284,6 @@ static int read_request (FILE *fp, struct mg_connection *conn,
     return request_len;
 }
 
-#define EST_MAX_CONTENT_LEN 8192
 /*
  * This function is called by the Mongoose code when an
  * incoming HTTP request is processed.
@@ -1174,16 +1302,13 @@ static int est_mg_handler (struct mg_connection *conn)
 
     cl_hdr = mg_get_header(conn, "Content-Length");
     if (cl_hdr) {
+        /*
+         * At this point, Content-Length value has already been
+         * error checked and is guaranteed to be within the correct
+         * range.  Obtain the length, allocate the buffer for the
+         * body, and read it in.
+         */
         cl = atoi(cl_hdr);
-	/*
-	 * Let's be defensive about the incoming content
-	 * length header from the client.
-	 */
-	if (cl > EST_MAX_CONTENT_LEN) {
-	    EST_LOG_WARN("HTTP request content length greater than %d", 
-		         EST_MAX_CONTENT_LEN);
-	    return (EST_ERR_BAD_CONTENT_LEN);
-	}
         body = malloc(cl+1);
         mg_read(conn, body, cl);
 	/* Make sure the buffer is null terminated */
@@ -1226,7 +1351,7 @@ static void handle_request (struct mg_connection *conn)
     if ((conn->request_info.query_string = strchr(ri->uri, '?')) != NULL) {
         *((char*)conn->request_info.query_string++) = '\0';
     }
-    uri_len = (int)strnlen(ri->uri, EST_URI_MAX_LEN);
+    uri_len = (int)strnlen_s(ri->uri, EST_URI_MAX_LEN);
     url_decode(ri->uri, uri_len, (char*)ri->uri, uri_len + 1, 0);
     remove_double_dots_and_double_slashes((char*)ri->uri);
 
@@ -1264,8 +1389,8 @@ static void log_access (const struct mg_connection *conn)
     ri = &conn->request_info;
 
     sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa);
-    EST_LOG_INFO("%s - %s [%s] \"%s %s HTTP/%s\" %d %" INT64_FMT,
-                 src_addr, ri->remote_user == NULL ? "-" : ri->remote_user, date,
+    EST_LOG_INFO("%s [%s] \"%s %s HTTP/%s\" %d %" INT64_FMT,
+                 src_addr, date,
                  ri->request_method ? ri->request_method : "-",
                  ri->uri ? ri->uri : "-", ri->http_version,
                  conn->status_code, conn->num_bytes_sent);
@@ -1333,11 +1458,19 @@ static int set_ssl_option (struct mg_context *ctx)
      * The other options set here are to improve forward
      * secrecty and comply with the EST draft.
      */
-    SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2 |
-                        SSL_OP_NO_SSLv3 |
-                        SSL_OP_NO_TLSv1 |
-                        SSL_OP_SINGLE_ECDH_USE | 
-			SSL_OP_NO_TICKET);
+    if (ectx->enable_tls10) {
+	EST_LOG_INFO("Enabling TLS 1.0 support, not compliant with RFC 7030");
+        SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2 |
+                            SSL_OP_NO_SSLv3 |
+                            SSL_OP_SINGLE_ECDH_USE | 
+			    SSL_OP_NO_TICKET);
+    } else {
+        SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2 |
+                            SSL_OP_NO_SSLv3 |
+                            SSL_OP_NO_TLSv1 |
+                            SSL_OP_SINGLE_ECDH_USE | 
+			    SSL_OP_NO_TICKET);
+    }
 
     /* 
      * Set the ECDH single use parms.  Use the configured
@@ -1400,7 +1533,7 @@ static int set_ssl_option (struct mg_context *ctx)
 	 */
 	SSL_CTX_set_srp_username_callback(ssl_ctx, ectx->est_srp_username_cb);
     } else {
-	EST_LOG_INFO("TLS SRP not enabled\n");
+	EST_LOG_INFO("TLS SRP not enabled");
 	/*
 	 * Set the TLS cipher suites that should be allowed.
 	 * This disables anonymous and null ciphers
@@ -1481,8 +1614,8 @@ static void process_new_connection (struct mg_connection *conn)
             send_http_error(conn, 400, "Bad Request",
                             "Cannot parse HTTP request: [%.*s]", conn->data_len, conn->buf);
             conn->must_close = 1;
-        } else if (strcmp(ri->http_version, "1.0") &&
-                   strcmp(ri->http_version, "1.1")) {
+        } else if (strncmp(ri->http_version, "1.0", 3) &&
+                   strncmp(ri->http_version, "1.1", 3)) {
             // Request seems valid, but HTTP version is strange
             send_http_error(conn, 505, "HTTP version not supported", "%s", "");
             log_access(conn);
@@ -1496,12 +1629,27 @@ static void process_new_connection (struct mg_connection *conn)
             } else {
                 conn->content_len = 0;
             }
-            conn->birth_time = time(NULL);
-            handle_request(conn);
-            log_access(conn);
-        }
-        if (ri->remote_user != NULL) {
-            free((void*)ri->remote_user);
+            /*
+             * Ensure that the content-length value is a size that
+             * the EST code is willing to accept
+             */
+            if (conn->content_len > EST_MAX_CONTENT_LEN) {
+                EST_LOG_WARN("HTTP request content length greater than EST"
+                             " maximum supported content length (%d)", 
+                             EST_MAX_CONTENT_LEN);                
+                send_http_error(conn, 413, "Content-Length too large", "%s", "");
+                log_access(conn);
+            } else if (conn->content_len < 0) {
+                EST_LOG_WARN("HTTP request content length is a negative value");
+                send_http_error(conn, 400, "Bad Request",
+                                "Content-Length is negative",
+                                conn->data_len, conn->buf);
+                log_access(conn);
+            } else {
+                conn->birth_time = time(NULL);
+                handle_request(conn);
+                log_access(conn);
+            } 
         }
 
         // NOTE(lsm): order is important here. should_keep_alive() call
@@ -1515,7 +1663,8 @@ static void process_new_connection (struct mg_connection *conn)
                       conn->request_len + conn->content_len < (int64_t)conn->data_len ?
                       (int)(conn->request_len + conn->content_len) : conn->data_len;
 	if ((conn->data_len - discard_len) > 0) {
-	    memmove(conn->buf, conn->buf + discard_len, conn->data_len - discard_len);
+	    memmove_s(conn->buf, MAX_REQUEST_SIZE,
+		      conn->buf + discard_len, conn->data_len - discard_len);
 	}
         conn->data_len -= discard_len;
         assert(conn->data_len >= 0);
@@ -1529,10 +1678,10 @@ static void process_new_connection (struct mg_connection *conn)
 
 
 /*! @brief est_server_handle_request() is used by an application 
-    to process and EST request.  The application is responsible
+    to process an EST request.  The application is responsible
     for opening a listener socket.  When an EST request comes in
     on the socket, the application uses this function to hand-off
-    the request to libest.
+    the request to libEST.
 
     @param ctx Pointer to the EST_CTX, which was provided
                when est_server_init()  or est_proxy_init() was invoked.
@@ -1546,7 +1695,7 @@ static void process_new_connection (struct mg_connection *conn)
     This is used when implementing an EST server.  The application 
     is responsible for opening and listening to a TCP socket for
     incoming EST requests.  When data is ready to be read from
-    the socket, this API entry point should be used to allow libest 
+    the socket, this API entry point should be used to allow libEST
     to read the request from the socket and respond to the request.
  
 
@@ -1574,7 +1723,8 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
     }
 
     accepted.sock = fd;
-
+    accepted.next = NULL;
+    
     len = sizeof(struct sockaddr_storage);
     rc = getpeername(fd, (struct sockaddr*)&addr, &len);
     if (rc < 0) {
@@ -1584,11 +1734,13 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
     }
     // deal with both IPv4 and IPv6:
     if (addr.ss_family == AF_INET) {
-        memcpy(&accepted.rsa.sin, &addr, sizeof(struct sockaddr_in));
+        memcpy_s(&accepted.rsa.sin, sizeof(struct sockaddr_in),
+		 &addr, sizeof(struct sockaddr_in));
         port = ntohs(accepted.rsa.sin.sin_port);
         inet_ntop(AF_INET, &accepted.rsa.sin.sin_addr, ipstr, sizeof ipstr);
     } else { // AF_INET6
-        memcpy(&accepted.rsa.sin6, &addr, sizeof(struct sockaddr_in6));
+        memcpy_s(&accepted.rsa.sin6, sizeof(struct sockaddr_in6),
+		 &addr, sizeof(struct sockaddr_in6));
         port = ntohs(accepted.rsa.sin6.sin6_port);
         inet_ntop(AF_INET6, &accepted.rsa.sin6.sin6_addr, ipstr, sizeof ipstr);
     }
@@ -1606,11 +1758,13 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
         conn->client = accepted;
         conn->birth_time = time(NULL);
         conn->ctx = ctx->mg_ctx;
+        conn->read_timeout = ctx->server_read_timeout;
 
         // Fill in IP, port info early so even if SSL setup below fails,
         // error handler would have the corresponding info.
         conn->request_info.remote_port = ntohs(conn->client.rsa.sin.sin_port);
-        memcpy(&conn->request_info.remote_ip, &conn->client.rsa.sin.sin_addr.s_addr, 4);
+        memcpy_s(&conn->request_info.remote_ip, 4,
+                 &conn->client.rsa.sin.sin_addr.s_addr, 4);
         conn->request_info.remote_ip = ntohl(conn->request_info.remote_ip);
         conn->request_info.is_ssl = 1;
 
@@ -1669,6 +1823,7 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
             SSL_free(conn->ssl);
             conn->ssl = NULL;
         }
+        memzero_s(conn, sizeof(*conn) + MAX_REQUEST_SIZE);
         free(conn);
     }
     return (rv);
@@ -1700,15 +1855,6 @@ void mg_stop (struct mg_context *ctx)
 struct mg_context *mg_start (void *user_data)
 {
     struct mg_context *ctx;
-
-    /*
-     * Prevent SIGPIPE interrupt when writing to
-     * a closed socket.  This is a defensive measure
-     * in case a client sends us a bogus request that
-     * results in a socket closure.  
-     * TODO: this code will likely not work on Windows
-     */
-    signal(SIGPIPE, SIG_IGN);
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
     WSADATA data;
@@ -1743,16 +1889,16 @@ EST_ERROR est_send_csrattr_data (EST_CTX *ctx, char *csr_data, int csr_len, void
          */
         snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
                  EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
-        hdrlen = strnlen(http_hdr, EST_HTTP_HDR_MAX);
+        hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
         snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
                  EST_HTTP_CT_CSRATTRS, EST_HTTP_HDR_EOL);
-        hdrlen = strnlen(http_hdr, EST_HTTP_HDR_MAX);
+        hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
         snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CE,
                  EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL);
-        hdrlen = strnlen(http_hdr, EST_HTTP_HDR_MAX);
+        hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
         snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
                  csr_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
-        if (!mg_write(http_ctx, http_hdr, strnlen(http_hdr, EST_HTTP_HDR_MAX))) {
+        if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
             free(csr_data);
             return (EST_ERR_HTTP_WRITE);
         }

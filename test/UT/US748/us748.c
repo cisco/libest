@@ -1,14 +1,16 @@
 /*------------------------------------------------------------------
- * us748.c - Unit Tests for User Story 748 - Proxy simple enroll 
+ * us748.c - Unit Tests for User Story 748 - Proxy simple enroll
  *
  * August, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
 #include <stdio.h>
+#ifndef WIN32
 #include <unistd.h>
+#endif
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -22,16 +24,17 @@
 #include "CUnit/Automated.h"
 #endif
 
-static char test5_outfile[FILENAME_MAX] = "US748/test5.hdr";
 static unsigned char *cacerts = NULL;
 static int cacerts_len = 0;
 
-#define US748_RETRY_INTERVAL	3600
-//#define US748_TCP_PORT		29001
+#define US748_RETRY_INTERVAL    3600
+//#define US748_TCP_PORT        29001
 
-#define US748_TCP_SERVER_PORT		15748
-#define US748_TCP_PROXY_PORT		16748
+#define US748_TCP_SERVER_PORT       15748
+#define US748_TCP_PROXY_PORT        16748
 
+#ifndef WIN32
+static char test5_outfile[FILENAME_MAX] = "US748/test5.hdr";
 #define US748_SERVER_CERT "CA/estCA/private/estservercertandkey.pem"
 #define US748_SERVER_KEY "CA/estCA/private/estservercertandkey.pem"
 /* #define US748_PROXY_CERT "CA/estCA/private/estservercertandkey.pem"   */
@@ -39,6 +42,18 @@ static int cacerts_len = 0;
 #define US748_PROXY_CERT "US748/cert.pem"  
 #define US748_PROXY_KEY "US748/key.pem"
 #define US748_CACERT "CA/estCA/cacert.crt"
+#define US748_TRUSTED_CERT "CA/trustedcerts.crt"
+#else
+static char test5_outfile[FILENAME_MAX] = "US748\\test5.hdr";
+#define US748_SERVER_CERT "CA\\estCA/private\\estservercertandkey.pem"
+#define US748_SERVER_KEY "CA\\estCA\\private\\estservercertandkey.pem"
+/* #define US748_PROXY_CERT "CA/estCA/private/estservercertandkey.pem"   */
+/* #define US748_PROXY_KEY "CA/estCA/private/estservercertandkey.pem" */
+#define US748_PROXY_CERT "US748\\cert.pem"  
+#define US748_PROXY_KEY "US748\\key.pem"
+#define US748_CACERT "CA\\estCA\\cacert.crt"
+#define US748_TRUSTED_CERT "CA\\trustedcerts.crt"
+#endif
 /*
  * The following CSR was generated using the following openssl command and then
  * using cat on the rsa.req file:
@@ -63,21 +78,21 @@ static int cacerts_len = 0;
  */
 #define US748_PKCS10_ECDSA256 "MIIBMTCB2gIBADB4MQswCQYDVQQGEwJVUzELMAkGA1UECAwCTkMxDDAKBgNVBAcM\nA1JUUDESMBAGA1UECgwJRUNDb21wYW55MQ4wDAYDVQQLDAVFQ29yZzEPMA0GA1UE\nAwwGRUMgZG9lMRkwFwYJKoZIhvcNAQkBFgplY0Bkb2UuY29tMFkwEwYHKoZIzj0C\nAQYIKoZIzj0DAQcDQgAEO1uszCKdXNFzygNLNeS8azQKod1516GT9qdDddt9iJN4\nLpBTnv+7K7+tji5kts1kWSYyvqLxvnq8Q/TU1iQJ56AAMAkGByqGSM49BAEDRwAw\nRAIgP6qda+0TEKZFPopgUfwFMRsxcNmuQUe2yuz16460/SQCIBfLvmuMeyYOqbbD\nX0Ifde9yzkROVBCEPvK0hcU5KsTO"
 
-
 #define US748_PKCS10_CORRUPT "MIIBMTCB2gIBADB4MQswCQYDVQQGEwJVUzELMAkGA1UECAwCTkMxDDAKBgNVBAcM\nA1JUUDESMBAGA1UECgwJRUNDb21wYW55MQ4wDAYDVQQLDAVFQ39yZzEPMA0GA1UE\nAwwGRUMgZG9lMRkwFwYJKoZIhvcNAQkBFgplY0Bkb2UuY29tMFkwEwYHKoZIzj0C\nAQYIKoZIzj0DAQcDQgAEO1uszCKdXNFzygNLNeS8azQKod1516GT9qdDddt9iJN4\nLpBTnv+7K7+tji5kts1kWSYyvqLxvnq8Q/TU1iQJ56AAMAkGByqGSM49BAEDRwAw\nRAIgP6qda+0TEKZFPopgUfwFMRsxcNmuQUe2yuz16460/SQCIBfLvmuMeyYOqbbD\nX0Ifde9yzkROVBCEPvK0hcU5KsTO"
 
 /*
- * The following is a valid CSR that already contains a PoP 
+ * The following is a valid CSR that already contains a PoP
  * challengePassword.  This was collected using estserver with
- * the dumpbin() function.  This CSR should never work since 
+ * the dumpbin() function.  This CSR should never work since
  * the PoP value in it will be stale.
  */
 #define US748_PKCS10_STALE_POP "MIIBcjCB3AIBADARMQ8wDQYDVQQDEwZURVNUQ04wgZ8wDQYJKoZIhvcNAQEBBQAD\ngY0AMIGJAoGBAPDHvrkVB3+rFHl+KuIsrZGixldRYRD50S2vFs8mW5wWVxDS3xFR\nzcKtqg7JUyW8NYOFNWX0ozhCe87XP2h7tUpHyHlL/8N/84zuMtAtKTLU3Bjgq1xg\nuu8a1ht10wiy8u2r/uEKMhQwpvt56UY5pHzuqmqlO0qlmE+M58WN49IhAgMBAAGg\nIjAgBgkqhkiG9w0BCQcxExYRUjdGN1ZUNUwyd2VueWtMcAowDQYJKoZIhvcNAQEF\nBQADgYEAyenrskmfRIXcpeKBvL3VnW5N4HcLTwI9Hcbr744SWFQaw/R+ru+UXd2j\n99AGBr/GvTkTghINWg2C7vzGF/zhIuG6Ok9FtiMnNr9hZ+5SLYhfSFJbuIv65rWH\nvfLR9N9M2Q9jlf7p4AYfWXD2qD2XOTZw2t4trGZGKA2JR/OiB40="
 
-#define US748_ENROLL_URL_BA "https://127.0.0.1:16748/.well-known/est/simpleenroll"
-#define US748_PKCS10_CT	    "Content-Type: application/pkcs10" 
+#define US748_ENROLL_URL_BA "https://127.0.0.1:15748/.well-known/est/simpleenroll"
+
+#define US748_PKCS10_CT     "Content-Type: application/pkcs10" 
 #define US748_UIDPWD_GOOD   "estuser:estpwd"
-#define US748_CACERTS	    "CA/estCA/cacert.crt"
+#define US748_CACERTS       "CA/estCA/cacert.crt"
 #define US748_EXPLICIT_CERT "US748/cert-RA.pem" 
 #define US748_EXPLICIT_KEY  "US748/key-RA.pem"
 
@@ -91,43 +106,43 @@ static EVP_PKEY * generate_private_key (void)
      * create an RSA keypair and assign them to a PKEY and return it.
      */
     BN_set_word(bn, 0x10001);
-    RSA_generate_key_ex(rsa, 1024, bn, NULL);    
+    RSA_generate_key_ex(rsa, 1024, bn, NULL);
 
     pkey = EVP_PKEY_new();
-    if (pkey==NULL) {
+    if (pkey == NULL) {
         printf("\nError allocating PKEY structure for new key pair\n");
         return NULL;
     }
     if (!EVP_PKEY_set1_RSA(pkey, rsa)) {
         printf("\nError assigning RSA key pair to PKEY structure\n");
         return NULL;
-    }        
-    
+    }
+
     RSA_free(rsa);
     BN_free(bn);
-    
+
     return (pkey);
 }
-
 
 /*
  * Callback function passed to est_client_init()
  */
-static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
+static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
 {
-    BIO *bio_err;
-    bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
-    int approve = 0; 
-    
+    BIO * bio_err;
+    bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
+    int approve = 0;
+
     /*
      * Print out the specifics of this cert
      */
-    printf("%s: OpenSSL/EST server cert verification failed with the following error: openssl_cert_error = %d (%s)\n",
-           __FUNCTION__, openssl_cert_error,
-           X509_verify_cert_error_string(openssl_cert_error));
-    
+    printf(
+        "%s: OpenSSL/EST server cert verification failed with the following error: openssl_cert_error = %d (%s)\n",
+        __FUNCTION__, openssl_cert_error,
+        X509_verify_cert_error_string(openssl_cert_error));
+
     printf("Failing Cert:\n");
-    X509_print_fp(stdout,cur_cert);
+    X509_print_fp(stdout, cur_cert);
     /*
      * Next call prints out the signature which can be used as the fingerprint
      * This fingerprint can be checked against the anticipated value to determine
@@ -137,19 +152,18 @@ static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
 
     if (openssl_cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
         approve = 1;
-    }    
+    }
 
     BIO_free(bio_err);
-    
-    return approve;
-}    
 
+    return approve;
+}
 
 static FILE *outfile;
-static size_t write_func(void *ptr, size_t size, size_t nmemb, void *userdata)
+static size_t write_func (void *ptr, size_t size, size_t nmemb, void *userdata)
 {
     size_t written;
-    written = fwrite(ptr,size,nmemb,outfile);
+    written = fwrite(ptr, size, nmemb, outfile);
     return written;
 }
 
@@ -164,45 +178,45 @@ static int us748_start_server (int manual_enroll, int nid)
     /*
      * First we start an EST server acting as the CA
      */
-    rv = st_start(US748_TCP_SERVER_PORT, 
-	          US748_SERVER_CERT,
-	          US748_SERVER_KEY,
-	          "estrealm",
-	          US748_CACERT,
-	          "CA/trustedcerts.crt",
-	          "US748/estExampleCA.cnf",
-		  manual_enroll,  // manual enroll
-		  0,  // disable PoP
-		  nid); // ecdhe nid info
-    sleep(1);
-    if (rv != EST_ERR_NONE) return rv;
+    rv = st_start(US748_TCP_SERVER_PORT,
+                  US748_SERVER_CERT,
+                  US748_SERVER_KEY,
+                  "estrealm",
+                  US748_CACERT,
+                  US748_TRUSTED_CERT,
+                  "US748/estExampleCA.cnf",
+                  manual_enroll, // manual enroll
+                  0,  // disable PoP
+                  nid); // ecdhe nid info
+    SLEEP(1);
+    if (rv != EST_ERR_NONE)
+        return rv;
 
     /*
      * Next we start an EST proxy acting as an RA.
      */
-    rv = st_proxy_start(US748_TCP_PROXY_PORT, 
+    rv = st_proxy_start(US748_TCP_PROXY_PORT,
                         US748_PROXY_CERT,
                         US748_PROXY_KEY,
                         "estrealm",
                         US748_CACERT,
-                        "CA/trustedcerts.crt",
+                        US748_TRUSTED_CERT,
                         "estuser",
                         "estpwd",
                         "127.0.0.1",
                         US748_TCP_SERVER_PORT,
                         0,  // disable PoP
                         nid);  // ecdhe nid info
-    sleep(1);
+    SLEEP(1);
 
     return rv;
 }
 
-
-void us748_stop_server() 
+void us748_stop_server ()
 {
     st_stop();
     st_proxy_stop();
-    sleep(2);
+    SLEEP(2);
 }
 
 /*
@@ -221,20 +235,19 @@ static int us748_init_suite (void)
      */
     cacerts_len = read_binary_file(US748_CACERTS, &cacerts);
     if (cacerts_len <= 0) {
-	return 1;
+        return 1;
     }
 
     us748_clean();
 
     /*
-     * Start an instance of the EST server with 
+     * Start an instance of the EST server with
      * automatic enrollment enabled.
      */
     rv = us748_start_server(0, 0);
 
     return rv;
 }
-
 
 /*
  * This routine is called when CUnit uninitializes this test
@@ -248,25 +261,24 @@ static int us748_destroy_suite (void)
     return 0;
 }
 
-
 /*
- * Simple enroll - RSA 2048 
+ * Simple enroll - RSA 2048
  *
  * This test case uses libcurl to test simple
  * enrollment of a 2048 bit RSA CSR.  HTTP Basic
- * authentication is used. 
+ * authentication is used.
  */
-static void us748_test1 (void) 
+static void us748_test1 (void)
 {
     long rv;
 
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
-    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT, 
-	                US748_PKCS10_RSA2048, 
-	                US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, 
-			NULL, NULL, NULL);
-    /* 
+    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT,
+    US748_PKCS10_RSA2048,
+    US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, NULL, NULL, NULL);
+    /*
      * Since we passed in a valid userID/password,
      * we expect the server to respond with 200
      */
@@ -274,23 +286,23 @@ static void us748_test1 (void)
 }
 
 /*
- * Simple enroll - EC prime 256 
+ * Simple enroll - EC prime 256
  *
  * This test case uses libcurl to test simple
  * enrollment of a 256 bit EC CSR.  HTTP Basic
- * authentication is used. 
+ * authentication is used.
  */
-static void us748_test2 (void) 
+static void us748_test2 (void)
 {
     long rv;
 
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
-    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT, 
-	                US748_PKCS10_ECDSA256, 
-	                US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, 
-			NULL, NULL, NULL);
-    /* 
+    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT,
+    US748_PKCS10_ECDSA256,
+    US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, NULL, NULL, NULL);
+    /*
      * Since we passed in a valid userID/password,
      * we expect the server to respond with 200
      */
@@ -298,23 +310,23 @@ static void us748_test2 (void)
 }
 
 /*
- * Simple enroll - DSA prime 1024 
+ * Simple enroll - DSA prime 1024
  *
  * This test case uses libcurl to test simple
  * enrollment of a 1024 bit DSA CSR.  HTTP Basic
- * authentication is used. 
+ * authentication is used.
  */
-static void us748_test3 (void) 
+static void us748_test3 (void)
 {
     long rv;
 
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
-    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT, 
-	                US748_PKCS10_DSA1024, 
-	                US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, 
-			NULL, NULL, NULL);
-    /* 
+    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT,
+    US748_PKCS10_DSA1024,
+    US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, NULL, NULL, NULL);
+    /*
      * Since we passed in a valid userID/password,
      * we expect the server to respond with 200
      */
@@ -322,41 +334,41 @@ static void us748_test3 (void)
 }
 
 /*
- * Simple enroll - Corrupted PKCS10 
+ * Simple enroll - Corrupted PKCS10
  *
  * This test case uses libcurl to test simple
  * enrollment usinga corrupted CSR.  HTTP Basic
- * authentication is used. 
+ * authentication is used.
  */
-static void us748_test4 (void) 
+static void us748_test4 (void)
 {
     long rv;
 
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
-    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT, 
-	                US748_PKCS10_CORRUPT, 
-	                US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, 
-			NULL, NULL, NULL);
-    /* 
+    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT,
+    US748_PKCS10_CORRUPT,
+    US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, NULL, NULL, NULL);
+    /*
      * Since the CSR is not valid, the server should
-     * respond with a 400. 
+     * respond with a 400.
      */
     CU_ASSERT(rv == 400);
 }
 
 /*
- * Simple enroll - manual enrollment 
+ * Simple enroll - manual enrollment
  *
  * This test case verifies the server is
  * sending the appropriate retry-after response.
  */
-static void us748_test5 (void) 
+static void us748_test5 (void)
 {
     long rv;
-    char cmd[200];
 
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
     /* Stop the EST server */
     us748_stop_server();
@@ -365,13 +377,12 @@ static void us748_test5 (void)
     us748_start_server(1, 0);
 
     outfile = fopen(test5_outfile, "w");
-    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT, 
-	                US748_PKCS10_RSA2048, 
-	                US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, 
-			NULL, NULL, &write_func);
+    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT,
+    US748_PKCS10_RSA2048,
+    US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, NULL, NULL, &write_func);
     fclose(outfile);
-    
-    /* 
+
+    /*
      * Since the server hasn't seen this CSR in the past,
      * it should respond with a retry-after 202 response.
      */
@@ -379,10 +390,12 @@ static void us748_test5 (void)
 
     /*
      * Verify the retry-after value
+     
+     sprintf(cmd, "grep Retry-After %s | grep %d", test5_outfile,
+     US748_RETRY_INTERVAL);
+     rv = system(cmd);
      */
-    sprintf(cmd, "grep Retry-After %s | grep %d", test5_outfile, 
-	    US748_RETRY_INTERVAL);
-    rv = system(cmd);
+    rv = grep(test5_outfile, "Retry-After: 3600");
     CU_ASSERT(rv == 0);
 
     /*
@@ -390,11 +403,10 @@ static void us748_test5 (void)
      * only simulating manual enrollment.  Wait a second and then
      * try to enroll the cert again.
      */
-    sleep(1);
-    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT, 
-	                US748_PKCS10_RSA2048, 
-	                US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, 
-			NULL, NULL, NULL);
+    SLEEP(1);
+    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT,
+    US748_PKCS10_RSA2048,
+    US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, NULL, NULL, NULL);
 
     /*
      * This enrollment request should succeed this time
@@ -411,45 +423,45 @@ static void us748_test5 (void)
 }
 
 /*
- * Simple enroll - PoP check fails with curl 
+ * Simple enroll - PoP check fails with curl
  *
  * This test case verifies the server is
  * verifying the PoP from the client CSR.  Since curl does not
  * set the PoP, the EST enrollment should fail.
  */
-static void us748_test6 (void) 
+static void us748_test6 (void)
 {
     long rv;
 
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
-    st_proxy_enable_pop();
+    st_enable_pop();
 
-    /* 
+    /*
      * Send a valid enroll request using curl.  Curl does not
      * include the PoP
      */
-    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT, 
-	                US748_PKCS10_RSA2048, 
-	                US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, 
-			NULL, NULL, NULL);
+    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT,
+    US748_PKCS10_RSA2048,
+    US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, NULL, NULL, NULL);
 
     /*
      * The server should respond with a failure code
      */
     CU_ASSERT(rv == 400);
 
-    st_proxy_disable_pop();
+    st_disable_pop();
 }
 
 /*
- * Simple enroll - PoP check succeeds with estclient 
+ * Simple enroll - PoP check succeeds with estclient
  *
  * This test case verifies the proxy is
  * verifying the PoP from the client CSR.  We use
- * estclient since it supports the PoP. 
+ * estclient since it supports the PoP.
  */
-static void us748_test7 (void) 
+static void us748_test7 (void)
 {
     long rv;
     EST_CTX *c_ctx;
@@ -459,7 +471,8 @@ static void us748_test7 (void)
     unsigned char *attr_data;
     int attr_len;
 
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
     /*
      * This test case requires PoP to be enabled
@@ -470,19 +483,19 @@ static void us748_test7 (void)
      * Create a client context
      */
     c_ctx = est_client_init(cacerts, cacerts_len, EST_CERT_FORMAT_PEM,
-                            client_manual_cert_verify);
+        client_manual_cert_verify);
     CU_ASSERT(c_ctx != NULL);
     if (!c_ctx) {
-	return;
+        return;
     }
-        
+
     /*
      * Specify user ID and password since the server is running
      * in Basic Authentication mode.
      */
     rv = est_client_set_auth(c_ctx, "estuser", "estpwd", NULL, NULL);
     CU_ASSERT(rv == EST_ERR_NONE);
-    est_client_set_server(c_ctx, "127.0.0.1", US748_TCP_PROXY_PORT);
+    est_client_set_server(c_ctx, "127.0.0.1", US748_TCP_PROXY_PORT, NULL);
 
     /*
      * get a keypair to be used in the enroll.
@@ -506,9 +519,9 @@ static void us748_test7 (void)
     if (!pkcs7) {
         return;
     }
-    rv = est_client_copy_enrolled_cert (c_ctx, pkcs7);
+    rv = est_client_copy_enrolled_cert(c_ctx, pkcs7);
     CU_ASSERT(rv == EST_ERR_NONE);
-    
+
     /*
      * Clean up
      */
@@ -522,15 +535,14 @@ static void us748_test7 (void)
     st_disable_pop();
 }
 
-
 /*
  * Simple enroll - PoP is disabled, the CSR contains a
- *                 valid PoP. 
+ *                 valid PoP.
  *
- * This test case ensures the server can handle the 
+ * This test case ensures the server can handle the
  * scenario where the CSR includes a valid PoP even when
  * the server didn't request it.  We have to use
- * libeslibestt as the client to generate a CSR containing
+ * CiscoEST as the client to generate a CSR containing
  * a valid PoP.  There's no way to include a valid PoP
  * using Curl since the TLS channel binding information
  * is not known in advance.
@@ -539,7 +551,7 @@ static void us748_test7 (void)
 //but we use it here to hack the EST_CTX values mid-way
 //through this test
 #include "../../src/est/est_locl.h"
-static void us748_test9 (void) 
+static void us748_test9 (void)
 {
     EST_CTX *ctx;
     int rv;
@@ -551,7 +563,8 @@ static void us748_test9 (void)
     unsigned char *attr_data;
     int attr_len;
 
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
     /*
      * Make sure our EST server has PoP disabled
@@ -562,13 +575,13 @@ static void us748_test9 (void)
      * Read in the CA certs
      */
     caclen = read_binary_file(US748_CACERTS, &cacerts);
-    CU_ASSERT(cacerts_len > 0); 
+    CU_ASSERT(cacerts_len > 0);
 
     /*
      * Init the client context
      */
     ctx = est_client_init(cacerts, caclen, EST_CERT_FORMAT_PEM,
-                          client_manual_cert_verify);
+        client_manual_cert_verify);
 
     /*
      * We'll use simple HTTP auth to identify ourselves
@@ -576,13 +589,13 @@ static void us748_test9 (void)
     rv = est_client_set_auth(ctx, "estuser", "estpwd", NULL, NULL);
     CU_ASSERT(rv == EST_ERR_NONE);
 
-    est_client_set_server(ctx, "127.0.0.1", US748_TCP_PROXY_PORT);
+    est_client_set_server(ctx, "127.0.0.1", US748_TCP_PROXY_PORT, NULL);
 
     /*
      * Create some space to hold the cert and generate
      * a private key
      */
-    new_pkey = generate_private_key();            
+    new_pkey = generate_private_key();
 
     rv = est_client_get_csrattrs(ctx, &attr_data, &attr_len);
     CU_ASSERT(rv == EST_ERR_NONE);
@@ -590,48 +603,47 @@ static void us748_test9 (void)
     /*
      * Attempt to enroll
      */
-    ctx->csr_pop_required = 1;  //This is a hack for testing only, do not attempt this 
-                                //We need to force the challengePassword into the CSR    
+    ctx->csr_pop_required = 1; //This is a hack for testing only, do not attempt this 
+    //We need to force the challengePassword into the CSR    
     rv = est_client_enroll(ctx, "TestCase9", &pkcs7_len, new_pkey);
     CU_ASSERT(rv == EST_ERR_NONE);
 
     pkcs7 = malloc(pkcs7_len);
     rv = est_client_copy_enrolled_cert(ctx, pkcs7);
-    
+
     free(pkcs7);
     est_destroy(ctx);
 }
 
 /*
  * Simple enroll - PoP is disabled, the CSR contains a
- *                 invalid PoP. 
+ *                 invalid PoP.
  *
- * This test case ensures the server can handle the 
+ * This test case ensures the server can handle the
  * scenario where the CSR includes an invalid PoP even when
  * the server didn't request it.
  */
-static void us748_test10 (void) 
+static void us748_test10 (void)
 {
     long rv;
 
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
     /*
      * Make sure our EST server has PoP disabled
      */
     st_disable_pop();
 
-    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT, 
-	                US748_PKCS10_STALE_POP, 
-	                US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, 
-			NULL, NULL, NULL);
-    /* 
+    rv = curl_http_post(US748_ENROLL_URL_BA, US748_PKCS10_CT,
+    US748_PKCS10_STALE_POP,
+    US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, NULL, NULL, NULL);
+    /*
      * The enroll request should fail since the PoP was invalid
      * We expect a 400 response.
      */
     CU_ASSERT(rv == 400);
 }
-
 
 /* The main() function for setting up and running the tests.
  * Returns a CUE_SUCCESS on successful running, another
@@ -640,34 +652,33 @@ static void us748_test10 (void)
 int us748_add_suite (void)
 {
 #ifdef HAVE_CUNIT
-   CU_pSuite pSuite = NULL;
+    CU_pSuite pSuite = NULL;
 
-   /* add a suite to the registry */
-   pSuite = CU_add_suite("us748_srv_simpenroll", 
-	                  us748_init_suite, 
-			  us748_destroy_suite);
-   if (NULL == pSuite) {
-      CU_cleanup_registry();
-      return CU_get_error();
-   }
+    /* add a suite to the registry */
+    pSuite = CU_add_suite("us748_srv_simpenroll",
+            us748_init_suite,
+            us748_destroy_suite);
+    if (NULL == pSuite) {
+        CU_cleanup_registry();
+        return CU_get_error();
+    }
 
-   /* add the tests to the suite */
-   if ((NULL == CU_add_test(pSuite, "Enroll RSA cert", us748_test1)) ||
-       (NULL == CU_add_test(pSuite, "Enroll ECDSA cert", us748_test2)) ||
-       (NULL == CU_add_test(pSuite, "Enroll DSA cert", us748_test3)) ||
-       (NULL == CU_add_test(pSuite, "Enroll corrupted ECDSA cert", us748_test4)) ||
-       (NULL == CU_add_test(pSuite, "Enroll retry-after manual approval ", us748_test5)) ||
-       (NULL == CU_add_test(pSuite, "Enroll PoP fail with Curl", us748_test6)) ||
-       (NULL == CU_add_test(pSuite, "Enroll PoP succeed with estclient", us748_test7)) ||
-       (NULL == CU_add_test(pSuite, "Enroll w/PoP disabled, CSR includes valid PoP", us748_test9)) || 
-       (NULL == CU_add_test(pSuite, "Enroll w/PoP disabled, CSR includes invalid PoP", us748_test10)))
-   {
-      CU_cleanup_registry();
-      return CU_get_error();
-   }
+    /* add the tests to the suite */
+    if ((NULL == CU_add_test(pSuite, "Enroll RSA cert", us748_test1)) ||
+        (NULL == CU_add_test(pSuite, "Enroll ECDSA cert", us748_test2)) ||
+        (NULL == CU_add_test(pSuite, "Enroll DSA cert", us748_test3)) ||
+        (NULL == CU_add_test(pSuite, "Enroll corrupted ECDSA cert", us748_test4)) ||
+        (NULL == CU_add_test(pSuite, "Enroll retry-after manual approval ", us748_test5)) ||
+        (NULL == CU_add_test(pSuite, "Enroll PoP fail with Curl", us748_test6)) ||
+        (NULL == CU_add_test(pSuite, "Enroll PoP succeed with estclient", us748_test7)) ||
+        (NULL == CU_add_test(pSuite, "Enroll w/PoP disabled, CSR includes valid PoP", us748_test9)) ||
+        (NULL == CU_add_test(pSuite, "Enroll w/PoP disabled, CSR includes invalid PoP", us748_test10)))
+    {
+       CU_cleanup_registry();
+       return CU_get_error();
+    }
 
-   return CUE_SUCCESS;
+    return CUE_SUCCESS;
 #endif
 }
-
 

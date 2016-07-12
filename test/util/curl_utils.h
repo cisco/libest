@@ -35,6 +35,7 @@ long curl_http_post_certuid(char *url, char *ct, char *data,
 	                    char *uidpwd, 
 	                    char *certfile, char *keyfile, 
 			    char *cacert, void *writefunc);
-
+long curl_http_custom (char *url, char *cacert, char *myrequest,
+                       void *writefunc);
 #endif
 

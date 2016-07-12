@@ -1,15 +1,66 @@
 This directory contains a sample EST client application.  It utilizes
 OpenSSL for the SSL stack to be used for HTTP requests, libest for 
-the EST stack, and OpenSSL 1.0.1 for certificate and crypto operations. 
+the EST stack, and OpenSSL for certificate and crypto operations. 
 This README assumes the example EST server is already running on the
 local host and listening to port 8085.
 
+To build the example on Windows:
+
+Prerequisite: EST sample applications makes use of the GNU getopt library for command line 
+              argument parsing. The getopt library is not a part of the C library provided with
+              Microsoft Visual Studio. An open source port for getopt exists under the LGPL3 license 
+              and must be acquired separately at the link provided below:
+              http://www.codeproject.com/Articles/157001/Full-getopt-Port-for-Unicode-and-Multibyte-Microso
+              Download the archive which provides the two source files getopt.c and getopt.h and place both 
+              source files into the "util" directory.
+
+1.  Set the following environment variables to tell the Gradle build script 
+    where to find your installations of OpenSSL and EST
+
+    EST_DIR - must contain an "include" subdirectory for the EST header files,
+              the est.lib link file, and est.dll binary
+    
+    set EST_DIR=C:\PathToYourLibraryInstalls\EST
+    
+    SSL_DIR - must contain an "include" subdirectory for the OpenSSL header files,
+              a "bin" subdirectory for the OpenSSL dll binaries, and a "lib" subdirectory
+              for the OpenSSL link files
+    
+    set SSL_DIR=C:\PathToYourLibraryInstalls\OpenSSL
+    
+    PATH - must contain the path to your Visual Studio 2013 VC bin directory 
+           prior to any other Visual Studio bin directory and the path to 
+           your Gradle executable (which should already be in PATH)
+           
+    set PATH=C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin;%PATH%
+    
+2.  From the "example" directory, type:
+
+    gradle -b build_estclient.gradle clean
+    
+    to clean out any prior builds and then:
+    
+    gradle -b build_estclient.gradle build
+    
+    to build both estclient and estclient_simple executables.
+    The executables are placed in the directory shown below:
+    
+    example\build\exe\estclient\estclient.exe
+    
+    example\build\exe\estclient_simple\estclient_simple.exe
+           
 To run the example:
 
-1.  Set LD_LIBRARY_PATH to include the directories where libest.so,
-    libcrypto.so, and libssl.so are installed. 
+1.  Set LD_LIBRARY_PATH to include the directories where libest.so
+    and libcrypto.so are installed. 
 
     export LD_LIBRARY_PATH=/usr/local/ssl/lib:/usr/local/est/lib
+    
+    On Windows, set the PATH enviromnent variables to where 
+    libeay32.dll and ssleay32.dll are installed and where est.dll 
+    is installed.
+    
+    set PATH=C:\PathToYourLibraryInstalls\EST;C:\PathToYourLibraryInstalls\OpenSSL\bin;%PATH%
 
 2.  Set the following environment variable to specify the location
     of the file containing the CA certificates used for verifying
@@ -17,17 +68,22 @@ To run the example:
     the example EST server:
 
     export EST_OPENSSL_CACERT=../server/estCA/cacert.crt
+    
+    On Windows, the command would appear as follows:
+    
+    set EST_OPENSSL_CACERT=..\server\estCA\cacert.crt
 
 3.  Produce a new private key, connect to the EST server listening on port 8085,
     and request a new certificate.  The example EST server uses the user ID and
     password estuser/estpwd: 
 
-    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp --pem-output 
+    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp 
 
-    Note: The new private key is stored at /tmp/newkey.pem.
+    Note: The new private key is stored at /tmp/key-x-x.pem.
     To check the cert response, use this command:
 
-    openssl x509 -text -in /tmp/newcert.pem 
+    openssl base64 -d -in /tmp/cert-0-0.pkcs7 | \
+        openssl pkcs7 -inform DER -text -print_certs
 
     Instead of producing a new key along with a (re-)enrollment request,
     you may use an existing key stored in a PEM file
@@ -37,11 +93,11 @@ To run the example:
 
     To use an existing private key for the CSR, supply it using the -x option:
 
-    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -x privkey.pem -o /tmp --pem-output
+    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -x privkey.pem -o /tmp
 
-    You may also use an existing CSR for enrollment, supplied using the -y option:
+    You may also use an existing CSR for entrollment, supplied using the -y option:
 
-    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -y req.p10 -o /tmp --pem-output
+    ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -y req.p10 -o /tmp
 
 4.  Optionally you can request attributes as a single request or as
     part of the enroll. For a simple attributes request use the
@@ -51,33 +107,29 @@ To run the example:
 
     To view the list attributes obtained this way, you may use:
 
-    openssl base64 -d -A -in /tmp/csr.base64 | openssl asn1parse -inform DER
+    openssl base64 -d -A -in /tmp/csr-0-0.base64 | \
+        openssl asn1parse -inform DER
  
     Then you can perform the enroll using this command:
  
-    ./estclient -e -a -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp --pem-output
+    ./estclient -e -a -s 127.0.0.1 -p 8085 -u estuser -h estpwd -o /tmp
  
-5.  You can use an existing certificate to identify the EST client
+5.  Optionally, you can use a certificate to identify the EST client
     to the server instead of specifying the HTTP user name/password.  
     Now that you've enrolled a certificate in step #3
-    above, you can re-enroll that certificate prior to expiration.  
+    above, you can use that certificate to enroll again. Note, your
+    EST server should be configured not to force HTTP authentication. 
 
-    Save the new certificate and key from step 3: 
+    First, convert the pkcs7 cert from step 3 to a PEM cert:
 
-	cp /tmp/newcert.pem /tmp/savecert.pem
-	cp /tmp/newkey.pem /tmp/savekey.pem
+    openssl base64 -d -in /tmp/cert-0-0.pkcs7 | \
+        openssl pkcs7 -inform DER  -print_certs -out /tmp/cert-0-0.pem
+
+    Next, save the private key:
+
+	cp /tmp/key-x-x.pem /tmp/savekey.pem
 
     Next, use this cert as identity to do another enroll operation:
 
-    ./estclient -r -s 127.0.0.1 -p 8085 -c /tmp/savecert.pem -k /tmp/savekey.pem -o /tmp --pem-output
-
-
-Note:  RFC 7030 requires the certificate to be encoded as base64 PKCS7.  This encoding isn't
-       very useful for most applications.  The estclient includes the --pem-output option as
-       a convenience to convert the newly enrolled certificate to PEM format.  When not using
-       the --pem-output option, the following OpenSSL command can be used to convert
-       base64 PKCS7 to PEM:
-
-       openssl base64 -d -in /tmp/newcert.pkcs7 | \
-           openssl pkcs7 -inform DER -print_certs -out /tmp/savecert.pem
-
+    ./estclient -e -s 127.0.0.1 -p 8085 -c /tmp/cert-0-0.pem \
+        -k /tmp/savekey.pem -o /tmp

@@ -8,7 +8,7 @@
  *
  * November, 2012
  *
- * Copyright (c) 2012 by cisco Systems, Inc.
+ * Copyright (c) 2012, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -151,6 +151,10 @@ typedef struct {
 } NAME_EX_TBL;
 
 static UI_METHOD *ui_method = NULL;
+
+#if defined(_WIN32) || defined(_WIN64) 
+#define strcasecmp _stricmp 
+#endif
 
 /*****************************************************************************************
  * simple enrollment processing logic from this point
@@ -575,6 +579,7 @@ int rotate_serial(char *serialfile, char *new_suffix, char *old_suffix)
 		serialfile, old_suffix);
 	BIO_printf(bio_err, "DEBUG: renaming \"%s\" to \"%s\"\n",
 		serialfile, buf[1]);
+#ifndef WIN32
 	if (rename(serialfile,buf[1]) < 0 && errno != ENOENT
 #ifdef ENOTDIR
 			&& errno != ENOTDIR
@@ -586,8 +591,12 @@ int rotate_serial(char *serialfile, char *new_suffix, char *old_suffix)
 			perror("reason");
 			goto err;
 			}
+#endif 
 	BIO_printf(bio_err, "DEBUG: renaming \"%s\" to \"%s\"\n",
 		buf[0],serialfile);
+#ifdef WIN32
+    remove(serialfile);
+#endif 
 	if (rename(buf[0],serialfile) < 0)
 		{
 		BIO_printf(bio_err,
@@ -2857,9 +2866,9 @@ BIO * ossl_simple_enroll (const char *p10buf, int p10len, char *configfile)
 		if (sk_X509_num(cert_sk)) {
 			/* Rename the database and the serial file */
 			if (!rotate_serial(serialfile,"new","old")) goto err;
-
+#ifndef WIN32
 			if (!rotate_index(dbfile,"new","old")) goto err;
-
+#endif 
 			BIO_printf(bio_err,"Data Base Updated\n");
 		}
 	}
@@ -2888,8 +2897,10 @@ err:
 	BN_free(serial);
 	BN_free(crlnumber);
 	free_index(db);
+#ifndef WIN32
 	if (sigopts)
 		sk_OPENSSL_STRING_free(sigopts);
+#endif 
 	EVP_PKEY_free(pkey);
 	if (x509) X509_free(x509);
 	X509_CRL_free(crl);

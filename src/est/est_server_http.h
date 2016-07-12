@@ -8,7 +8,7 @@
  *
  * May, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -38,9 +38,7 @@
 #include <stdio.h>
 #include <stddef.h>
 #include "est_locl.h"
-#if defined(_WIN32) && !defined(__SYMBIAN32__) // Windows specific
-#define _WIN32_WINNT 0x0400                    // To make it link in VS2005
-#include <windows.h>
+#if defined(_WIN32) && !defined(__SYMBIAN32__)
 
 #ifndef PATH_MAX
 #define PATH_MAX MAX_PATH
@@ -199,6 +197,14 @@ extern "C" {
 #define MG_UID_MAX 256
 #define USE_IPV6
 
+#ifndef WIN32
+#define POLL poll
+#define EST_UINT uint
+#else
+#define POLL WSAPoll
+#define EST_UINT UINT
+#endif 
+
 // Unified socket address. For IPv6 support, add IPv6 address structure
 // in the union u.
 union usa {
@@ -234,7 +240,6 @@ struct mg_request_info {
     const char *uri;            // URL-decoded URI
     const char *http_version;   // E.g. "1.0", "1.1"
     const char *query_string;   // URL part after '?', not including '?', or NULL
-    const char *remote_user;    // Authenticated user, or NULL if no auth used
     long remote_ip;             // Client's IP address
     int remote_port;            // Client's port
     int is_ssl;                 // 1 if SSL-ed, 0 if not
@@ -251,6 +256,7 @@ struct mg_request_info {
 struct mg_connection {
     struct mg_request_info request_info;
     struct mg_context *ctx;
+    int read_timeout;
     SSL *ssl;                    // SSL descriptor
     struct socket client;        // Connected client
     time_t birth_time;           // Time when request was received
