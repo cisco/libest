@@ -8,11 +8,13 @@ Directory contents:
     /src	This directory contains the EST library.  The
 		target built from this directory is libest.a.
     /example	This directory contains sample code for implementing
-                an EST client or server.
+                an application that uses the libEST library.
+    /test	This directory contains unit test code to verify
+                the libest capabilities.
 
 Getting started
 ---------------
-1.  ./configure; make
+1.  ./configure; make ; make install
 2.  Descend into the example/server directory and run
     the sample EST server.  There is a README in this directory
     with detailed instructions.
