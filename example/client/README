@@ -51,8 +51,8 @@ Prerequisite: EST sample applications makes use of the GNU getopt library for co
            
 To run the example:
 
-1.  Set LD_LIBRARY_PATH to include the directories where libest.so
-    and libcrypto.so are installed. 
+1.  Set LD_LIBRARY_PATH to include the directories where libest.so,
+    libcrypto.so, and libssl.so are installed. 
 
     export LD_LIBRARY_PATH=/usr/local/ssl/lib:/usr/local/est/lib
     
