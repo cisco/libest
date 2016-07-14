@@ -356,7 +356,7 @@ int main (int argc, char **argv)
 
     /*
      * Read in the trusted certificates, which are used by
-     * CiscoEST to verify the identity of the EST server.
+     * libEST to verify the identity of the EST server.
      */
     trustanchor_file = getenv("EST_OPENSSL_CACERT");
     cacerts_len = read_binary_file(trustanchor_file, &cacerts);

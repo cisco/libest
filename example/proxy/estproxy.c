@@ -139,7 +139,7 @@ int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
          * or some external database to authenticate a 
          * userID/password.  But for this example code,
          * we just hard-code a local user for testing
-         * the CiscoEST API.
+         * the libEST API.
          */
         if (!strcmp(ah->user, "estuser") && !strcmp(ah->pwd, "estpwd")) {
             /* The user is valid */

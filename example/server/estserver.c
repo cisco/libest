@@ -744,10 +744,10 @@ static char digest_user[3][32] = { "estuser", "estrealm",
         "36807fa200741bb0e8fb04fcf08e2de6" //This is the HA1 precaculated value
         };
 /*
- * This callback is invoked by CiscoEST when performing
- * HTTP authentication of the EST client.  CiscoEST will
+ * This callback is invoked by libEST when performing
+ * HTTP authentication of the EST client.  libEST will
  * parse the auth credentials from the HTTP header.  We
- * must validate the user ourselves since CiscoEST does
+ * must validate the user ourselves since libEST does
  * not maintain a user database.  This allows us to hook
  * into a Radius server, or some other external user
  * database.
@@ -775,7 +775,7 @@ int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
          * or some external database to authenticate a
          * userID/password.  But for this example code,
          * we just hard-code a local user for testing
-         * the CiscoEST API.
+         * the libEST API.
          */
         if (!strcmp(ah->user, "estuser") && !strcmp(ah->pwd, "estpwd")) {
             /* The user is valid */
