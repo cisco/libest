@@ -111,7 +111,7 @@ model {
                 cCompiler.define "LIBEST_EXPORTS", "1"
                 cCompiler.define "DISABLE_BACKTRACE"
                 cCompiler.define "__STDC_WANT_SECURE_LIB__" , "0"
-                cCompiler.define "PACKAGE_STRING", "\"libest 2.0.0\""               
+                cCompiler.define "PACKAGE_STRING", "\"libest 2.0.0p\""               
                 cCompiler.define "DISABLE_PTHREADS", "1"
                 cCompiler.args "/GS", "/GL", "/analyze-", "/W3", "/Gy", "/Zc:wchar_t", "/Zi", "/Gm-", "/fp:precise", "/errorReport:prompt", "/WX-", "/Zc:forScope", "/Gd", "/Oy-","/Oi","/MD", "/EHsc", "/nologo", "/FS"
                 linker.args "/DYNAMICBASE","/SAFESEH", "/LTCG", "/NXCOMPAT"
