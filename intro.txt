@@ -554,9 +554,8 @@ steps outline the minimal API calls required to implement an EST proxy:
 
 @section FIPS FIPS 140-2 Compliance
 
-Another consideration is FIPS 140 compliance.  libEST was developed
-using OpenSSL 1.0.1.  OpenSSL is binary compatible with OpenSSL and 
-can be used with libEST.  OpenSSL can be configured and compiled 
+Another consideration is FIPS 140 compliance. libEST was developed
+using OpenSSL and OpenSSL can be configured and compiled 
 with FIPS 140 support.  This allows libEST to claim FIPS compliance when the 
 application invokes the FIPS_mode_set() entry point in the OpenSSL
 API.  When in FIPS mode, some ciphers are not allowed, including MD5.
