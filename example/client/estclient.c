@@ -416,8 +416,10 @@ static int simple_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
     if (csr) {
       X509_REQ_free(csr);
     }
-    if (verbose) printf("\nenrollment rv = %d (%s) with pkcs7 length = %d\n",
+    if (verbose) {
+        printf("\nenrollment rv = %d (%s) with pkcs7 length = %d\n",
                         rv, EST_ERR_NUM_TO_STR(rv), pkcs7_len);
+    }
     if (rv == EST_ERR_NONE) {
         /*
          * client library has obtained the new client certificate.
