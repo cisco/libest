@@ -4,8 +4,8 @@ with Mongoose, libest for the EST stack, and OpenSSL for basic CA
 services. 
 
 
-DISCLAIMER:  This example code should not be used "as is" in a Cisco
-             product.  The CA server used by the example was taken
+DISCLAIMER:  This example code should not be used "as is".  
+             The CA server used by the example was taken
 	     from the OpenSSL example code.  It has not been tested 
 	     to comply with X509 requirements for operating as a 
 	     certificate authority.  There are known issues with the
@@ -20,7 +20,7 @@ To run the example:
 1.  Ensure libcrypto.so and libest.so are in the LD_LIBRARY_PATH.
     Here's an example:
 
-    export LD_LIBRARY_PATH=/usr/local/ssl/lib:/home/foleyj/Wood/libest/src/est/.libs
+    export LD_LIBRARY_PATH=/usr/local/ssl/lib:/usr/local/est/lib
 
 2.  Run the createCA.sh script to create the sample CA database.
     This only needs to be done once.  This will create the estCA

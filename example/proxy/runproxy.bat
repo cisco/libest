@@ -1,6 +1,6 @@
 :: runproxy.bat is a direct port of runproxy.sh
 
-:: Make sure the est.dll & ciscoSSL dlls are in the %PATH%
+:: Make sure the est.dll & openSSL dlls are in the %PATH%
 
 @echo off
 set EST_TRUSTED_CERTS=..\server\trustedcerts.crt
