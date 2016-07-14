@@ -95,7 +95,7 @@ To run the example:
 
     ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -x privkey.pem -o /tmp
 
-    You may also use an existing CSR for entrollment, supplied using the -y option:
+    You may also use an existing CSR for enrollment, supplied using the -y option:
 
     ./estclient -e -s 127.0.0.1 -p 8085 -u estuser -h estpwd -y req.p10 -o /tmp
 
