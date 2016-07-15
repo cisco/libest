@@ -3,12 +3,14 @@
  *
  * June, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
 #include <stdio.h>
+#ifndef WIN32
 #include <unistd.h>
+#endif 
 #include <est.h>
 #ifdef HAVE_CUNIT
 #include "CUnit/Basic.h"
@@ -26,21 +28,31 @@
  * The CA certificate used to verify the EST server.  Grab it from the server's directory
  */
 /* #define CLIENT_UT_CACERT "../../example/server/estCA/cacert.crt" */
-#define CLIENT_UT_CACERT "CA/estCA/cacert.crt"
-#define CLIENT_UT_PUBKEY "./est_client_ut_keypair"
-
 #define US897_SERVER_PORT   29897
+#define CLIENT_UT_PUBKEY "./est_client_ut_keypair"
 #define US897_SERVER_IP	    "127.0.0.1"	
 #define US897_UID	    "estuser"
 #define US897_PWD	    "estpwd"
+
+#ifndef WIN32
+#define CLIENT_UT_CACERT "CA/estCA/cacert.crt"
 #define US897_CACERTS	    "CA/estCA/cacert.crt"
 #define US897_TRUST_CERTS   "CA/trustedcerts.crt"
 #define US897_SERVER_CERTKEY "CA/estCA/private/estservercertandkey.pem"
-
 #define US897_CACERTS_SINGLE_CHAIN_MULT_CERTS "US897/singlechain_10certs_trusted.crt"
 #define US897_CACERTS_SINGLE_CHAIN_MULT_CERTS_ONE_MISSING "US897/singlechain_9certs_missingcert.crt"
 #define US897_CACERTS_SINGLE_CHAIN_EXPIRED "US897/singlechain_expired.crt"
 #define US897_CACERTS_MULTI_CHAIN_CRLS "US897/trustedCHain10RevokedDepth6Implicit10andcacert.crt"
+#else
+#define CLIENT_UT_CACERT "CA\\estCA/cacert.crt"
+#define US897_CACERTS	    "CA\\estCA\\cacert.crt"
+#define US897_TRUST_CERTS   "CA\\trustedcerts.crt"
+#define US897_SERVER_CERTKEY "CA\\estCA\\private\\estservercertandkey.pem"
+#define US897_CACERTS_SINGLE_CHAIN_MULT_CERTS "US897\\singlechain_10certs_trusted.crt"
+#define US897_CACERTS_SINGLE_CHAIN_MULT_CERTS_ONE_MISSING "US897\\singlechain_9certs_missingcert.crt"
+#define US897_CACERTS_SINGLE_CHAIN_EXPIRED "US897\\singlechain_expired.crt"
+#define US897_CACERTS_MULTI_CHAIN_CRLS "US897\\trustedCHain10RevokedDepth6Implicit10andcacert.crt"
+#endif 
 
 static void us897_clean (void)
 {
@@ -61,7 +73,7 @@ static int us897_start_server (int manual_enroll, int nid)
 		  0,
 		  nid);
     
-    sleep(1);
+    SLEEP(1);
     return rv;
 }
 
@@ -95,7 +107,7 @@ static int us897_init_suite (void)
      * Start an instance of the EST server
      */
     rv = us897_start_server(0, 0);
-    sleep(2);
+    SLEEP(2);
     
     return rv;
 }
@@ -162,7 +174,7 @@ static void us897_test1 (void)
     EST_ERROR rc;
     EVP_PKEY *priv_key;
     
-    sleep(1);
+    SLEEP(1);
     
     /*
      * Read in the CA certificates
@@ -213,7 +225,7 @@ static void us897_test2 (void)
     int cacerts_len = 0;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    SLEEP(1);
     
     /*
      * Read in the CA certificates
@@ -259,7 +271,7 @@ static void us897_test3 (void)
     EST_ERROR rc;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    SLEEP(1);
     
     /*
      * Read in the CA certificates
@@ -358,7 +370,7 @@ static void us897_test6 (void)
     EST_ERROR rc;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    SLEEP(1);
     
     /*
      * Read in the CA certificates
@@ -408,7 +420,7 @@ static void us897_test7 (void)
     EST_ERROR rc;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    SLEEP(1);
     
     /*
      * Read in the CA certificates
@@ -467,7 +479,7 @@ static void us897_test9 (void)
     EST_ERROR rc = EST_ERR_NONE;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    SLEEP(1);
     
     /*
      * Read in the CA certificates
@@ -489,7 +501,7 @@ static void us897_test9 (void)
     rc = est_client_set_auth(ectx, "", "", NULL, priv_key);
     CU_ASSERT(rc == EST_ERR_NONE);    
 
-    rc = est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT);    
+    rc = est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT, NULL);    
     CU_ASSERT(rc == EST_ERR_NONE);
     
     if (ectx) {
@@ -518,10 +530,10 @@ static void us897_test10 (void)
         "12345678901234567890123456789012345678901234567890"\
         "12345678901234567890123456789012345678901234567890"\
         "12345678901234567890123456789012345678901234567890"\
-        "1234567890123456789012345678901234567890123456789012345";
+        "12345678901234567890123456789012345678901234567890123456";
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    SLEEP(1);
     
     /*
      * Read in the CA certificates
@@ -546,25 +558,25 @@ static void us897_test10 (void)
     /*
      * Null server name
      */
-    rc = est_client_set_server(ectx, NULL, US897_SERVER_PORT);
+    rc = est_client_set_server(ectx, NULL, US897_SERVER_PORT, NULL);
     CU_ASSERT(rc == EST_ERR_INVALID_SERVER_NAME);
 
     /*
      * server too long
      */
-    rc = est_client_set_server(ectx, server_name_too_long, US897_SERVER_PORT);
+    rc = est_client_set_server(ectx, server_name_too_long, US897_SERVER_PORT, NULL);
     CU_ASSERT(rc == EST_ERR_INVALID_SERVER_NAME);
 
     /*
      *  port num less than 0
      */
-    rc = est_client_set_server(ectx, US897_SERVER_IP, -1);
+    rc = est_client_set_server(ectx, US897_SERVER_IP, -1, NULL);
     CU_ASSERT(rc == EST_ERR_INVALID_PORT_NUM);
 
     /*
      * port num greater than max
      */
-    rc = est_client_set_server(ectx, US897_SERVER_IP, 65536);
+    rc = est_client_set_server(ectx, US897_SERVER_IP, 65536, NULL);
     CU_ASSERT(rc == EST_ERR_INVALID_PORT_NUM);
 
     if (ectx) {
@@ -595,7 +607,7 @@ static void us897_test11 (void)
     int  retrieved_cacerts_len = 0;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    SLEEP(1);
     
     /*
      * Read in the CA certificates
@@ -619,7 +631,7 @@ static void us897_test11 (void)
     rc = est_client_set_auth(ectx, "", "", NULL, priv_key);
     CU_ASSERT(rc == EST_ERR_NONE);    
 
-    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT);
+    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT, NULL);
     
     /*
      * issue the get ca certs request
@@ -678,7 +690,7 @@ static void us897_test12 (void)
     EST_ERROR rc = EST_ERR_NONE;
     EVP_PKEY *priv_key;
 
-    sleep(1);
+    SLEEP(1);
 
     /*
      * Read in the CA certificates
@@ -702,7 +714,7 @@ static void us897_test12 (void)
     rc = est_client_set_auth(ectx, "", "", NULL, priv_key);
     CU_ASSERT(rc == EST_ERR_NONE);
 
-    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT);
+    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT, NULL);
     
     /*
      * issue the get ca certs request
@@ -746,7 +758,7 @@ static void us897_test13 (void)
      * is using a specific CA cert chain.
      */
     st_stop();
-    sleep(2);
+    SLEEP(2);
 
     /*
      * Spin up a new instance of the EST server
@@ -763,7 +775,7 @@ static void us897_test13 (void)
 
     CU_ASSERT(rc == 0);
     if (rc) return;
-    sleep(1);
+    SLEEP(1);
 
     /*
      * Read in thestartup  CA certificates
@@ -787,7 +799,7 @@ static void us897_test13 (void)
     rc = est_client_set_auth(ectx, "", "", NULL, priv_key);
     CU_ASSERT(rc == EST_ERR_NONE);
 
-    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT);
+    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT, NULL);
     
     /*
      * issue the get ca certs request
@@ -847,7 +859,7 @@ static void us897_test14 (void)
      * is using a specific CA cert chain.
      */
     st_stop();
-    sleep(2);
+    SLEEP(2);
 
     /*
      * Spin up a new instance of the EST server
@@ -864,7 +876,7 @@ static void us897_test14 (void)
 
     CU_ASSERT(rc == 0);
     if (rc) return;
-    sleep(1);
+    SLEEP(1);
 
     /*
      * Read in thestartup  CA certificates
@@ -888,7 +900,7 @@ static void us897_test14 (void)
     rc = est_client_set_auth(ectx, "", "", NULL, priv_key);
     CU_ASSERT(rc == EST_ERR_NONE);
 
-    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT);
+    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT, NULL);
     
     /*
      * issue the get ca certs request
@@ -949,7 +961,7 @@ static void us897_test15 (void)
      * is using a specific CA cert chain.
      */
     st_stop();
-    sleep(2);
+    SLEEP(2);
 
     /*
      * Spin up a new instance of the EST server
@@ -966,7 +978,7 @@ static void us897_test15 (void)
 
     CU_ASSERT(rc == 0);
     if (rc) return;
-    sleep(1);
+    SLEEP(1);
 
     /*
      * Read in thestartup  CA certificates
@@ -990,7 +1002,7 @@ static void us897_test15 (void)
     rc = est_client_set_auth(ectx, "", "", NULL, priv_key);
     CU_ASSERT(rc == EST_ERR_NONE);
 
-    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT);
+    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT, NULL);
     
     /*
      * issue the get ca certs request
@@ -1060,7 +1072,7 @@ static void us897_test16 (void)
      * is using a specific CA cert chain.
      */
     st_stop();
-    sleep(2);
+    SLEEP(2);
 
     /*
      * Spin up a new instance of the EST server
@@ -1077,7 +1089,7 @@ static void us897_test16 (void)
 
     CU_ASSERT(rc == 0);
     if (rc) return;
-    sleep(1);
+    SLEEP(1);
 
     /*
      * Read in thestartup  CA certificates
@@ -1101,7 +1113,7 @@ static void us897_test16 (void)
     rc = est_client_set_auth(ectx, "", "", NULL, priv_key);
     CU_ASSERT(rc == EST_ERR_NONE);
 
-    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT);
+    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT, NULL);
     
     /*
      * issue the get ca certs request
@@ -1171,7 +1183,7 @@ static void us897_test17 (void)
      * is using a specific CA cert chain.
      */
     st_stop();
-    sleep(2);
+    SLEEP(2);
 
     /*
      * Spin up a new instance of the EST server
@@ -1188,7 +1200,7 @@ static void us897_test17 (void)
 
     CU_ASSERT(rc == 0);
     if (rc) return;
-    sleep(1);
+    SLEEP(1);
 
     /*
      * Read in the startup CA certificates
@@ -1212,7 +1224,7 @@ static void us897_test17 (void)
     rc = est_client_set_auth(ectx, "", "", NULL, priv_key);
     CU_ASSERT(rc == EST_ERR_NONE);
 
-    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT);
+    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT, NULL);
     
     /*
      * issue the get ca certs request
@@ -1299,7 +1311,7 @@ static void us897_test18 (void)
     rc = est_client_set_auth(ectx, "", "", NULL, priv_key);
     CU_ASSERT(rc == EST_ERR_NONE);
 
-    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT);
+    est_client_set_server(ectx, US897_SERVER_IP, US897_SERVER_PORT, NULL);
 
     rc = est_client_set_read_timeout(ectx, EST_SSL_READ_TIMEOUT_MIN);
     CU_ASSERT(rc == EST_ERR_NONE);

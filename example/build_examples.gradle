@@ -1,0 +1,144 @@
+apply plugin: 'c'
+
+model {
+    repositories {
+        libs(PrebuiltLibraries) {
+            libcrypto {
+                headers.srcDir System.getenv().SSL_DIR + "\\include"
+                        binaries.withType(SharedLibraryBinary) {
+                    sharedLibraryFile =
+                            file(System.getenv().SSL_DIR + "\\bin\\libeay32.dll")
+                            sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\libeay32.lib")
+                }
+            }
+            libssl {
+                headers.srcDir System.getenv().SSL_DIR + "\\include"
+                        binaries.withType(SharedLibraryBinary) {
+                    sharedLibraryFile =
+                            file(System.getenv().SSL_DIR + "\\bin\\ssleay32.dll")
+                            sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\ssleay32.lib")
+                }
+            }            
+            est {
+                headers.srcDir System.getenv().EST_DIR + "\\include"
+                        binaries.withType(SharedLibraryBinary) {
+                    sharedLibraryFile =
+                            file(System.getenv().EST_DIR + "\\est.dll")
+                            sharedLibraryLinkFile = file(System.getenv().EST_DIR + "\\est.lib")
+                }
+            }
+        }
+    }    
+
+}
+
+model {
+    components {
+        estclient(NativeExecutableSpec) {
+            sources {
+                c{
+                    source {
+                        srcDir "client"
+                        include "*.c"
+                        exclude "simple_server.c"
+                        srcDir "util"
+                    }
+                    exportedHeaders {
+                        srcDir "util"
+                    }
+                }
+            }
+            binaries.all {
+                lib library: "libcrypto", linkage: "shared"
+                lib library: "libssl", linkage: "shared"
+                lib library: "est", linkage: "shared"
+            }               
+        }
+        estclient_simple(NativeExecutableSpec) {
+            sources {
+                c{
+                    source {
+                        srcDir "client-simple"
+                        include "*.c"
+                        exclude "simple_server.c"
+                        srcDir "util"
+                    }
+                    exportedHeaders {
+                        srcDir "util"
+                    }
+                }
+            }
+            binaries.all {
+                lib library: "libcrypto", linkage: "shared"
+                lib library: "libssl", linkage: "shared"
+                lib library: "est", linkage: "shared"
+            }               
+        }
+        estserver(NativeExecutableSpec) {
+            sources {
+                c{
+                    source {
+                        srcDir "server"
+                        include "*.c"
+                        exclude "simple_server.c"
+                        srcDir "util"
+                    }
+                    exportedHeaders {
+                        srcDir "util"
+                    }
+                }
+            }
+            binaries.all {
+                lib library: "libcrypto", linkage: "shared"
+                lib library: "libssl", linkage: "shared"
+                lib library: "est", linkage: "shared"
+            }               
+        }
+        estproxy(NativeExecutableSpec) {
+            sources {
+                c{
+                    source {
+                        srcDir "proxy"
+                        include "*.c"
+                        exclude "simple_server.c"
+                        srcDir "util"
+                    }
+                    exportedHeaders {
+                        srcDir "util"
+                    }
+                }
+            }
+            binaries.all {
+                lib library: "libcrypto", linkage: "shared"
+                lib library: "libssl", linkage: "shared"
+                lib library: "est", linkage: "shared"
+            }               
+        }        
+
+    }
+}
+
+
+
+model {
+    binaries {
+        all {
+            // Define toolchain-specific compiler and linker options
+            if (toolChain in Gcc) {
+                cCompiler.define "PACKAGENAME" , "libest"
+                cCompiler.define "PACKAGE_TARNAME", "libest"
+                cCompiler.define "PACKAGE_VERSION", "bronze"
+                cCompiler.define "PACKAGE_STRING", "libest bronze"
+                cCompiler.args "-g", "-O0", "-Wall"
+            }
+            else if(toolChain in VisualCpp) {
+                cCompiler.define "WIN32"
+                cCompiler.define "DISABLE_TSEARCH"
+                cCompiler.define "__STDC_WANT_SECURE_LIB__" , "0"
+                cCompiler.define "DISABLE_PTHREADS", "1"
+                cCompiler.args "/GS", "/GL", "/analyze-", "/W3", "/Gy", "/Zc:wchar_t", "/Zi", "/Gm-", "/fp:precise", "/errorReport:prompt", "/WX-", "/Zc:forScope", "/Gd", "/Oy-","/Oi","/MD", "/EHsc", "/nologo", "/FS"
+                linker.args "/SAFESEH", "/LTCG", "/NXCOMPAT" 
+            }
+        }
+    }
+}

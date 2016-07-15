@@ -103,7 +103,7 @@ public class PKCS10CertificateRequest {
 	 *		The public key to use in the certificate request
 	 * @throws PKCS10CreationException
 	 * 		This exception is thrown when an error occurs at the native layer when
-	 *      creating the PKCS10 CSR.  CiscoJEST uses OpenSSL/CiscoSSL to generate
+	 *      creating the PKCS10 CSR. JEST uses OpenSSL/CiscoSSL to generate
 	 *      the CSR.  Check stderr for details on the cause of the error.
 	 * @throws InvalidKeyException
 	 *      This exception occurs when there is a problem with the key pair used

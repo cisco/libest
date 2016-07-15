@@ -3,12 +3,14 @@
  *
  * November, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
 #include <stdio.h>
+#ifndef WIN32
 #include <unistd.h>
+#endif 
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -21,14 +23,22 @@
 #include "CUnit/Automated.h"
 #endif
 
+#define US900_SERVER_PORT   29900
+#define US900_SERVER_IP     "127.0.0.1" 
+
+#ifndef WIN32
 #define CLIENT_UT_CACERT "CA/estCA/cacert.crt"
 #define CLIENT_UT_PUBKEY "./est_client_ut_keypair"
-
-#define US900_SERVER_PORT   29900
-#define US900_SERVER_IP	    "127.0.0.1"	
-#define US900_CACERTS	    "CA/estCA/cacert.crt"
+#define US900_CACERTS       "CA/estCA/cacert.crt"
 #define US900_TRUST_CERTS   "CA/trustedcerts.crt"
 #define US900_SERVER_CERTKEY "CA/estCA/private/estservercertandkey.pem"
+#else
+#define CLIENT_UT_CACERT "CA\\estCA\\cacert.crt"
+#define CLIENT_UT_PUBKEY "est_client_ut_keypair"
+#define US900_CACERTS       "CA\\estCA/cacert.crt"
+#define US900_TRUST_CERTS   "CA\\trustedcerts.crt"
+#define US900_SERVER_CERTKEY "CA\\estCA\\private\\estservercertandkey.pem"
+#endif
 
 #define TEST_ATTR_POP "MAsGCSqGSIb3DQEJBw==\0"
 #define TEST_ATTR_NOPOP "MHEwLAYDiDcCMSUGA4g3AwYDiDcEExlQYXJzZSBTRVQgYXMgMi45OTkuMiBkYXRhBglghkgBZQMEAgIGCSskAwMCCAEBCzAiBgOINwExGxMZUGFyc2UgU0VUIGFzIDIuOTk5LjEgZGF0YQYHKwYBAQEBFg==\0"
@@ -68,19 +78,18 @@ static int us900_start_server (int manual_enroll, int nid)
 {
     int rv;
 
-    rv = st_start(US900_SERVER_PORT, 
-	          US900_SERVER_CERTKEY,
-	          US900_SERVER_CERTKEY,
-	          "US900 test realm",
-	          US900_CACERTS,
-	          US900_TRUST_CERTS,
-	          "CA/estExampleCA.cnf",
-		  manual_enroll,
-		  0,
-		  nid);
+    rv = st_start(US900_SERVER_PORT,
+                  US900_SERVER_CERTKEY,
+                  US900_SERVER_CERTKEY,
+                  "US900 test realm",
+                  US900_CACERTS,
+                  US900_TRUST_CERTS,
+                  "CA/estExampleCA.cnf",
+                  manual_enroll,
+                  0,
+                  nid);
 
-
-    sleep(1);
+    SLEEP(1);
     return rv;
 }
 
@@ -92,17 +101,20 @@ static int us900_start_server (int manual_enroll, int nid)
 static int us900_init_suite (void)
 {
     int rv = 0;
-    char cmd[EST_UT_MAX_CMD_LEN];    
+    char cmd[EST_UT_MAX_CMD_LEN];
 
     printf("Starting EST Server CSR attributes unit tests.\n");
 
     /*
      * gen the keypair to be used for EST Client testing
      */
-    snprintf(cmd, EST_UT_MAX_CMD_LEN,
-             "openssl ecparam -name prime256v1 -genkey -out %s", CLIENT_UT_PUBKEY);
+    snprintf(
+        cmd,
+        EST_UT_MAX_CMD_LEN,
+        "openssl ecparam -name prime256v1 -genkey -out %s",
+        CLIENT_UT_PUBKEY);
     printf("%s\n", cmd);
-    
+
     rv = system(cmd);
 
     /*
@@ -111,13 +123,12 @@ static int us900_init_suite (void)
     us900_clean();
 
     /*
-     * Start an instance of the EST server 
+     * Start an instance of the EST server
      */
     rv = us900_start_server(0, 0);
 
     return rv;
 }
-
 
 /*
  * This routine is called when CUnit uninitializes this test
@@ -127,66 +138,78 @@ static int us900_init_suite (void)
 static int us900_destroy_suite (void)
 {
     st_stop();
-    sleep(2);
+    SLEEP(2);
     return 0;
 }
 
-static unsigned char * handle_correct_csrattrs_request (int *csr_len, void *app_data)
+static unsigned char * handle_correct_csrattrs_request (int *csr_len,
+                                                        char *path_seg,
+                                                        void *app_data)
 {
     unsigned char *csr_data;
 
     *csr_len = strlen(TEST_ATTR1);
     csr_data = malloc(*csr_len + 1);
-    strncpy((char *)csr_data, TEST_ATTR1, *csr_len);
+    strncpy((char *) csr_data, TEST_ATTR1, *csr_len);
     csr_data[*csr_len] = 0;
     return (csr_data);
 }
 
-static unsigned char * handle_corrupt_csrattrs_request (int *csr_len, void *app_data)
+static unsigned char * handle_corrupt_csrattrs_request (int *csr_len,
+                                                        char *path_seg,
+                                                        void *app_data)
 {
     unsigned char *csr_data;
 
     *csr_len = strlen(TEST_ATTR8);
     csr_data = malloc(*csr_len + 1);
-    strncpy((char *)csr_data, TEST_ATTR8, *csr_len);
+    strncpy((char *) csr_data, TEST_ATTR8, *csr_len);
     csr_data[*csr_len] = 0;
     return (csr_data);
 }
 
-static unsigned char * handle_short_csrattrs_request (int *csr_len, void *app_data)
+static unsigned char * handle_short_csrattrs_request (int *csr_len,
+                                                      char *path_seg,
+                                                      void *app_data)
 {
     unsigned char *csr_data;
 
     *csr_len = strlen(TEST_ATTR7);
     csr_data = malloc(*csr_len + 1);
-    strncpy((char *)csr_data, TEST_ATTR7, *csr_len);
+    strncpy((char *) csr_data, TEST_ATTR7, *csr_len);
     csr_data[*csr_len] = 0;
     return (csr_data);
 }
 
-static unsigned char * handle_long_csrattrs_request (int *csr_len, void *app_data)
+static unsigned char * handle_long_csrattrs_request (int *csr_len,
+                                                     char *path_seg,
+                                                     void *app_data)
 {
     unsigned char *csr_data;
 
     *csr_len = strlen(TEST_LONG_ATTR);
     csr_data = malloc(*csr_len + 1);
-    strncpy((char *)csr_data, TEST_LONG_ATTR, *csr_len);
+    strncpy((char *) csr_data, TEST_LONG_ATTR, *csr_len);
     csr_data[*csr_len] = 0;
     return (csr_data);
 }
 
-static unsigned char * handle_nopop_csrattrs_request (int *csr_len, void *app_data)
+static unsigned char * handle_nopop_csrattrs_request (int *csr_len,
+                                                      char *path_seg,
+                                                      void *app_data)
 {
     unsigned char *csr_data;
 
     *csr_len = strlen(TEST_ATTR_NOPOP);
     csr_data = malloc(*csr_len + 1);
-    strncpy((char *)csr_data, TEST_ATTR_NOPOP, *csr_len);
+    strncpy((char *) csr_data, TEST_ATTR_NOPOP, *csr_len);
     csr_data[*csr_len] = 0;
     return (csr_data);
 }
 
-static unsigned char * handle_empty_csrattrs_request (int *csr_len, void *app_data)
+static unsigned char * handle_empty_csrattrs_request (int *csr_len,
+                                                      char *path_seg,
+                                                      void *app_data)
 {
     unsigned char *csr_data;
 
@@ -198,21 +221,23 @@ static unsigned char * handle_empty_csrattrs_request (int *csr_len, void *app_da
 /*
  * Callback function passed to est_client_init()
  */
-static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
+static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
 {
-    BIO *bio_err;
-    bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
+    BIO * bio_err;
+    bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
     int approve = 0;
 
     /*
      * Print out the specifics of this cert
      */
-    printf("%s: OpenSSL/EST server cert verification failed with the following error: openssl_cert_error = %d (%s)\n",
-           __FUNCTION__, openssl_cert_error,
-           X509_verify_cert_error_string(openssl_cert_error));
+    printf(
+        "%s: OpenSSL/EST server cert verification failed with the following error: openssl_cert_error = %d (%s)\n",
+        __FUNCTION__,
+        openssl_cert_error,
+        X509_verify_cert_error_string(openssl_cert_error));
 
     printf("Failing Cert:\n");
-    X509_print_fp(stdout,cur_cert);
+    X509_print_fp(stdout, cur_cert);
     /*
      * Next call prints out the signature which can be used as the fingerprint
      * This fingerprint can be checked against the anticipated value to determine
@@ -232,11 +257,12 @@ static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
 /*
  * Test1 - exercise the est_server_init_csrattrs() API.
  */
-static void us900_test1 (void) 
+static void us900_test1 (void)
 {
     int rc;
 
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
     /* NULL ctx - should fail */
     rc = est_server_init_csrattrs(NULL, "US900 test1", 10);
@@ -251,7 +277,7 @@ static void us900_test1 (void)
     CU_ASSERT(rc != EST_ERR_NONE);
 
     /* Length too long - should fail */
-    rc = est_server_init_csrattrs(ectx, "US900 test1", MAX_CSRATTRS+1);
+    rc = est_server_init_csrattrs(ectx, "US900 test1", MAX_CSRATTRS + 1);
     CU_ASSERT(rc != EST_ERR_NONE);
 
     /* Not a real base64 string - should fail */
@@ -270,7 +296,6 @@ static void us900_test1 (void)
     rc = est_server_init_csrattrs(ectx, TEST_ATTR7, strlen(TEST_ATTR7));
     CU_ASSERT(rc != EST_ERR_NONE);
 
-
     /* Setting the size 122 */
     rc = est_server_init_csrattrs(ectx, TEST_ATTR4_122, strlen(TEST_ATTR4_122));
     CU_ASSERT(rc == EST_ERR_NONE);
@@ -279,12 +304,14 @@ static void us900_test1 (void)
     rc = est_server_init_csrattrs(ectx, TEST_ATTR5_117, strlen(TEST_ATTR5_117));
     CU_ASSERT(rc == EST_ERR_NONE);
 
-
     /* enable PoP */
     st_enable_pop();
 
     /* Real base64 string needs PoP added - should pass */
-    rc = est_server_init_csrattrs(ectx, TEST_ATTR_NOPOP, strlen(TEST_ATTR_NOPOP));
+    rc = est_server_init_csrattrs(
+        ectx,
+        TEST_ATTR_NOPOP,
+        strlen(TEST_ATTR_NOPOP));
     CU_ASSERT(rc == EST_ERR_NONE);
 
     /* Not a real base64 string - should fail */
@@ -319,29 +346,30 @@ static void us900_test1 (void)
     rc = est_server_init_csrattrs(ectx, TEST_ATTR_250, strlen(TEST_ATTR_250));
     CU_ASSERT(rc == EST_ERR_NONE);
 
-    /* All ASN.1 types supported by OpenSSL */
+    /* All ASN.1 types supported by CiscoSSL */
     rc = est_server_init_csrattrs(ectx, TEST_ALL_ATTR, strlen(TEST_ALL_ATTR));
     CU_ASSERT(rc == EST_ERR_NONE);
 
     /* disable PoP */
     st_disable_pop();
 
-    /* All ASN.1 types supported by OpenSSL */
+    /* All ASN.1 types supported by CiscoSSL */
     rc = est_server_init_csrattrs(ectx, TEST_ALL_ATTR, strlen(TEST_ALL_ATTR));
     CU_ASSERT(rc == EST_ERR_NONE);
 
     /* Real base64 string PoP should not be added - should pass */
-    rc = est_server_init_csrattrs(ectx, TEST_ATTR_NOPOP, strlen(TEST_ATTR_NOPOP));
+    rc = est_server_init_csrattrs(
+        ectx,
+        TEST_ATTR_NOPOP,
+        strlen(TEST_ATTR_NOPOP));
     CU_ASSERT(rc == EST_ERR_NONE);
 }
-
-
 
 /*
  * Test2 - exercise the server side variations triggered
  *         by est_client_get_csrattrs()
  */
-static void us900_test2 (void) 
+static void us900_test2 (void)
 {
     EST_CTX *ctx;
     unsigned char *pkey = NULL;
@@ -349,14 +377,15 @@ static void us900_test2 (void)
     int cacerts_len = 0;
     EST_ERROR rc = EST_ERR_NONE;
     unsigned char *retrieved_cacerts = NULL;
-    int  retrieved_cacerts_len = 0;
-    EVP_PKEY *priv_key;
+    int retrieved_cacerts_len = 0;
+    EVP_PKEY * priv_key;
     int csr_len;
     unsigned char *csr_data = NULL;
 
-    sleep(1);
-    
-    LOG_FUNC_NM;
+    SLEEP(1);
+
+    LOG_FUNC_NM
+    ;
 
     /*
      * Read in the CA certificates
@@ -369,19 +398,22 @@ static void us900_test2 (void)
      */
     priv_key = read_private_key(CLIENT_UT_PUBKEY);
     if (priv_key == NULL) {
-	printf("\nError while reading private key file %s\n", CLIENT_UT_PUBKEY);
+        printf("\nError while reading private key file %s\n", CLIENT_UT_PUBKEY);
         return;
     }
 
-    ctx = est_client_init(cacerts, cacerts_len, EST_CERT_FORMAT_PEM,
-                           client_manual_cert_verify);
+    ctx = est_client_init(
+        cacerts,
+        cacerts_len,
+        EST_CERT_FORMAT_PEM,
+        client_manual_cert_verify);
     CU_ASSERT(ctx != NULL);
 
     rc = est_client_set_auth(ctx, "", "", NULL, priv_key);
-    CU_ASSERT(rc == EST_ERR_NONE);    
+    CU_ASSERT(rc == EST_ERR_NONE);
 
-    est_client_set_server(ctx, US900_SERVER_IP, US900_SERVER_PORT);
-    
+    est_client_set_server(ctx, US900_SERVER_IP, US900_SERVER_PORT, NULL);
+
     /*
      * issue the get ca certs request
      */
@@ -394,16 +426,16 @@ static void us900_test2 (void)
     CU_ASSERT(retrieved_cacerts_len > 0);
 
     retrieved_cacerts = malloc(retrieved_cacerts_len);
-    
+
     rc = est_client_copy_cacerts(ctx, retrieved_cacerts);
-    
+
     /*
      * output the retrieved ca certs and compare to what they should be
-     */    
+     */
     if (retrieved_cacerts) {
 
         printf("\nRetrieved CA Certs buffer:\n %s\n", retrieved_cacerts);
-        printf("Retrieved CA certs buffer length: %d\n", retrieved_cacerts_len);    
+        printf("Retrieved CA certs buffer length: %d\n", retrieved_cacerts_len);
     }
     free(retrieved_cacerts);
 
@@ -430,8 +462,7 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR_POP));
-    CU_ASSERT(strncmp(TEST_ATTR_POP, (const char *)csr_data, csr_len) == 0);
-
+    CU_ASSERT(strncmp(TEST_ATTR_POP, (const char *) csr_data, csr_len) == 0);
 
     if (est_set_csr_cb(ectx, &handle_corrupt_csrattrs_request)) {
         printf("\nUnable to set EST CSR Attributes callback.  Aborting!!!\n");
@@ -460,7 +491,6 @@ static void us900_test2 (void)
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == 0);
 
-
     if (est_set_csr_cb(ectx, &handle_correct_csrattrs_request)) {
         printf("\nUnable to set EST CSR Attributes callback.  Aborting!!!\n");
         exit(1);
@@ -469,9 +499,7 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR1));
-    CU_ASSERT(strncmp(TEST_ATTR1, (const char *)csr_data, csr_len) == 0);
-
-
+    CU_ASSERT(strncmp(TEST_ATTR1, (const char *) csr_data, csr_len) == 0);
 
     /* clear csrattrs */
     rc = est_server_init_csrattrs(ectx, NULL, 0);
@@ -480,7 +508,7 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR1));
-    CU_ASSERT(strncmp(TEST_ATTR1, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_ATTR1, (const char *) csr_data, csr_len) == 0);
 
     /* clear callback */
     if (est_set_csr_cb(ectx, NULL)) {
@@ -495,7 +523,7 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR2));
-    CU_ASSERT(strncmp(TEST_ATTR2, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_ATTR2, (const char *) csr_data, csr_len) == 0);
 
     rc = est_server_init_csrattrs(ectx, TEST_ATTR3, strlen(TEST_ATTR3));
     CU_ASSERT(rc == EST_ERR_NONE);
@@ -503,7 +531,7 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR3));
-    CU_ASSERT(strncmp(TEST_ATTR3, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_ATTR3, (const char *) csr_data, csr_len) == 0);
 
     /* clear csrattrs */
     rc = est_server_init_csrattrs(ectx, NULL, 0);
@@ -512,12 +540,15 @@ static void us900_test2 (void)
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == 0);
 
-    rc = est_server_init_csrattrs(ectx, TEST_1024_NOPOP, strlen(TEST_1024_NOPOP));
+    rc = est_server_init_csrattrs(
+        ectx,
+        TEST_1024_NOPOP,
+        strlen(TEST_1024_NOPOP));
     CU_ASSERT(rc == EST_ERR_NONE);
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_1024_NOPOP));
-    CU_ASSERT(strncmp(TEST_1024_NOPOP, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_1024_NOPOP, (const char *) csr_data, csr_len) == 0);
 
     /* Enable PoP and test responses with PoP added */
     st_enable_pop();
@@ -528,14 +559,17 @@ static void us900_test2 (void)
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_data != NULL);
     CU_ASSERT(csr_len = 20);
-    CU_ASSERT(strncmp(TEST_ATTR_POP, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_ATTR_POP, (const char *) csr_data, csr_len) == 0);
 
-    rc = est_server_init_csrattrs(ectx, TEST_1024_NOPOP, strlen(TEST_1024_NOPOP));
+    rc = est_server_init_csrattrs(
+        ectx,
+        TEST_1024_NOPOP,
+        strlen(TEST_1024_NOPOP));
     CU_ASSERT(rc == EST_ERR_NONE);
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_1024_POP));
-    CU_ASSERT(strncmp(TEST_1024_POP, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_1024_POP, (const char *) csr_data, csr_len) == 0);
 
     /* Setting the size 122 */
     rc = est_server_init_csrattrs(ectx, TEST_ATTR4_122, strlen(TEST_ATTR4_122));
@@ -543,7 +577,8 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR4_122POP));
-    CU_ASSERT(strncmp(TEST_ATTR4_122POP, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(
+        strncmp(TEST_ATTR4_122POP, (const char *) csr_data, csr_len) == 0);
 
     /* Setting the size 117 */
     rc = est_server_init_csrattrs(ectx, TEST_ATTR5_117, strlen(TEST_ATTR5_117));
@@ -551,15 +586,20 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR5_117POP));
-    CU_ASSERT(strncmp(TEST_ATTR5_117POP, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(
+        strncmp(TEST_ATTR5_117POP, (const char *) csr_data, csr_len) == 0);
 
     /* Real base64 string needs PoP added - should pass */
-    rc = est_server_init_csrattrs(ectx, TEST_ATTR_NOPOP, strlen(TEST_ATTR_NOPOP));
+    rc = est_server_init_csrattrs(
+        ectx,
+        TEST_ATTR_NOPOP,
+        strlen(TEST_ATTR_NOPOP));
     CU_ASSERT(rc == EST_ERR_NONE);
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR_NOPOPPOP));
-    CU_ASSERT(strncmp(TEST_ATTR_NOPOPPOP, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(
+        strncmp(TEST_ATTR_NOPOPPOP, (const char *) csr_data, csr_len) == 0);
 
     /* Not a real base64 string - should fail */
     rc = est_server_init_csrattrs(ectx, "US900 test1", 11);
@@ -567,7 +607,7 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR_POP));
-    CU_ASSERT(strncmp(TEST_ATTR_POP, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_ATTR_POP, (const char *) csr_data, csr_len) == 0);
 
     /* Setting the smallest size */
     rc = est_server_init_csrattrs(ectx, TEST_ATTR2, strlen(TEST_ATTR2));
@@ -575,7 +615,7 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR2_POP));
-    CU_ASSERT(strncmp(TEST_ATTR2_POP, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_ATTR2_POP, (const char *) csr_data, csr_len) == 0);
 
     /* Setting the size 116 */
     rc = est_server_init_csrattrs(ectx, TEST_ATTR6_116, strlen(TEST_ATTR6_116));
@@ -601,7 +641,7 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR_250POP));
-    CU_ASSERT(strncmp(TEST_ATTR_250POP, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_ATTR_250POP, (const char *) csr_data, csr_len) == 0);
 
     if (est_set_csr_cb(ectx, &handle_correct_csrattrs_request)) {
         printf("\nUnable to set EST CSR Attributes callback.  Aborting!!!\n");
@@ -611,7 +651,7 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR1));
-    CU_ASSERT(strncmp(TEST_ATTR1, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_ATTR1, (const char *) csr_data, csr_len) == 0);
 
     if (est_set_csr_cb(ectx, &handle_nopop_csrattrs_request)) {
         printf("\nUnable to set EST CSR Attributes callback.  Aborting!!!\n");
@@ -621,7 +661,8 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR_NOPOPPOP));
-    CU_ASSERT(strncmp(TEST_ATTR_NOPOPPOP, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(
+        strncmp(TEST_ATTR_NOPOPPOP, (const char *) csr_data, csr_len) == 0);
 
     if (est_set_csr_cb(ectx, &handle_empty_csrattrs_request)) {
         printf("\nUnable to set EST CSR Attributes callback.  Aborting!!!\n");
@@ -631,7 +672,7 @@ static void us900_test2 (void)
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR2_POP));
-    CU_ASSERT(strncmp(TEST_ATTR2_POP, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_ATTR2_POP, (const char *) csr_data, csr_len) == 0);
 
     /* disable PoP */
     st_disable_pop();
@@ -643,23 +684,28 @@ static void us900_test2 (void)
     }
 
     /* Real base64 string PoP should not be added - should pass */
-    rc = est_server_init_csrattrs(ectx, TEST_ATTR_NOPOP, strlen(TEST_ATTR_NOPOP));
+    rc = est_server_init_csrattrs(
+        ectx,
+        TEST_ATTR_NOPOP,
+        strlen(TEST_ATTR_NOPOP));
     CU_ASSERT(rc == EST_ERR_NONE);
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ATTR_NOPOP));
-    CU_ASSERT(strncmp(TEST_ATTR_NOPOP, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_ATTR_NOPOP, (const char *) csr_data, csr_len) == 0);
 
-    /* All ASN.1 types supported by OpenSSL */
+    /* All ASN.1 types supported by CiscoSSL */
     rc = est_server_init_csrattrs(ectx, TEST_ALL_ATTR, strlen(TEST_ALL_ATTR));
     CU_ASSERT(rc == EST_ERR_NONE);
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
     CU_ASSERT(rc == EST_ERR_NONE);
     CU_ASSERT(csr_len == strlen(TEST_ALL_ATTR));
-    CU_ASSERT(strncmp(TEST_ALL_ATTR, (const char *)csr_data, csr_len) == 0);
+    CU_ASSERT(strncmp(TEST_ALL_ATTR, (const char *) csr_data, csr_len) == 0);
 
-
-    rc = est_server_init_csrattrs(ectx, TEST_1025_NOPOP, strlen(TEST_1025_NOPOP));
+    rc = est_server_init_csrattrs(
+        ectx,
+        TEST_1025_NOPOP,
+        strlen(TEST_1025_NOPOP));
     CU_ASSERT(rc != EST_ERR_NONE);
     rc = est_server_init_csrattrs(ectx, TEST_LONG_ATTR, strlen(TEST_LONG_ATTR));
     CU_ASSERT(rc != EST_ERR_NONE);
@@ -682,27 +728,26 @@ static void us900_test2 (void)
 int us900_add_suite (void)
 {
 #ifdef HAVE_CUNIT
-   CU_pSuite pSuite = NULL;
+    CU_pSuite pSuite = NULL;
 
-   /* add a suite to the registry */
-   pSuite = CU_add_suite("us900_srv_csrattrs", 
-	                  us900_init_suite, 
-			  us900_destroy_suite);
-   if (NULL == pSuite) {
-      CU_cleanup_registry();
-      return CU_get_error();
-   }
+    /* add a suite to the registry */
+    pSuite = CU_add_suite("us900_srv_csrattrs",
+            us900_init_suite,
+            us900_destroy_suite);
+    if (NULL == pSuite) {
+        CU_cleanup_registry();
+        return CU_get_error();
+    }
 
-   /* add the tests to the suite */
-   if ((NULL == CU_add_test(pSuite, "CSR Server Attributes API1", us900_test1)) ||
-       (NULL == CU_add_test(pSuite, "CSR Server Attributes API2", us900_test2)))
-   {
-      CU_cleanup_registry();
-      return CU_get_error();
-   }
+    /* add the tests to the suite */
+    if ((NULL == CU_add_test(pSuite, "CSR Server Attributes API1", us900_test1)) ||
+        (NULL == CU_add_test(pSuite, "CSR Server Attributes API2", us900_test2)))
+    {
+        CU_cleanup_registry();
+        return CU_get_error();
+    }
 
-   return CUE_SUCCESS;
+    return CUE_SUCCESS;
 #endif
 }
-
 

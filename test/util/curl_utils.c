@@ -4,7 +4,7 @@
  *
  * June, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -114,6 +114,7 @@ long curl_http_post_srp (char *url, char *ct, char *data,
    */
   slist1 = NULL;
   slist1 = curl_slist_append(slist1, ct);
+  slist1 = curl_slist_append(slist1, "Connection: close");
 
   /*
    * Setup all the other fields that CURL requires
@@ -124,7 +125,7 @@ long curl_http_post_srp (char *url, char *ct, char *data,
   curl_easy_setopt(hnd, CURLOPT_USERPWD, uidpwd);
   curl_easy_setopt(hnd, CURLOPT_POSTFIELDS, data);
   curl_easy_setopt(hnd, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)strlen(data));
-  curl_easy_setopt(hnd, CURLOPT_USERAGENT, "curl/7.27.0");
+  curl_easy_setopt(hnd, CURLOPT_USERAGENT, "curl/7.41.0");
   curl_easy_setopt(hnd, CURLOPT_HTTPHEADER, slist1);
   curl_easy_setopt(hnd, CURLOPT_MAXREDIRS, 50L);
   curl_easy_setopt(hnd, CURLOPT_HTTPAUTH, authmode);
@@ -215,6 +216,7 @@ long curl_http_post (char *url, char *ct, char *data,
    */
   slist1 = NULL;
   slist1 = curl_slist_append(slist1, ct);
+  slist1 = curl_slist_append(slist1, "Connection: close");
 
   /*
    * Setup all the other fields that CURL requires
@@ -298,6 +300,7 @@ long curl_http_post_cert (char *url, char *ct, char *data,
    */
   slist1 = NULL;
   slist1 = curl_slist_append(slist1, ct);
+  slist1 = curl_slist_append(slist1, "Connection: close");
 
   /*
    * Setup all the other fields that CURL requires
@@ -378,6 +381,7 @@ long curl_http_post_cert_write (char *url, char *ct, char *data,
    */
   slist1 = NULL;
   slist1 = curl_slist_append(slist1, ct);
+  slist1 = curl_slist_append(slist1, "Connection: close");
 
   /*
    * Setup all the other fields that CURL requires
@@ -465,6 +469,7 @@ long curl_http_post_certuid (char *url, char *ct, char *data,
    */
   slist1 = NULL;
   slist1 = curl_slist_append(slist1, ct);
+  slist1 = curl_slist_append(slist1, "Connection: close");
 
   /*
    * Setup all the other fields that CURL requires
@@ -487,6 +492,7 @@ long curl_http_post_certuid (char *url, char *ct, char *data,
   curl_easy_setopt(hnd, CURLOPT_SSLKEYTYPE, "PEM");
   curl_easy_setopt(hnd, CURLOPT_SSLKEY, keyfile);
   curl_easy_setopt(hnd, CURLOPT_FORBID_REUSE, 1L);
+  curl_easy_setopt(hnd, CURLOPT_TIMEOUT, 30L);
 
   /*
    * Issue the HTTP request

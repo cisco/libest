@@ -16,7 +16,7 @@ package com.cisco.c3m.est;
  * layer.  When this exception is thrown, libest logs details about the error to
  * stderr.  There are a large variety of reasons that would generate this exception.
  * These reasons vary from network issues, such as host name resolution failure, to
- * certificate and key pair inconsistency issues.  The CiscoEST documentation provides
+ * certificate and key pair inconsistency issues.  The libEST documentation provides
  * a detailed description of the various errors that can be generated at the native
  * layer. 
  * 

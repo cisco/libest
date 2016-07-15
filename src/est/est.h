@@ -4,12 +4,22 @@
  *
  * November, 2012
  *
- * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * Copyright (c) 2012-2014, 2016 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
 #ifndef HEADER_EST_H
 #define HEADER_EST_H
+
+#ifdef WIN32
+#ifdef LIBEST_EXPORTS
+#define LIBEST_API __declspec(dllexport) 
+#else
+#define LIBEST_API __declspec(dllimport) 
+#endif
+#else
+#define LIBEST_API
+#endif
 
 #include <openssl/ssl.h>
 #include <openssl/engine.h>
@@ -20,11 +30,19 @@
 extern "C" {
 #endif
 
+/*
+ * Allow for runtime checking of the path segment support
+ */
+#ifdef HAVE_URIPARSER
+#define PATH_SEGMENT_SUPPORT_ENABLED 1
+#endif
+    
 #define EST_MAX_FILE_LEN    (255)
 #define EST_MAX_SERVERNAME_LEN    (255)
 #define EST_PORTNUM_LEN          (sizeof(int))
 #define EST_MAX_SERVERNAME_AND_PORT_LEN    (EST_MAX_SERVERNAME_LEN+EST_PORTNUM_LEN)
 #define EST_MAX_CLIENT_CERT_LEN  (4096)
+#define EST_MAX_PATH_SEGMENT_LEN (128)
 
 typedef enum {
     EST_SERVER,
@@ -49,6 +67,9 @@ typedef enum {
     E(EST_ERR_HTTP_BAD_REQ) \
     E(EST_ERR_HTTP_NOT_FOUND) \
     E(EST_ERR_HTTP_NO_CONTENT) \
+    E(EST_ERR_HTTP_LOCKED) \
+    E(EST_ERR_HTTP_INVALID_PATH_SEGMENT) \
+    E(EST_ERR_HTTP_PATH_SEGMENT_NOT_SUPPORTED) \
     E(EST_ERR_BAD_CONTENT_TYPE) \
     E(EST_ERR_BAD_CONTENT_LEN) \
     E(EST_ERR_NO_SSL_CTX) \
@@ -87,15 +108,15 @@ typedef enum {
     E(EST_ERR_SYSCALL) \
     E(EST_ERR_CSR_ALREADY_SIGNED) \
     E(EST_ERR_CSR_ATTR_MISSING) \
-    E(EST_ERR_SUBJECT_MISMATCH) \
     E(EST_ERR_INVALID_DIGEST) \
-    E(EST_ERR_CERT_VERIFICATION) \
     E(EST_ERR_CACERT_VERIFICATION) \
     E(EST_ERR_INVALID_TOKEN) \
     E(EST_ERR_INVALID_RETRY_VALUE) \
     E(EST_ERR_BAD_X509) \
     E(EST_ERR_BAD_BASE64) \
     E(EST_ERR_BAD_ASN1_HEX) \
+    E(EST_ERR_BAD_ASN1_HEX_TOO_SHORT) \
+    E(EST_ERR_BAD_ASN1_HEX_TOO_LONG) \
     E(EST_ERR_SRP_STRENGTH_LOW) \
     E(EST_ERR_SRP_USERID_BAD) \
     E(EST_ERR_SRP_PWD_BAD) \
@@ -107,9 +128,9 @@ typedef enum {
 
 /*! @enum EST_ERROR
  *  @brief This enum is used to indicate error conditions to the application layer.
- *         Most of the libest functions return an error indication from this
+ *         Most of the libEST functions return an error indication from this
  *         enumeration.  Applications should always check the returned error
- *         indication and gracefully handle errors.  When no error occurs, libest
+ *         indication and gracefully handle errors.  When no error occurs, libEST
  *         will return EST_ERR_NONE, which has the value zero.
 \n
 \n EST_ERR_NONE  No error occurred.
@@ -128,6 +149,9 @@ typedef enum {
 \n EST_ERR_HTTP_BAD_REQ  The HTTP request was bad as reported by the server. 
 \n EST_ERR_HTTP_NOT_FOUND  The HTTP requested information that is currently not found on the server. 
 \n EST_ERR_HTTP_NO_CONTENT  The content requested is not available.
+\n EST_ERR_HTTP_LOCKED  The resource that is being accessed is locked.
+\n EST_ERR_HTTP_INVALID_PATH_SEGMENT  The URI path segment passed in is invalid, either too long or contains invalid characters.
+\n EST_ERR_HTTP_PATH_SEGMENT_NOT_SUPPORTED  This build of EST does not support the use of an additional path segment in the URI.  EST needs to be rebuilt with the uriparser library to support path segments.
 \n EST_ERR_BAD_CONTENT_TYPE  The HTTP content type header in the request was invalid.
 \n EST_ERR_BAD_CONTENT_LEN  The HTTP content length header in the request specified a value that was too large.
 \n EST_ERR_NO_SSL_CTX  The application did not provide a valid SSL_CTX* reference to the API.
@@ -153,28 +177,28 @@ typedef enum {
 \n EST_ERR_NULL_CALLBACK  The application layer failed to provide the required callback function for the requested EST operation.
 \n EST_ERR_IP_GETADDR  Unable to resolve the server host name.
 \n EST_ERR_IP_CONNECT  Unable to connect to requested host/port.
-\n EST_ERR_INVALID_SERVER_NAME  The server name provided to libest was invalid.  It may not be NULL and it may not exceed the maximum server name length.
-\n EST_ERR_INVALID_PORT_NUM  The TCP port number provided to libest was invalid.  It must be greater than 0 and less than 65536.
-\n EST_ERR_CLIENT_INVALID_KEY  The certificate and private key provided to libest could not be loaded.  The private key must match the public key in the certificate.
-\n EST_ERR_CLIENT_NOT_INITIALIZED  The application attempted to use a libest API prior to invoking est_client_init().
+\n EST_ERR_INVALID_SERVER_NAME  The server name provided to libEST was invalid.  It may not be NULL and it may not exceed the maximum server name length.
+\n EST_ERR_INVALID_PORT_NUM  The TCP port number provided to libEST was invalid.  It must be greater than 0 and less than 65536.
+\n EST_ERR_CLIENT_INVALID_KEY  The certificate and private key provided to libEST could not be loaded.  The private key must match the public key in the certificate.
+\n EST_ERR_CLIENT_NOT_INITIALIZED  The application attempted to use a libEST API prior to invoking est_client_init().
 \n EST_ERR_ZERO_LENGTH_BUF  The certificate received from the server had an invalid length.
 \n EST_ERR_READ_BUFFER_TOO_SMALL  The I/O buffer provided for reading data from the socket is not large enough to receive the response from the server.
 \n EST_ERR_BUF_EXCEEDS_MAX_LEN  The EST server sent a cacerts response that exceeded the maximum size allowed.
 \n EST_ERR_NO_CERTIFICATE  An attempt was made to copy the certs from the context prior to the EST operation being performed.
-\n EST_ERR_NO_CERTS_FOUND  No certificates were found in the trusted certificate list provided to libest.
+\n EST_ERR_NO_CERTS_FOUND  No certificates were found in the trusted certificate list provided to libEST.
 \n EST_ERR_FQDN_MISMATCH  The EST server name did not match the fully qualified domain name in the server's X509 certificate.
 \n EST_ERR_SYSCALL  The OpenSSL library reported a system call error when attempting to establish the TLS session.
-\n EST_ERR_CSR_ALREADY_SIGNED  The PKCS10 CSR provided to libest already contained a signature.  libest requires the CSR to not be signed since libest is responsible for signing the CSR.
+\n EST_ERR_CSR_ALREADY_SIGNED  The PKCS10 CSR provided to libEST already contained a signature.  libEST requires the CSR to not be signed since libEST is responsible for signing the CSR.
 \n EST_ERR_CSR_ATTR_MISSING  The PKCS10 CSR received from the EST client does not contain all the required CSR attributes.
-\n EST_ERR_SUBJECT_MISMATCH The Subject or SubjectAltName fields of client CSR and certificate do not agree.
 \n EST_ERR_INVALID_DIGEST  An invalid digest type was requested.   
-\n EST_ERR_CERT_VERIFICATION Validation of certificate chain or of certificate relative to chain has failed.
 \n EST_ERR_CACERT_VERIFICATION  Validation of the CA certificate chain received from the EST server has failed.
 \n EST_ERR_INVALID_TOKEN  An invalid authorization token was received.
 \n EST_ERR_INVALID_RETRY_VALUE  An invalid or missing retry-after was received from the server.
-\n EST_ERR_BAD_X509  An invalid or corrupted X509 certificate was provided to libest.  
+\n EST_ERR_BAD_X509  An invalid or corrupted X509 certificate was provided to libEST.
 \n EST_ERR_BAD_BASE64  An invalid or corrupted CSR Attribute Base64 encoded string was provided. 
 \n EST_ERR_BAD_ASN1_HEX  An invalid or corrupted CSR Attribute ASN1 Hex string was provided.
+\n EST_ERR_BAD_ASN1_HEX_TOO_SHORT  A CSR Attribute ASN1 Hex string is too short.
+\n EST_ERR_BAD_ASN1_HEX_TOO_LONG  A CSR Attribute ASN1 Hex string is too long.
 \n EST_ERR_SRP_STRENGTH_LOW  The SRP strength requested by the application was too small.
 \n EST_ERR_SRP_USERID_BAD  The SRP user ID was not accepted.
 \n EST_ERR_SRP_PWD_BAD  The SRP password was not accepted.
@@ -186,7 +210,7 @@ typedef enum {
     FOREACH_EST_ERROR(GENERATE_ENUM)
     EST_ERR_LAST
 } EST_ERROR;
-extern const char *EST_ERR_STRINGS[]; 
+LIBEST_API extern const char *EST_ERR_STRINGS[]; 
 #define EST_ERR_NUM_TO_STR(x) EST_ERR_STRINGS[x] 
 
 typedef enum {
@@ -225,7 +249,7 @@ typedef enum {
 
 #define MAX_REALM 255
 #define MAX_NONCE 64
-#define MAX_UIDPWD 30
+#define MAX_UIDPWD 255
 #define MAX_NC 9
 #define MAX_QOP 10
 #define MAX_RESPONSE 64
@@ -248,11 +272,11 @@ typedef enum {
 
 /*! @struct EST_HTTP_AUTH_HDR
  *  @brief This structure is used to pass HTTP authentication parameters to
- *         the application.  libest does not contain a user database
+ *         the application.  libEST does not contain a user database
  *         for authenticating users.  It is expected the application will
  *         perform the user authentication against an external authentication
  *         server such as Radius.  This structure allows the HTTP authentication
- *         credentials to be passed from the libest HTTP layer to
+ *         credentials to be passed from the libEST HTTP layer to
  *         the application.
  *  @var EST_HTTP_AUTH_HDR::mode
  *	Contains the HTTP authentication mode being used (Basic or Digest).
@@ -305,7 +329,7 @@ typedef enum {
  *         represent a single instance of either an EST client, EST server,
  *         or EST proxy server.  None of the members on this structure
  *         are publically accessible.  Application should use the functions
- *         provided by the libest API to manage the context.  A context
+ *         provided by the libEST API to manage the context.  A context
  *         is created using one of: est_client_init(), est_server_init(),
  *         or est_proxy_init().  When the context is no longer needed,
  *         the application shoud invoke est_destroy() to release all memory
@@ -334,107 +358,116 @@ typedef EST_HTTP_AUTH_CRED_RC (*auth_credentials_cb)(EST_HTTP_AUTH_HDR *auth_cre
 /*
  * Begin the public API prototypes
  */
-EST_ERROR est_enable_crl(EST_CTX *ctx);
-EST_ERROR est_init_logger(EST_LOG_LEVEL lvl, void (*loggerfunc)(char *, va_list));
-int est_get_api_level(void); 
-const char * est_get_version(void); 
-void est_enable_backtrace(int enable);
-EST_ERROR est_set_ex_data(EST_CTX *ctx, void *ex_data);
-void * est_get_ex_data(EST_CTX *ctx);
-EST_CTX * est_server_init(unsigned char *ca_chain, int ca_chain_len,
+LIBEST_API EST_ERROR est_enable_crl(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_init_logger(EST_LOG_LEVEL lvl, void (*loggerfunc)(char *, va_list));
+LIBEST_API int est_get_api_level(void); 
+LIBEST_API const char * est_get_version(void); 
+LIBEST_API void est_enable_backtrace(int enable);
+LIBEST_API EST_ERROR est_set_ex_data(EST_CTX *ctx, void *ex_data);
+LIBEST_API void * est_get_ex_data(EST_CTX *ctx);
+LIBEST_API EST_CTX * est_server_init(unsigned char *ca_chain, int ca_chain_len,
                           unsigned char *cacerts_resp_chain, int cacerts_resp_chain_len,
 			  EST_CERT_FORMAT cert_format,
                           char *http_realm, X509 *tls_cert,
                           EVP_PKEY *tls_key);
-EST_CTX * est_proxy_init(unsigned char *ca_chain, int ca_chain_len,
+LIBEST_API EST_CTX * est_proxy_init(unsigned char *ca_chain, int ca_chain_len,
                          unsigned char *cacerts_resp_chain, int cacerts_resp_chain_len,
 			 EST_CERT_FORMAT cert_format,
                          char *http_realm, X509 *tls_cert,
                          EVP_PKEY *tls_key,
                          char *uid, char *pwd);
-EST_ERROR est_destroy(EST_CTX *ctx);
-EST_ERROR est_server_set_auth_mode(EST_CTX *ctx, EST_HTTP_AUTH_MODE amode);
-char *est_server_generate_auth_digest(EST_HTTP_AUTH_HDR *ah, char *HA1);
-EST_ERROR est_server_start(EST_CTX *ctx);
-EST_ERROR est_server_stop(EST_CTX *ctx);
-EST_ERROR est_server_enable_srp(EST_CTX *ctx, int (*cb)(SSL *s, int *ad, void *arg));
-EST_ERROR est_server_enable_pop(EST_CTX *ctx);
-EST_ERROR est_server_disable_pop(EST_CTX *ctx);
-EST_ERROR est_server_handle_request(EST_CTX *ctx, int fd);
-EST_ERROR est_server_set_dh_parms(EST_CTX *ctx, DH *dh);
-EST_ERROR est_server_init_csrattrs(EST_CTX *ctx, char *csrattrs, int crsattrs_len);
-EST_ERROR est_server_set_retry_period(EST_CTX *ctx, int seconds);
-EST_ERROR est_server_set_ecdhe_curve(EST_CTX *ctx, int nid);
-EST_ERROR est_server_enforce_csrattr(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_destroy(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_server_set_auth_mode(EST_CTX *ctx, EST_HTTP_AUTH_MODE amode);
+LIBEST_API char *est_server_generate_auth_digest(EST_HTTP_AUTH_HDR *ah, char *HA1);
+LIBEST_API EST_ERROR est_server_start(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_server_stop(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_server_enable_tls10(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_server_enable_srp(EST_CTX *ctx, int (*cb)(SSL *s, int *ad, void *arg));
+LIBEST_API EST_ERROR est_server_enable_pop(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_server_disable_pop(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_server_handle_request(EST_CTX *ctx, int fd);
+LIBEST_API EST_ERROR est_server_set_dh_parms(EST_CTX *ctx, DH *dh);
+LIBEST_API EST_ERROR est_server_init_csrattrs(EST_CTX *ctx, char *csrattrs, int crsattrs_len);
+LIBEST_API EST_ERROR est_server_set_retry_period(EST_CTX *ctx, int seconds);
+LIBEST_API EST_ERROR est_server_set_ecdhe_curve(EST_CTX *ctx, int nid);
+LIBEST_API EST_ERROR est_server_enforce_csrattr(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_server_set_read_timeout (EST_CTX *ctx, int timeout);
+    
 /*
  * EST proxy specific functions
  */
-EST_ERROR est_proxy_start(EST_CTX *ctx);
-EST_ERROR est_proxy_stop(EST_CTX *ctx);
-EST_ERROR est_proxy_set_server(EST_CTX *ctx, const char *server, int port);
-EST_ERROR est_proxy_set_auth_mode(EST_CTX *ctx, EST_HTTP_AUTH_MODE amode);
-EST_ERROR est_proxy_set_read_timeout(EST_CTX *ctx, int timeout);
-EST_ERROR est_proxy_set_auth_cred_cb(EST_CTX *ctx, auth_credentials_cb);
+LIBEST_API EST_ERROR est_proxy_start(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_proxy_stop(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_proxy_set_server(EST_CTX *ctx, const char *server, int port);
+LIBEST_API EST_ERROR est_proxy_set_auth_mode(EST_CTX *ctx, EST_HTTP_AUTH_MODE amode);
+LIBEST_API EST_ERROR est_proxy_set_read_timeout(EST_CTX *ctx, int timeout);
+LIBEST_API EST_ERROR est_proxy_set_auth_cred_cb(EST_CTX *ctx, auth_credentials_cb);
 
 /*
  * The following functions are used by an EST client
  */
-EST_CTX *est_client_init(unsigned char *ca_chain, int ca_chain_len,
+LIBEST_API EST_CTX *est_client_init(unsigned char *ca_chain, int ca_chain_len,
                          EST_CERT_FORMAT cert_format,
                          int (*cert_verify_cb)(X509 *, int));
-EST_ERROR est_client_set_auth(EST_CTX *ctx, const char *uid, const char *pwd,
+LIBEST_API EST_ERROR est_client_set_auth(EST_CTX *ctx, const char *uid, const char *pwd,
                               X509 *client_cert, EVP_PKEY *private_key);
-EST_ERROR est_client_set_auth_cred_cb(EST_CTX *ctx, auth_credentials_cb);
-EST_ERROR est_client_set_server(EST_CTX *ctx, const char *server, int port);
-EST_ERROR est_client_provision_cert(EST_CTX *ctx, char *cn, 
+LIBEST_API EST_ERROR est_client_set_auth_cred_cb(EST_CTX *ctx, auth_credentials_cb);
+LIBEST_API EST_ERROR est_client_set_server(EST_CTX *ctx, const char *server, int port, char *path_segment);
+LIBEST_API EST_ERROR est_client_provision_cert(EST_CTX *ctx, char *cn, 
 	                            int *pkcs7_len,
 				    int *ca_cert_len,
                                     EVP_PKEY *new_public_key);
-EST_ERROR est_client_enroll(EST_CTX *ctx, char *cn, int *pkcs7_len,
+LIBEST_API EST_ERROR est_client_enroll(EST_CTX *ctx, char *cn, int *pkcs7_len,
                             EVP_PKEY *new_public_key);
-EST_ERROR est_client_enroll_csr(EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EVP_PKEY *priv_key);
-EST_ERROR est_client_reenroll(EST_CTX *ctx, X509 *cert, int *pkcs7_len, EVP_PKEY *priv_key);
-EST_ERROR est_client_copy_enrolled_cert(EST_CTX *ctx, unsigned char *pkcs7);
-EST_ERROR est_client_get_csrattrs(EST_CTX *ctx, unsigned char **csr_data, int *csr_len);
-EST_ERROR est_client_get_cacerts(EST_CTX *ctx, int *ca_certs_len);
-EST_ERROR est_client_copy_cacerts(EST_CTX *ctx, unsigned char *ca_certs);
-EST_ERROR est_client_set_sign_digest(EST_CTX *ctx, int nid); 
-EST_ERROR est_client_copy_retry_after(EST_CTX *ctx, int *retry_delay,
+LIBEST_API EST_ERROR est_client_enroll_csr(EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EVP_PKEY *priv_key);
+LIBEST_API EST_ERROR est_client_reenroll(EST_CTX *ctx, X509 *cert, int *pkcs7_len, EVP_PKEY *priv_key);
+LIBEST_API EST_ERROR est_client_copy_enrolled_cert(EST_CTX *ctx, unsigned char *pkcs7);
+LIBEST_API EST_ERROR est_client_get_csrattrs(EST_CTX *ctx, unsigned char **csr_data, int *csr_len);
+LIBEST_API EST_ERROR est_client_get_cacerts(EST_CTX *ctx, int *ca_certs_len);
+LIBEST_API EST_ERROR est_client_copy_cacerts(EST_CTX *ctx, unsigned char *ca_certs);
+LIBEST_API EST_ERROR est_client_set_sign_digest(EST_CTX *ctx, int nid); 
+LIBEST_API EST_ERROR est_client_copy_retry_after(EST_CTX *ctx, int *retry_delay,
                                        time_t *retry_time);
-EST_ERROR est_client_set_read_timeout(EST_CTX *ctx, int timeout);
-EST_ERROR est_client_enable_basic_auth_hint(EST_CTX *ctx);
-EST_ERROR est_client_force_pop(EST_CTX *ctx);
-EST_ERROR est_client_unforce_pop(EST_CTX *ctx);
-EST_ERROR est_client_enable_srp(EST_CTX *ctx, int strength, char *uid, char *pwd); 
+LIBEST_API EST_ERROR est_client_set_read_timeout(EST_CTX *ctx, int timeout);
+LIBEST_API EST_ERROR est_client_enable_basic_auth_hint(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_client_force_pop(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_client_unforce_pop(EST_CTX *ctx);
+LIBEST_API EST_ERROR est_client_enable_srp(EST_CTX *ctx, int strength, char *uid, char *pwd); 
+LIBEST_API int est_client_get_last_http_status(EST_CTX *ctx);
 
 /*
  * The following callback entry points must be set by the application
  * when acting as an EST server or proxy.
  */
-EST_ERROR est_set_ca_enroll_cb(EST_CTX *ctx, int (*cb)(unsigned char * pkcs10, 
-	                       int p10_len, unsigned char **pkcs7, int *pkcs7_len, 
-			       char *user_id, X509 *peer_cert, void *ex_data));
-EST_ERROR est_set_ca_reenroll_cb(EST_CTX *ctx, int (*cb)(unsigned char * pkcs10, 
-	                         int p10_len, unsigned char **pkcs7, int *pkcs7_len, 
-				 char *user_id, X509 *peer_cert, void *ex_data));
-EST_ERROR est_set_csr_cb(EST_CTX * ctx, unsigned char *(*cb)(int*csr_len, void *ex_data));
-EST_ERROR est_set_http_auth_cb(EST_CTX * ctx, int (*cb)(EST_CTX*, EST_HTTP_AUTH_HDR*, X509*, void*));
+LIBEST_API EST_ERROR est_set_ca_enroll_cb(EST_CTX *ctx, int (*cb)(unsigned char * pkcs10, int p10_len,
+                                                       unsigned char **pkcs7, int *pkcs7_len, 
+                                                       char *user_id, X509 *peer_cert,
+                                                       char *path_seg, void *ex_data));
+LIBEST_API EST_ERROR est_set_ca_reenroll_cb(EST_CTX *ctx, int (*cb)(unsigned char * pkcs10, int p10_len,
+                                                         unsigned char **pkcs7, int *pkcs7_len, 
+                                                         char *user_id, X509 *peer_cert,
+                                                         char *path_seg, void *ex_data));
+LIBEST_API EST_ERROR est_set_csr_cb(EST_CTX * ctx, unsigned char *(*cb)(int*csr_len, char *path_seg, void *ex_data));
+LIBEST_API EST_ERROR est_set_cacerts_cb(EST_CTX * ctx, unsigned char *(*cb)(int*csr_len, char *path_seg, void *ex_data));
+LIBEST_API EST_ERROR est_set_http_auth_cb(EST_CTX * ctx,
+                                          int (*cb)(EST_CTX*, EST_HTTP_AUTH_HDR*,
+                                                    X509*, char *, void*));
 
     
-EST_ERROR est_set_http_auth_required(EST_CTX * ctx, EST_HTTP_AUTH_REQUIRED required);
-EST_ERROR est_add_attributes_helper(X509_REQ *req, int nid, void *string, int chtype);
-EST_ERROR est_get_attributes_helper(unsigned char **der_ptr, int *der_len, int *new_nid);
-EST_ERROR est_decode_attributes_helper(char *csrattrs, int csrattrs_len, 
+LIBEST_API EST_ERROR est_set_http_auth_required(EST_CTX * ctx, EST_HTTP_AUTH_REQUIRED required);
+LIBEST_API EST_ERROR est_add_attributes_helper(X509_REQ *req, int nid, void *string, int chtype);
+LIBEST_API EST_ERROR est_get_attributes_helper(unsigned char **der_ptr, int *der_len, int *new_nid);
+LIBEST_API EST_ERROR est_decode_attributes_helper(char *csrattrs, int csrattrs_len, 
   				       unsigned char **der_ptr, int *der_len);
 
 /*
  * The following are helper functions to deal with
  * the OpenSSL data types for certs, keys, etc.
  */
-X509_REQ *est_read_x509_request(unsigned char *csr, int csr_len,
+LIBEST_API X509_REQ *est_read_x509_request(unsigned char *csr, int csr_len,
 	                         EST_CERT_FORMAT csr_format);
-EVP_PKEY *est_load_key(unsigned char *key, int key_len, int format);
-int est_convert_p7b64_to_pem(unsigned char *certs_p7, int certs_len, unsigned char **pem);
+LIBEST_API EVP_PKEY *est_load_key(unsigned char *key, int key_len, int format);
+LIBEST_API int est_convert_p7b64_to_pem(unsigned char *certs_p7, int certs_len, unsigned char **pem);
 
 /*
  * These are helper macros that an application can use
@@ -442,7 +475,7 @@ int est_convert_p7b64_to_pem(unsigned char *certs_p7, int certs_len, unsigned ch
  */
 /*! @brief est_apps_startup() is used by an application to initialize 
     the OpenSSL library.  This should be called first prior to using
-    any other functions in the libest API. This is a helper function which invokes
+    any other functions in the libEST API. This is a helper function which invokes
     CRYPTO_malloc_init(), ERR_load_crypto_strings(), OpenSSL_add_all_algorithms(),
     ENGINE_load_builtin_engines(), SSL_library_init(), and SSL_load_error_strings().
  

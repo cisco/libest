@@ -3,12 +3,14 @@
  *
  * September, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
 #include <stdio.h>
+#ifndef WIN32
 #include <unistd.h>
+#endif 
 #include <est.h>
 #include "test_utils.h"
 #include "st_server.h"
@@ -27,13 +29,15 @@ static int cacerts_len = 0;
 #define US899_SERVER_IP	    "127.0.0.1"	
 #define US899_UID	    "estuser"
 #define US899_PWD	    "estpwd"
-#define US899_CACERTS	    "CA/estCA/cacert.crt"
-#define US899_TRUST_CERTS   "CA/trustedcerts.crt"
-#define US899_SERVER_CERTKEY   "CA/estCA/private/estservercertandkey.pem"
 
 /*
  * The following certs are used for FQDN testing
  */
+#ifndef WIN32
+#define US899_CACERTS	    "CA/estCA/cacert.crt"
+#define US899_TRUST_CERTS   "CA/trustedcerts.crt"
+#define US899_SERVER_CERTKEY   "CA/estCA/private/estservercertandkey.pem"
+
 #define US899_SERVER_CERT_CN_MISMATCH	    "US899/cert_cn_mismatch.pem"
 #define US899_SERVER_KEY_CN_MISMATCH	    "US899/key_cn_mismatch.pem"
 #define US899_SERVER_CERT_CN_MISMATCH_IP    "US899/cert_cn_mismatch_ip.pem"
@@ -54,6 +58,42 @@ static int cacerts_len = 0;
 #define US899_SERVER_KEY_SAN_MATCH_WC       "US899/key_san_match_wc.pem"
 #define US899_SERVER_CERT_SAN_MISMATCH_WC   "US899/cert_san_mismatch_wc.pem"
 #define US899_SERVER_KEY_SAN_MISMATCH_WC    "US899/key_san_mismatch_wc.pem"
+#else 
+#define US899_CACERTS	    "CA\\estCA\\cacert.crt"
+#define US899_TRUST_CERTS   "CA\\trustedcerts.crt"
+#define US899_SERVER_CERTKEY   "CA\\estCA\\private\\estservercertandkey.pem"
+
+#define US899_SERVER_CERT_CN_MISMATCH	    "US899\\cert_cn_mismatch.pem"
+#define US899_SERVER_KEY_CN_MISMATCH	    "US899\\key_cn_mismatch.pem"
+#define US899_SERVER_CERT_CN_MISMATCH_IP    "US899\\cert_cn_mismatch_ip.pem"
+#define US899_SERVER_KEY_CN_MISMATCH_IP	    "US899\\key_cn_mismatch_ip.pem"
+#define US899_SERVER_CERT_CN_MATCH_WC       "US899\\cert_cn_match_wc.pem"
+#define US899_SERVER_KEY_CN_MATCH_WC	    "US899\\key_cn_match_wc.pem"
+#define US899_SERVER_CERT_CN_MISMATCH_WC    "US899\\cert_cn_mismatch_wc.pem"
+#define US899_SERVER_KEY_CN_MISMATCH_WC	    "US899\\key_cn_mismatch_wc.pem"
+#define US899_SERVER_CERT_SAN_MATCH	    "US899\\cert_san_match.pem"
+#define US899_SERVER_KEY_SAN_MATCH	    "US899\\key_san_match.pem"
+#define US899_SERVER_CERT_SAN_MISMATCH	    "US899\\cert_san_mismatch.pem"
+#define US899_SERVER_KEY_SAN_MISMATCH	    "US899\\key_san_mismatch.pem"
+#define US899_SERVER_CERT_SAN_MISMATCH_IP   "US899\\cert_san_mismatch_ip.pem"
+#define US899_SERVER_KEY_SAN_MISMATCH_IP    "US899\\key_san_mismatch_ip.pem"
+#define US899_SERVER_CERT_SAN_MATCH_IP      "US899\\cert_san_match_ip.pem"
+#define US899_SERVER_KEY_SAN_MATCH_IP       "US899\\key_san_match_ip.pem"
+#define US899_SERVER_CERT_SAN_MATCH_WC      "US899\\cert_san_match_wc.pem"
+#define US899_SERVER_KEY_SAN_MATCH_WC       "US899\\key_san_match_wc.pem"
+#define US899_SERVER_CERT_SAN_MISMATCH_WC   "US899\\cert_san_mismatch_wc.pem"
+#define US899_SERVER_KEY_SAN_MISMATCH_WC    "US899\\key_san_mismatch_wc.pem"
+
+static CRITICAL_SECTION logger_critical_section;  
+static void us899_logger_stderr (char *format, va_list l) 
+{
+    EnterCriticalSection(&logger_critical_section);
+	vfprintf(stderr, format, l);
+	fflush(stderr);
+    LeaveCriticalSection(&logger_critical_section); 
+}
+#endif 
+
 
 
 #define US899_VALID_CSR_PEM "-----BEGIN CERTIFICATE REQUEST-----\nMIIBhDCB7gIBADBFMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEh\nMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEB\nAQUAA4GNADCBiQKBgQC13wEG36vBY8Mq+uu80SKvkx0ZCt0lc18kaMSDLwML2IRS\n+SaCLEZbjJYeSxwZ9qXy4Rt1vFDRRTL57/lQTgT5kzKI2D2YUZ+Dg6wQqx/4t99S\naCv/lxcUTfIPiaqATUQxeZA+h7Fo0ti9wLSw6AQft9hibYPRJZ6zHa24lXwd7wID\nAQABoAAwDQYJKoZIhvcNAQEFBQADgYEAjwSjLqFAzoPGa4GKn7AEitepVA+3QjXL\n45LSzrVJMW4Jl8Ovm/aPatnFRQYm82rVKb7Sq4Ddo9nDJ9tgZ450oqIWbujUmGEU\nsUUxJSJ3vGXyQy+8NeTy4GmmsNWIwhSKMkqh7YVlBvgkwGoNFuQ8mD90prFmld+J\nhHBZXCaekrE=\n-----END CERTIFICATE REQUEST-----"
@@ -142,7 +182,10 @@ static int us899_init_suite (void)
 {
     int rv;
 
-    est_init_logger(EST_LOG_LVL_INFO, NULL);
+#ifdef WIN32
+    InitializeCriticalSection (&logger_critical_section);
+    est_init_logger(EST_LOG_LVL_INFO, &us899_logger_stderr);
+#endif
 
     /*
      * Read in the CA certificates
@@ -272,6 +315,38 @@ static int populate_x509_csr (X509_REQ *req, EVP_PKEY *pkey, char *cn)
 }
 
 /*
+ * Sign an X509 certificate request using the digest and the key passed.
+ * Returns OpenSSL error code from X509_REQ_sign_ctx();
+ */
+static int sign_X509_req (X509_REQ *x, EVP_PKEY *pkey, const EVP_MD *md)
+{
+    int rv;
+    EVP_PKEY_CTX *pkctx = NULL;
+    EVP_MD_CTX mctx;
+
+    EVP_MD_CTX_init(&mctx);
+
+    if (!EVP_DigestSignInit(&mctx, &pkctx, md, NULL, pkey)) {
+        return 0;
+    }
+
+    /*
+     * Encode using DER (ASN.1) 
+     *
+     * We have to set the modified flag on the X509_REQ because
+     * OpenSSL keeps a cached copy of the DER encoded data in some
+     * cases.  Setting this flag tells OpenSSL to run the ASN
+     * encoding again rather than using the cached copy.
+     */
+    x->req_info->enc.modified = 1; 
+    rv = X509_REQ_sign_ctx(x, &mctx);
+
+    EVP_MD_CTX_cleanup(&mctx);
+
+    return (rv);
+}
+
+/*
  * This function performs a basic simple enroll using
  * a UID/PWD to identify the client to the server.  This
  * is used for a variety of test cases in this module.
@@ -303,7 +378,7 @@ static void us899_simple_enroll (char *cn, char *server, EST_ERROR expected_enro
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, server, US899_SERVER_PORT);
+    est_client_set_server(ectx, server, US899_SERVER_PORT, NULL);
 
     /*
      * generate a private key
@@ -397,7 +472,7 @@ static void us899_test2 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT);
+    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT, NULL);
 
     /*
      * generate a private key
@@ -482,7 +557,7 @@ static void us899_test3 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT);
+    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT, NULL);
 
     /*
      * generate a private key
@@ -560,7 +635,8 @@ static void us899_test4 (void)
     }
 }
 
-//C. Attempt to enroll CSR that's already been signed
+//C. Attempt to enroll a newly created CSR that's already been signed 
+//   via est_client_enroll_csr
 static void us899_test5 (void) 
 {
     EST_CTX *ectx;
@@ -590,20 +666,27 @@ static void us899_test5 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT);
+    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT, NULL);
 
     /*
-     * generate a private key
+     * Generate a private key
      */
     key = generate_private_key();
     CU_ASSERT(key != NULL);
 
     /*
-     * Load the CSR
+     * Generate a new CSR
      */
-    csr = est_read_x509_request((unsigned char*)US899_VALID_CSR_PEM, strlen(US899_VALID_CSR_PEM), 
-	                         EST_CERT_FORMAT_PEM);
+    csr = X509_REQ_new();
     CU_ASSERT(csr != NULL);
+    rv = populate_x509_csr(csr, key, "US899-TC5");
+    CU_ASSERT(csr != NULL);
+
+    /*
+     * Sign the CSR
+     */
+
+    rv = sign_X509_req(csr,key,EVP_sha256()); 
 
     /*
      * Get the latest CSR attributes
@@ -612,10 +695,10 @@ static void us899_test5 (void)
     CU_ASSERT(rv == EST_ERR_NONE);
 
     /*
-     * Use the alternate API to enroll an existing CSR.  This should fail.
+     * Use the alternate API to enroll an existing CSR.  This should pass.
      */
     rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, key);
-    CU_ASSERT(rv == EST_ERR_CSR_ALREADY_SIGNED);
+    CU_ASSERT(rv == EST_ERR_NONE);
 
     /*
      * Cleanup
@@ -1046,12 +1129,21 @@ static void us899_test16 (void)
      * Generate a CRL and append it to the CA chain
      * we're using on the client side.
      */
+#ifndef WIN32
     system("openssl ca -config CA/estExampleCA.cnf -gencrl -out US899/test16_crl.pem");
-    sleep(1);
+    SLEEP(1);
     system("cat CA/trustedcerts.crt > US899/test16trust.crt");
-    sleep(1);
+    SLEEP(1);
     system("cat US899/test16_crl.pem >> US899/test16trust.crt");
-    sleep(1);
+    SLEEP(1);
+#else
+    system("openssl ca -config CA/estExampleCA.cnf -gencrl -out US899/test16_crl.pem");
+    SLEEP(1);
+    system("type CA\\trustedcerts.crt > US899\\test16trust.crt");
+    SLEEP(1);
+    system("type US899\\test16_crl.pem >> US899\\test16trust.crt");
+    SLEEP(1);
+#endif 
 
     /*
      * Read in the CA certificates
@@ -1085,7 +1177,7 @@ static void us899_test16 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT);
+    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT, NULL);
 
     /*
      * generate a private key
@@ -1148,18 +1240,33 @@ static void us899_test17 (void)
      * Revoke the server cert, generate a CRL and append it to the CA chain
      * we're using on the client side.
      */
+#ifndef WIN32
     system("cp CA/estCA/index.txt CA/estCA/index.txt.save");
-    sleep(1);
+    SLEEP(1);
     system("openssl ca -config CA/estExampleCA.cnf -revoke CA/estCA/private/estservercertandkey.pem");
-    sleep(1);
+    SLEEP(1);
     system("openssl ca -config CA/estExampleCA.cnf -gencrl -out US899/test17_crl.pem");
-    sleep(1);
+    SLEEP(1);
     system("cat CA/trustedcerts.crt > US899/test17trust.crt");
-    sleep(1);
+    SLEEP(1);
     system("cat US899/test17_crl.pem >> US899/test17trust.crt");
-    sleep(1);
+    SLEEP(1);
     system("cp CA/estCA/index.txt.save CA/estCA/index.txt");
-    sleep(1);
+    SLEEP(1);
+#else 
+    system("copy CA\\estCA\\index.txt CA\\estCA\\index.txt.save");
+    SLEEP(1);
+    system("openssl ca -config CA\\estExampleCA.cnf -revoke CA\\estCA\\private\\estservercertandkey.pem");
+	SLEEP(1); 
+    system("openssl ca -config CA\\estExampleCA.cnf -gencrl -out US899\\test17_crl.pem");
+    SLEEP(1);
+    system("type CA\\trustedcerts.crt > US899\\test17trust.crt");
+    SLEEP(1);
+    system("type US899\\test17_crl.pem >> US899\\test17trust.crt");
+    SLEEP(1);
+    system("copy CA\\estCA\\index.txt.save CA\\estCA\\index.txt");
+    SLEEP(1);
+#endif 
 
     /*
      * Read in the CA certificates
@@ -1193,7 +1300,7 @@ static void us899_test17 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT);
+    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT, NULL);
 
     /*
      * generate a private key
@@ -1270,7 +1377,7 @@ static void us899_test18 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT);
+    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT, NULL);
 
     /*
      * generate a private key
@@ -1306,245 +1413,6 @@ static void us899_test18 (void)
     EVP_PKEY_free(key);
     est_destroy(ectx);
 }
-
-/*
- * Simple enroll CSR -- No UserID or Password   
- *
- * This is a basic test to perform a /simpleenroll without a 
- * user ID and password. 
- * The server will ask for Basic authentication, but the application will not provide
- * a userID or password so the client will not retry an enrollment attempt. 
- */
-
-static void us899_test19 (void)
-{
-    EST_CTX *ectx;
-    EVP_PKEY *key;
-    int rv;
-    int pkcs7_len = 0;
-    unsigned char *new_cert = NULL;
-    X509_REQ *csr;
-    unsigned char *attr_data = NULL;
-    int attr_len;
-
-    LOG_FUNC_NM;
-
-    /*
-     * Create a client context
-     */
-    ectx = est_client_init(cacerts, cacerts_len,
-                           EST_CERT_FORMAT_PEM,
-                           client_manual_cert_verify);
-    CU_ASSERT(ectx != NULL);
-
-    /*
-     * Set the authentication mode to use a user id/password
-     */
-    /*rv = est_client_set_auth(ectx, "", "" , NULL, NULL);
-      CU_ASSERT(rv == EST_ERR_NONE);*/ //Remove these
-
-    /*
-     * Set the EST server address/port
-     */
-    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT);
-
-    /*
-     * generate a private key
-     */
-    key = generate_private_key();
-    CU_ASSERT(key != NULL);
-
-    /*
-     * Generate a CSR
-     */
-    csr = X509_REQ_new();
-    CU_ASSERT(csr != NULL);
-    rv = populate_x509_csr(csr, key, "US899-TC2");
-
-    /*
-     * Get the latest CSR attributes
-     */
-    rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
-    CU_ASSERT(rv == EST_ERR_NONE);
-
-    /*
-     * Use the alternate API to enroll an existing CSR
-     */
-    rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, key);
-    CU_ASSERT(rv == EST_ERR_HTTP_CANNOT_BUILD_HEADER);
- 
-    /*
-     * Cleanup
-     */
-    X509_REQ_free(csr);
-    EVP_PKEY_free(key);
-    if (new_cert) {
-        free(new_cert);
-    }
-    est_destroy(ectx);
-}
-
-/*
- * Simple enroll CSR -- HTTP Digest Auth No UserID or Password   
- *
- * This is a basic test to perform a /simpleenroll without a 
- * user ID and password. 
- * The server will ask for Digest authentication, but the application will not provide
- * a userID or password so the client will not retry an enrollment attempt. 
- *
- */
-
-static void us899_test20 (void)
-{
-    EST_CTX *ectx;
-    EVP_PKEY *key;
-    int rv;
-    int pkcs7_len = 0;
-    unsigned char *new_cert = NULL;
-    X509_REQ *csr;
-    unsigned char *attr_data = NULL;
-    int attr_len;
-
-    LOG_FUNC_NM;
-
-    /*
-     * Create a client context
-     */
-    ectx = est_client_init(cacerts, cacerts_len,
-                           EST_CERT_FORMAT_PEM,
-                           client_manual_cert_verify);
-    CU_ASSERT(ectx != NULL);
-
-    /*
-     * Set the EST server address/port
-     */
-    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT);
-
-    /*
-     * generate a private key
-     */
-    key = generate_private_key();
-    CU_ASSERT(key != NULL);
-
-    /*
-     * Generate a CSR
-     */
-    csr = X509_REQ_new();
-    CU_ASSERT(csr != NULL);
-    rv = populate_x509_csr(csr, key, "US899-TC2");
-
-    /*
-     * Get the latest CSR attributes
-     */
-    rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
-    CU_ASSERT(rv == EST_ERR_NONE);
-
-    /*
-     * Set the server authentication mode to Digest
-     */
-
-    st_enable_http_digest_auth();
-    
-    /*
-     * Use the alternate API to enroll an existing CSR
-     */
-    rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, key);
-    CU_ASSERT(rv == EST_ERR_HTTP_CANNOT_BUILD_HEADER);
- 
-    /*
-     * Cleanup
-     */
-    st_enable_http_basic_auth();
-    X509_REQ_free(csr);
-    EVP_PKEY_free(key);
-    if (new_cert) {
-        free(new_cert);
-    }
-    est_destroy(ectx);
-}
-
-/*
- * Simple enroll CSR -- HTTP Token Auth No UserID or Password   
- *
- * This is a basic test to perform a /simpleenroll without a 
- * user ID and password. 
- * This is a basic test to perform a /simpleenroll without a user ID and password. 
- * The server will ask for Token authentication, but the application will not provide
- * a userID or password so the client will not retry an enrollment attempt. 
- */
-
-static void us899_test21 (void)
-{
-    EST_CTX *ectx;
-    EVP_PKEY *key;
-    int rv;
-    int pkcs7_len = 0;
-    unsigned char *new_cert = NULL;
-    X509_REQ *csr;
-    unsigned char *attr_data = NULL;
-    int attr_len;
-
-    LOG_FUNC_NM;
-
-    /*
-     * Create a client context
-     */
-    ectx = est_client_init(cacerts, cacerts_len,
-                           EST_CERT_FORMAT_PEM,
-                           client_manual_cert_verify);
-    CU_ASSERT(ectx != NULL);
-
-    /*
-     * Set the EST server address/port
-     */
-    est_client_set_server(ectx, US899_SERVER_IP, US899_SERVER_PORT);
-
-    /*
-     * generate a private key
-     */
-    key = generate_private_key();
-    CU_ASSERT(key != NULL);
-
-    /*
-     * Generate a CSR
-     */
-    csr = X509_REQ_new();
-    CU_ASSERT(csr != NULL);
-    rv = populate_x509_csr(csr, key, "US899-TC2");
-
-    /*
-     * Get the latest CSR attributes
-     */
-    rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
-    CU_ASSERT(rv == EST_ERR_NONE);
-
-    /*
-     * Set the server authentication mode to Digest
-     */
-
-    st_enable_http_token_auth();
-    
-    /*
-     * Use the alternate API to enroll an existing CSR
-     */
-    rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, key);
-    CU_ASSERT(rv == EST_ERR_HTTP_CANNOT_BUILD_HEADER);
- 
-    /*
-     * Cleanup
-     */
-    st_enable_http_basic_auth();
-    X509_REQ_free(csr);
-    EVP_PKEY_free(key);
-    if (new_cert) {
-        free(new_cert);
-    }
-    est_destroy(ectx);
-}
-
-
-
-
 
 //TO DO
 //
@@ -1607,10 +1475,7 @@ int us899_add_suite (void)
        (NULL == CU_add_test(pSuite, "Simple enroll - wildcard mismatch FQDN SAN", us899_test15)) ||
        (NULL == CU_add_test(pSuite, "Simple enroll - CRL enabled, valid server cert", us899_test16)) ||
        (NULL == CU_add_test(pSuite, "Simple enroll - CRL enabled, revoked server cert", us899_test17)) ||
-       (NULL == CU_add_test(pSuite, "Simple enroll - Retry-After received", us899_test18)) ||
-       (NULL == CU_add_test(pSuite, "Simple enroll - HTTP Basic Auth - No uID/pwd", us899_test19)) ||
-       (NULL == CU_add_test(pSuite, "Simple enroll - HTTP Digest Auth - No uID/pwd", us899_test20)) ||
-       (NULL == CU_add_test(pSuite, "Simple enroll - HTTP Token Auth - No uID/pwd", us899_test21)))
+       (NULL == CU_add_test(pSuite, "Simple enroll - Retry-After received", us899_test18)))
    {
       CU_cleanup_registry();
       return CU_get_error();

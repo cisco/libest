@@ -9,25 +9,45 @@
  *
  * April, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
+ 
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#ifndef WIN32
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#else
+#define snprintf _snprintf
+#include <Ws2tcpip.h>
+#include <BaseTsd.h>
+#include <WinDef.h>
+#include <WinNT.h>
+#include <wincrypt.h>
+#endif
+#include <sys/types.h>
 #include <openssl/ssl.h>
 #include <openssl/rand.h>
 #include "est.h"
 #include "est_locl.h"
 #include "est_ossl_util.h"
+#include "safe_mem_lib.h"
+#include "safe_str_lib.h" 
 #include <openssl/x509v3.h>
+#include <openssl/asn1.h>
+#ifdef HAVE_URIPARSER
+#include "uriparser/Uri.h"
+#endif
+#ifdef WIN32
+#define close(socket) closesocket(socket)
+WSADATA wsaData;
+#endif 
 
 #define SSL_EXDATA_INDEX_INVALID -1
 
@@ -87,6 +107,8 @@ static int est_client_X509_REQ_sign (X509_REQ *x, EVP_PKEY *pkey, const EVP_MD *
     }
 
     /*
+     * Encode using DER (ASN.1) 
+     *
      * We have to set the modified flag on the X509_REQ because
      * OpenSSL keeps a cached copy of the DER encoded data in some
      * cases.  Setting this flag tells OpenSSL to run the ASN
@@ -104,7 +126,7 @@ static int est_client_X509_REQ_sign (X509_REQ *x, EVP_PKEY *pkey, const EVP_MD *
  * calls into OpenSSL to insert the fields of the x509 header.
  *
  * Parameters:
- *	req:	pointer to the buffer that is to hold the x509 reauest header
+ *	req:	pointer to the buffer that is to hold the x509 request header
  *	pkey:   public key to be placed into the x509 request
  *	cn:     Common Name to be placed into the x509 request
  *      cp:     challenge password to be placed into the x509 header
@@ -319,7 +341,7 @@ static EST_ERROR est_client_remove_crls (EST_CTX *ctx, unsigned char *cacerts,
         }
         p7bio_out = BIO_push(b64_enc, p7bio_out);
         
-        memset(cacerts, 0, *cacerts_len);
+        memzero_s(cacerts, *cacerts_len);
         
         count = i2d_PKCS7_bio(p7bio_out, p7);
         if (count == 0) {
@@ -344,7 +366,7 @@ static EST_ERROR est_client_remove_crls (EST_CTX *ctx, unsigned char *cacerts,
         /*
          * copy the new buffer back into the old buffer
          */
-        memcpy(cacerts, new_cacerts_buf, new_cacerts_len);
+        memcpy_s(cacerts, *cacerts_len, new_cacerts_buf, new_cacerts_len);
         *cacerts_len = new_cacerts_len;
     }
 
@@ -777,7 +799,7 @@ static int cert_verify_cb (int ok, X509_STORE_CTX *x_ctx)
  *	EST_ERROR
  *         EST_ERR_NONE if success
  */
-EST_ERROR est_client_init_ssl_ctx (EST_CTX *ctx)
+static EST_ERROR est_client_init_ssl_ctx (EST_CTX *ctx)
 {
     SSL_CTX     *s_ctx;
     X509_VERIFY_PARAM *vpm = NULL;
@@ -867,6 +889,13 @@ EST_ERROR est_client_init_ssl_ctx (EST_CTX *ctx)
     if (e_ctx_ssl_exdata_index == SSL_EXDATA_INDEX_INVALID) {
         e_ctx_ssl_exdata_index = SSL_get_ex_new_index(0, "EST Context", NULL, NULL, NULL);    
     }
+
+    /*
+     * This last config setting is not ctx based, but instead, global to the
+     * entire libcrypto library.  Need to ensure that CSR string attributes
+     * are added in ASCII printable format.
+     */
+    ASN1_STRING_set_default_mask(B_ASN1_PRINTABLE);
     
     return rv;
 }
@@ -902,11 +931,11 @@ static unsigned char *est_client_generate_auth_digest (EST_CTX *ctx, char *uri,
         EST_LOG_ERR("Unable to Initialize digest");
         return NULL;
     }
-    EVP_DigestUpdate(mdctx, user, strnlen(user, MAX_UIDPWD));
+    EVP_DigestUpdate(mdctx, user, strnlen_s(user, MAX_UIDPWD));
     EVP_DigestUpdate(mdctx, ":", 1);
-    EVP_DigestUpdate(mdctx, ctx->realm, strnlen(ctx->realm, MAX_REALM));
+    EVP_DigestUpdate(mdctx, ctx->realm, strnlen_s(ctx->realm, MAX_REALM));
     EVP_DigestUpdate(mdctx, ":", 1);
-    EVP_DigestUpdate(mdctx, pwd, strnlen(pwd, MAX_UIDPWD));
+    EVP_DigestUpdate(mdctx, pwd, strnlen_s(pwd, MAX_UIDPWD));
     EVP_DigestFinal(mdctx, ha1, &ha1_len);
     EVP_MD_CTX_destroy(mdctx);
     est_hex_to_str(ha1_str, ha1, ha1_len);
@@ -921,7 +950,7 @@ static unsigned char *est_client_generate_auth_digest (EST_CTX *ctx, char *uri,
     }
     EVP_DigestUpdate(mdctx, "POST", 4);
     EVP_DigestUpdate(mdctx, ":", 1);
-    EVP_DigestUpdate(mdctx, uri, strnlen(uri, MAX_REALM));
+    EVP_DigestUpdate(mdctx, uri, strnlen_s(uri, MAX_REALM));
     EVP_DigestFinal(mdctx, ha2, &ha2_len);
     EVP_MD_CTX_destroy(mdctx);
     est_hex_to_str(ha2_str, ha2, ha2_len);
@@ -936,11 +965,11 @@ static unsigned char *est_client_generate_auth_digest (EST_CTX *ctx, char *uri,
     }
     EVP_DigestUpdate(mdctx, ha1_str, ha1_len * 2);
     EVP_DigestUpdate(mdctx, ":", 1);
-    EVP_DigestUpdate(mdctx, ctx->s_nonce, strnlen(ctx->s_nonce, MAX_NONCE));
+    EVP_DigestUpdate(mdctx, ctx->s_nonce, strnlen_s(ctx->s_nonce, MAX_NONCE));
     EVP_DigestUpdate(mdctx, ":", 1);
-    EVP_DigestUpdate(mdctx, nonce_cnt, strnlen(nonce_cnt, MAX_NC));
+    EVP_DigestUpdate(mdctx, nonce_cnt, strnlen_s(nonce_cnt, MAX_NC));
     EVP_DigestUpdate(mdctx, ":", 1);
-    EVP_DigestUpdate(mdctx, ctx->c_nonce, strnlen(ctx->c_nonce, MAX_NONCE));
+    EVP_DigestUpdate(mdctx, ctx->c_nonce, strnlen_s(ctx->c_nonce, MAX_NONCE));
     EVP_DigestUpdate(mdctx, ":", 1);
     EVP_DigestUpdate(mdctx, "auth", 4);
     EVP_DigestUpdate(mdctx, ":", 1);
@@ -975,17 +1004,17 @@ static void est_client_retrieve_credentials (EST_CTX *ctx, EST_HTTP_AUTH_MODE au
      * have.
      */
     if (ctx->userid[0] != '\0') {
-        memset(ctx->userid, 0x0, sizeof(ctx->userid));
+        memzero_s(ctx->userid, sizeof(ctx->userid));
     }
             
     if (ctx->password[0] != '\0') {
-        memset(ctx->password, 0x0, sizeof(ctx->password));
+        memzero_s(ctx->password, sizeof(ctx->password));
     }
                 
     /*
      * Need to ask the application layer for the credentials
      */
-    memset(&auth_credentials, 0x0, sizeof(auth_credentials));
+    memzero_s(&auth_credentials, sizeof(auth_credentials));
             
     if (ctx->auth_credentials_cb) {
         auth_credentials.mode = auth_mode;
@@ -1001,22 +1030,22 @@ static void est_client_retrieve_credentials (EST_CTX *ctx, EST_HTTP_AUTH_MODE au
      */
     if (auth_credentials.user == NULL) {
         user[0] = '\0'; 
-    } else if (MAX_UIDPWD < strnlen(auth_credentials.user, MAX_UIDPWD+1)) {
+    } else if (MAX_UIDPWD < strnlen_s(auth_credentials.user, MAX_UIDPWD+1)) {
         EST_LOG_ERR("Userid provided is larger than the max of %d", MAX_UIDPWD);
         user[0] = '\0'; 
     } else {
-        if (!strncpy(user, auth_credentials.user, MAX_UIDPWD)) {
+        if (EOK != strncpy_s(user, MAX_UIDPWD, auth_credentials.user, MAX_UIDPWD)) {
             EST_LOG_ERR("Invalid User ID provided");
         }
     }
     
     if (auth_credentials.pwd == NULL) {
         pwd[0] = '\0'; 
-    } else if (MAX_UIDPWD < strnlen(auth_credentials.pwd, MAX_UIDPWD+1)) {
+    } else if (MAX_UIDPWD < strnlen_s(auth_credentials.pwd, MAX_UIDPWD+1)) {
         EST_LOG_ERR("Password provided is larger than the max of %d", MAX_UIDPWD);
         pwd[0] = '\0'; 
     } else {
-        if (!strncpy(pwd, auth_credentials.pwd, MAX_UIDPWD)) {
+        if (EOK != strncpy_s(pwd, MAX_UIDPWD, auth_credentials.pwd, MAX_UIDPWD)) {
             EST_LOG_ERR("Invalid User password provided");
         }
     }
@@ -1041,14 +1070,20 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
     unsigned char client_random[8];
     char both[MAX_UIDPWD*2+2]; /* both UID and PWD + ":" + /0 */
     char both_b64[2*2*MAX_UIDPWD];
+    int both_len = 0;
     EST_HTTP_AUTH_HDR auth_credentials;
     EST_HTTP_AUTH_CRED_RC rc;
     char *token = NULL;
     char token_b64[MAX_AUTH_TOKEN_LEN*2];
-    char user[MAX_UIDPWD];
-    char pwd[MAX_UIDPWD];
+    char user[MAX_UIDPWD+1];
+    char pwd[MAX_UIDPWD+1];
+    int enc_len = 0;
+    int token_len = 0;
+
+    memzero_s(both, MAX_UIDPWD*2+2);
+    memzero_s(both_b64, 2*2*MAX_UIDPWD);
     
-    hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
+    hdr_len = (int) strnlen_s(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
         EST_LOG_WARN("Authentication header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
@@ -1064,25 +1099,13 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
          */
         if (ctx->userid[0] == '\0' && ctx->password[0] == '\0') {
 
-            memset(user, 0, MAX_UIDPWD);
-            memset(pwd, 0, MAX_UIDPWD);
+            memzero_s(user, MAX_UIDPWD+1);
+            memzero_s(pwd, MAX_UIDPWD+1);
             
             est_client_retrieve_credentials(ctx, ctx->auth_mode, user, pwd);
-
-	    /*
-	     *If valid userID and password are returned by the application continue building
-	     *the HTTP auth header. Otherwise, point the header to a NULL string since
-	     *it is not capable of Basic/Digest authentication 
-	     */
-	    if ((user[0] == '\0' || pwd[0] == '\0') && !(ctx->client_cert)){
-	      /*Force hdr to a null string */
-	      EST_LOG_ERR("No User ID or Password was provided, not trying another enrollment attempt.");
-	      memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);	  
-	      break;
-	    }
             
             /*
-             * If a user ID and password are returned, build the string containing both
+             * regardless of what comes back, build the string containing both
              */            
             snprintf(both, MAX_UIDPWD*2+2, "%s:%s", user, pwd);
         } else {
@@ -1091,23 +1114,26 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
              */
             snprintf(both, MAX_UIDPWD*2+2, "%s:%s", ctx->userid,
                      ctx->password);
-        }				    
-	  
-	  /*
-	   * base64 encode the combined string and build the HTTP auth header
-	   */
-	  est_base64_encode((const unsigned char *)both, strnlen(both, 2*MAX_UIDPWD), both_b64);
-	  snprintf(hdr + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,
-		   "Authorization: Basic %s\r\n", both_b64);
-	  break;
-    
+        }
+        
+        /*
+         * base64 encode the combined string and build the HTTP auth header
+         */
+        both_len = strnlen_s(both, MAX_UIDPWD*2+2);
+        enc_len = est_base64_encode((const char *)both, both_len, both_b64, (2*2*MAX_UIDPWD));
+        if (enc_len <= 0) {
+            EST_LOG_ERR("Unable to encode basic auth value");
+        }    
+        snprintf(hdr + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,
+                 "Authorization: Basic %s\r\n", both_b64);
+        break;
     case AUTH_DIGEST:
 
         /* Generate a client nonce */
         if (!RAND_bytes(client_random, 8)) {
             EST_LOG_ERR("RNG failure while generating nonce");
             /* Force hdr to a null string */
-            memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);
+            memzero_s(hdr, EST_HTTP_REQ_TOTAL_LEN);
             break;
         }
         
@@ -1118,25 +1144,17 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
          * up front during configuration.  If it has not, go retrieve them now, otherwise,
          * copy them into the local buffers to get them ready
          */
-        if (ctx->userid[0] == '\0' || ctx->password[0] == '\0') {
+        if (ctx->userid[0] == '\0' && ctx->password[0] == '\0') {
 
-            memset(user, 0, MAX_UIDPWD);
-            memset(pwd, 0, MAX_UIDPWD);
+            memzero_s(user, MAX_UIDPWD+1);
+            memzero_s(pwd, MAX_UIDPWD+1);
             
             est_client_retrieve_credentials(ctx, ctx->auth_mode, user, pwd);
-
-	    /*Check to make sure a valid userID and pwd was provided. If not point hdr to a null string*/
-	    if ((user[0] == '\0' || pwd[0] == '\0') && !(ctx->client_cert)){
-     	      EST_LOG_ERR("No User ID or Password was provided, not trying another enrollment attempt.");
-	      /*Force hdr to a null string */
-	      memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);	    
-	      break;
-	    }
         } else {
-            if (!strncpy(user, ctx->userid, MAX_UIDPWD)) {
+            if (EOK != strncpy_s(user, MAX_UIDPWD, ctx->userid, MAX_UIDPWD)) {
                 EST_LOG_ERR("Invalid User ID provided");
             }
-            if (!strncpy(pwd, ctx->password, MAX_UIDPWD)) {
+            if (EOK != strncpy_s(pwd, MAX_UIDPWD, ctx->password, MAX_UIDPWD)) {
                 EST_LOG_ERR("Invalid User password provided");
             }
         }
@@ -1145,10 +1163,10 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
         if (digest == NULL) {
             EST_LOG_ERR("Error while generating digest");
             /* Force hdr to a null string */
-            memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);
-            memset(ctx->c_nonce, 0, MAX_NONCE);
-            memset(user, 0, MAX_UIDPWD);
-            memset(pwd, 0, MAX_UIDPWD);
+            memzero_s(hdr, EST_HTTP_REQ_TOTAL_LEN);
+            memzero_s(ctx->c_nonce, MAX_NONCE+1);
+            memzero_s(user, MAX_UIDPWD+1);
+            memzero_s(pwd, MAX_UIDPWD+1);
             break;
         }
             
@@ -1160,17 +1178,17 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
                 uri,
                 ctx->c_nonce,
                 digest);
-        memset(digest, 0, EST_MAX_MD5_DIGEST_STR_LEN);
-        memset(ctx->c_nonce, 0, MAX_NONCE);
-        memset(user, 0, MAX_UIDPWD);
-        memset(pwd, 0, MAX_UIDPWD);
+        memzero_s(digest, EST_MAX_MD5_DIGEST_STR_LEN);
+        memzero_s(ctx->c_nonce, MAX_NONCE+1);
+        memzero_s(user, MAX_UIDPWD+1);
+        memzero_s(pwd, MAX_UIDPWD+1);
         free(digest);
         break;
     case AUTH_TOKEN:
         
         EST_LOG_INFO("Server requested Token based authentication");
 
-        memset(&auth_credentials, 0x0, sizeof(auth_credentials));
+        memzero_s(&auth_credentials, sizeof(auth_credentials));
         
         if (ctx->auth_credentials_cb) {    
             auth_credentials.mode = AUTH_TOKEN;
@@ -1186,7 +1204,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
          */
         if (auth_credentials.auth_token == NULL) {
             EST_LOG_ERR("Requested token credentials, but application did not provide any.");
-            token = "";
+            token = ""; 
         } else {
 
             /*
@@ -1194,7 +1212,7 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
              * If it is, force it to NULL to cause the auth failure at
              * the server just as if no credentials were provided
              */
-            if (MAX_AUTH_TOKEN_LEN < strnlen(auth_credentials.auth_token, MAX_AUTH_TOKEN_LEN+1)) {
+            if (MAX_AUTH_TOKEN_LEN < strnlen_s(auth_credentials.auth_token, MAX_AUTH_TOKEN_LEN+1)) {
                 EST_LOG_ERR("Token provided is larger than the max of %d",
                             MAX_AUTH_TOKEN_LEN);
                 token = "";
@@ -1203,22 +1221,18 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
             }
         }
 
-
-	/*If the token is not valid, point hdr to a null string*/
-	if((strncmp(token, "", MAX_AUTH_TOKEN_LEN) == 0) && !(ctx->client_cert)){
-	  /* Force hdr to a null string */	  
-	  EST_LOG_ERR("No valid token was provided, not trying another enrollment attempt.");
-	  memset(hdr, 0, EST_HTTP_REQ_TOTAL_LEN);
-	  break;
-	}
-
-      /*
-       * base64 encode the combined string and build the HTTP auth header
-       */
-
-	memset(token_b64, 0, MAX_AUTH_TOKEN_LEN*2);
-        est_base64_encode((const unsigned char *)token, strnlen(token, MAX_AUTH_TOKEN_LEN), token_b64);
-	
+        /*
+         * base64 encode the combined string and build the HTTP auth header
+         */
+        memzero_s(token_b64, MAX_AUTH_TOKEN_LEN*2);
+        token_len = strnlen_s(token, MAX_AUTH_TOKEN_LEN);
+        enc_len = est_base64_encode((const char *)token, token_len,
+                                    token_b64, MAX_AUTH_TOKEN_LEN*2);
+        
+        if (enc_len <= 0) {
+            EST_LOG_ERR("Unable to encode bearer token auth value");
+        }    
+        
         snprintf(hdr + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,
                  "Authorization: Bearer %s\r\n", token_b64);
 
@@ -1244,15 +1258,18 @@ static int est_client_build_cacerts_header (EST_CTX *ctx, char *hdr)
 {
     int hdr_len;
 
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "GET %s HTTP/1.1\r\n"
+    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "GET %s%s%s/%s HTTP/1.1\r\n"
             "User-Agent: %s\r\n"
             "Connection: close\r\n"
             "Host: %s:%d\r\n"
             "Accept: */*\r\n",
-            EST_CACERTS_URI,
+            EST_PATH_PREFIX,
+            (ctx->uri_path_segment?"/":""),
+            (ctx->uri_path_segment?ctx->uri_path_segment:""),
+            EST_GET_CACERTS, 
             EST_HTTP_HDR_EST_CLIENT,
             ctx->est_server, ctx->est_port_num);
-    hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
+    hdr_len = (int) strnlen_s(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
         EST_LOG_WARN("CA Certs header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
@@ -1273,16 +1290,19 @@ static int est_client_build_csr_header (EST_CTX *ctx, char *hdr)
 {
     int hdr_len;
 
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN,"GET %s HTTP/1.1\r\n"
+    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN,"GET %s%s%s/%s HTTP/1.1\r\n"
             "User-Agent: %s\r\n"
             "Connection: close\r\n"
             "Host: %s:%d\r\n"
             "Accept: */*\r\n",
-            EST_CSR_ATTRS_URI,
+            EST_PATH_PREFIX,
+            (ctx->uri_path_segment?"/":""),
+            (ctx->uri_path_segment?ctx->uri_path_segment:""),
+            EST_GET_CSRATTRS,
             EST_HTTP_HDR_EST_CLIENT,
             ctx->est_server, ctx->est_port_num);
     est_client_add_auth_hdr(ctx, hdr, EST_SIMPLE_ENROLL_URI);
-    hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
+    hdr_len = (int) strnlen_s(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
         EST_LOG_WARN("CSR attributes request header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
@@ -1348,6 +1368,7 @@ static int est_client_send_csrattrs_request (EST_CTX *ctx, SSL *ssl,
     /*
      * Send the request to the server and wait for a response
      */
+    ctx->last_http_status = 0;
     write_size = SSL_write(ssl, http_data, hdr_len);
     if (write_size < 0) {
         EST_LOG_ERR("TLS write error");
@@ -1360,7 +1381,7 @@ static int est_client_send_csrattrs_request (EST_CTX *ctx, SSL *ssl,
 	/*
          * Try to get the response from the server
          */
-        rv = est_io_get_response(ctx, ssl, EST_GET_CSRATTRS,
+        rv = est_io_get_response(ctx, ssl, EST_OP_CSRATTRS,
                                  &csr_attrs_buf, &read_size);
         switch (rv) {
         case EST_ERR_NONE:
@@ -1395,18 +1416,21 @@ static int est_client_build_enroll_header (EST_CTX *ctx, char *hdr, int pkcs10_l
 {
     int hdr_len;
 
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s HTTP/1.1\r\n"
+    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.1\r\n"
             "User-Agent: %s\r\n"
             "Connection: close\r\n"
             "Host: %s:%d\r\n"
             "Accept: */*\r\n"
             "Content-Type: application/pkcs10\r\n"
             "Content-Length: %d\r\n",
-            EST_SIMPLE_ENROLL_URI,
+            EST_PATH_PREFIX,
+            (ctx->uri_path_segment?"/":""),
+            (ctx->uri_path_segment?ctx->uri_path_segment:""),
+            EST_SIMPLE_ENROLL, 
             EST_HTTP_HDR_EST_CLIENT,
             ctx->est_server, ctx->est_port_num, pkcs10_len);
     est_client_add_auth_hdr(ctx, hdr, EST_SIMPLE_ENROLL_URI);
-    hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
+    hdr_len = (int) strnlen_s(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
         EST_LOG_WARN("Client enroll request header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
@@ -1428,18 +1452,21 @@ static int est_client_build_reenroll_header (EST_CTX *ctx, char *hdr, int pkcs10
 {
     int hdr_len;
 
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s HTTP/1.1\r\n"
+    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.1\r\n"
             "User-Agent: %s\r\n"
             "Connection: close\r\n"
             "Host: %s:%d\r\n"
             "Accept: */*\r\n"
             "Content-Type: application/pkcs10\r\n"
             "Content-Length: %d\r\n",
-            EST_RE_ENROLL_URI,
+            EST_PATH_PREFIX,
+            (ctx->uri_path_segment?"/":""),
+            (ctx->uri_path_segment?ctx->uri_path_segment:""),
+            EST_SIMPLE_REENROLL, 
             EST_HTTP_HDR_EST_CLIENT,
             ctx->est_server, ctx->est_port_num, pkcs10_len);
     est_client_add_auth_hdr(ctx, hdr, EST_SIMPLE_ENROLL_URI);
-    hdr_len = (int) strnlen(hdr, EST_HTTP_REQ_TOTAL_LEN);
+    hdr_len = (int) strnlen_s(hdr, EST_HTTP_REQ_TOTAL_LEN);
     if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
         EST_LOG_WARN("Client reenroll request header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
@@ -1517,7 +1544,8 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
     /*
      * Build the HTTP body containing the pkcs10 request
      */
-    memcpy(http_data + hdr_len, bptr->data, bptr->length);
+    memcpy_s(http_data + hdr_len, EST_HTTP_REQ_DATA_MAX,
+             bptr->data, (rsize_t)bptr->length);
     hdr_len += bptr->length;
 
     /*
@@ -1530,6 +1558,7 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
     /*
      * Send the request to the server and wait for a response
      */
+    ctx->last_http_status = 0;
     write_size = SSL_write(ssl, http_data, hdr_len);
     if (write_size < 0) {
         EST_LOG_ERR("TLS write error");
@@ -1542,11 +1571,11 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
         /*
          * Try to get the response from the server
          */
-        rv = est_io_get_response(ctx, ssl, EST_SIMPLE_ENROLL,
+        rv = est_io_get_response(ctx, ssl, EST_OP_SIMPLE_ENROLL,
                                  &enroll_buf, &enroll_buf_len);
         switch (rv) {
         case EST_ERR_NONE:
-            memcpy(pkcs7, enroll_buf, enroll_buf_len);
+            memcpy_s(pkcs7, EST_MAX_CLIENT_CERT_LEN, enroll_buf, enroll_buf_len);
             *pkcs7_len = enroll_buf_len;
             break;
         case EST_ERR_AUTH_FAIL:
@@ -1558,7 +1587,7 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
         }
         free(enroll_buf);
     }
-    OPENSSL_cleanse(http_data, strnlen(http_data, EST_HTTP_REQ_TOTAL_LEN));
+    OPENSSL_cleanse(http_data, strnlen_s(http_data, EST_HTTP_REQ_TOTAL_LEN));
     free(http_data);
     http_data = NULL;
     return (rv);
@@ -1587,25 +1616,6 @@ static EST_ERROR est_client_check_x509 (X509 *cert)
     if (cert->signature->length <= 0) {
 	EST_LOG_ERR("The certificate provided contains an invalid signature length.");
 	return (EST_ERR_BAD_X509);
-    }
-    return (EST_ERR_NONE);
-}
-
-/*
- * This function does a sanity check on the CSR
- * prior to attempting to use the CSR for a
- * simple enroll operation.
- *
- * Returns an EST_ERROR code
- */
-static EST_ERROR est_client_check_csr (X509_REQ *csr) 
-{
-    /*
-     * Attempt to get the signature on the CSR
-     */
-    if(csr->signature && csr->signature->length > 0) {
-	EST_LOG_ERR("The CSR provided was already signed.  libest will only accept an unsigned CSR since libest performs the signing operation on the CSR.");
-	return (EST_ERR_CSR_ALREADY_SIGNED);
     }
     return (EST_ERR_NONE);
 }
@@ -1678,6 +1688,11 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
      * Grab the PKCS10 PEM encoded data
      */
     b64 = BIO_new(BIO_f_base64());
+    if (!b64) {
+        EST_LOG_ERR("BIO_new failed");
+        ossl_dump_ssl_errors();
+        return EST_ERR_MALLOC;
+    }
     p10out = BIO_new(BIO_s_mem());
     if (!p10out) {
         EST_LOG_ERR("BIO_new failed");
@@ -1688,7 +1703,12 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
 
     /*
      * Encode using DER (ASN.1) 
-     */
+     *
+     * We have to set the modified flag on the X509_REQ because
+     * OpenSSL keeps a cached copy of the DER encoded data in some
+     * cases.  Setting this flag tells OpenSSL to run the ASN
+     * encoding again rather than using the cached copy.
+     * */
     req->req_info->enc.modified = 1; 
     i2d_X509_REQ_bio(p10out, req);
     (void)BIO_flush(p10out);
@@ -1698,6 +1718,10 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
      * Get the buffer in which to place the entire response from the server
      */
     recv_buf = malloc(EST_CA_MAX);
+    if (recv_buf == NULL) {
+        EST_LOG_ERR("Failed to allocate buffer for server response");
+        return EST_ERR_MALLOC;
+    }
     new_cert_buf = recv_buf; 
     new_cert_buf_len = 0;
 
@@ -1736,7 +1760,8 @@ static EST_ERROR est_client_enroll_req (EST_CTX *ctx, SSL *ssl, X509_REQ *req,
             break;
         }
         ctx->enrolled_client_cert[new_cert_buf_len] = '\0';
-        memcpy(ctx->enrolled_client_cert, new_cert_buf, new_cert_buf_len);
+        memcpy_s(ctx->enrolled_client_cert, new_cert_buf_len+1, new_cert_buf,
+                 new_cert_buf_len);
         ctx->enrolled_client_cert_len = new_cert_buf_len;
 
         /*
@@ -2015,10 +2040,20 @@ static int est_client_hostmatch(const char *hostname, const char *pattern)
     const char *pattern_label_end, *pattern_wildcard, *hostname_label_end;
     int wildcard_enabled;
     size_t prefixlen, suffixlen;
+    struct in_addr ignored;
+    struct sockaddr_in6 si6;
+
     pattern_wildcard = strchr(pattern, '*');
     if(pattern_wildcard == NULL) {
 	return est_client_Curl_raw_equal(pattern, hostname) ? HOST_MATCH : HOST_NOMATCH;
     }
+    
+    /* detect IP address as hostname and fail the match if so */
+    if(inet_pton(AF_INET, hostname, &ignored) > 0)
+        return HOST_NOMATCH;
+    else if(inet_pton(AF_INET6, hostname, &si6.sin6_addr) > 0)
+        return HOST_NOMATCH;
+
     /* We require at least 2 dots in pattern to avoid too wide wildcard
        match. */
     wildcard_enabled = 1;
@@ -2077,6 +2112,8 @@ static int est_client_cert_hostcheck(const char *match_pattern, const char *host
 /* 
  * This function was taken from cURL and adapted to EST.
  *
+ * cURL file name is ./lib/ssluse.c, function: verifyhost()
+ *
  * Quote from RFC2818 section 3.1 "Server Identity"
 
    If a subjectAltName extension of type dNSName is present, that MUST
@@ -2110,8 +2147,10 @@ static EST_ERROR est_client_verifyhost (char *hostname, X509 *server_cert)
     int addr_is_v6 = 0;
     EST_ERROR res = EST_ERR_NONE;
     int rv;
+    errno_t safec_rc;
     int numalts;
     int i, j;
+    int diff;
     const GENERAL_NAME *check; 
     const char *altptr; 
     size_t altlen; 
@@ -2169,7 +2208,7 @@ static EST_ERROR est_client_verifyhost (char *hostname, X509 *server_cert)
                    "I checked the 0.9.6 and 0.9.8 sources before my patch and
                    it always 0-terminates an IA5String."
                  */
-                if ((altlen == strnlen(altptr, EST_MAX_SERVERNAME_LEN)) &&
+                if ((altlen == strnlen_s(altptr, EST_MAX_SERVERNAME_LEN)) &&
                     /* if this isn't true, there was an embedded zero in the name
                        string and we cannot match it. */
                     est_client_cert_hostcheck(altptr, hostname)) {
@@ -2182,9 +2221,27 @@ static EST_ERROR est_client_verifyhost (char *hostname, X509 *server_cert)
             case GEN_IPADD: /* IP address comparison */
                 /* compare alternative IP address if the data chunk is the same size
                    our server IP address is */
-                if ((addr_is_v4) && (altlen == addrlen) && !memcmp(altptr, &addr_v4, altlen)) {
+
+                 if (addr_is_v4) {
+                    safec_rc = memcmp_s(altptr, altlen, &addr_v4, altlen, &diff);
+                    if (safec_rc != EOK) {
+                    	EST_LOG_INFO("memcmp_s error 0x%xO with IPv4 address\n", safec_rc);
+                    }  
+                 } else if (addr_is_v6) {
+                    safec_rc = memcmp_s(altptr, altlen, &addr_v6, altlen, &diff);
+                    if (safec_rc != EOK) {
+                    	EST_LOG_INFO("memcmp_s error 0x%xO with IPv6 address\n", safec_rc);
+                    }  
+                 } else {
+                   /*
+                    * Should never get here...so force matched to be 0
+                    */
+	           diff = -1; 
+	 	 }
+
+                if ((addr_is_v4) && (altlen == addrlen) && !diff) {
                     matched = 1;
-                } else if ((addr_is_v6) && (altlen == addrlen) && !memcmp(altptr, &addr_v6, altlen)) {
+                } else if ((addr_is_v6) && (altlen == addrlen) && !diff) {
                     matched = 1;
                 } else{
                     matched = 0;
@@ -2237,14 +2294,17 @@ static EST_ERROR est_client_verifyhost (char *hostname, X509 *server_cert)
                     if (j >= 0) {
                         peer_CN = malloc(j + 1);
                         if (peer_CN) {
-                            memcpy(peer_CN, ASN1_STRING_data(tmp), j);
+			    safec_rc = memcpy_s(peer_CN, j, ASN1_STRING_data(tmp), j);
+                            if (safec_rc != EOK) {
+				EST_LOG_INFO("memcpy_s error 0x%xO with ASN1 string\n", safec_rc);
+                            }
                             peer_CN[j] = '\0';
                         }
                     }
                 }else  { /* not a UTF8 name */
                     j = ASN1_STRING_to_UTF8(&peer_CN, tmp);
                 }
-                if (peer_CN && (strnlen((char*)peer_CN, EST_MAX_SERVERNAME_LEN) != j)) {
+                if (peer_CN && (strnlen_s((char*)peer_CN, EST_MAX_SERVERNAME_LEN) != j)) {
                     /* there was a terminating zero before the end of string, this
                        cannot match and we return failure! */
                     EST_LOG_WARN("SSL: illegal cert name field");
@@ -2338,8 +2398,12 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
     BIO             *tcp;
     SSL_CTX         *s_ctx;
     EST_ERROR       rv = EST_ERR_NONE;
-    int             sock;
-    int             rc;
+#ifndef WIN32
+	int             sock;
+#else
+	SOCKET			sock = INVALID_SOCKET;
+#endif
+    int             rc; 
     struct          addrinfo hints, *ai, *aiptr;
     char            portstr[12];
     int             oval = 1;
@@ -2356,7 +2420,7 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
      * We'll need to open a raw socket ourselves and pass that to OpenSSL.
      */
     snprintf(portstr, sizeof(portstr), "%u", ctx->est_port_num);
-    memset(&hints, '\0', sizeof(hints));
+    memzero_s(&hints, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_ADDRCONFIG;  
@@ -2411,7 +2475,12 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
      * to create the TLS session.
      */
     tcp = BIO_new_socket(sock, BIO_CLOSE);
-
+    if (tcp == NULL) {
+        EST_LOG_ERR("Error creating IP socket");
+        ossl_dump_ssl_errors();
+        return (EST_ERR_IP_CONNECT);
+    }        
+    
     if (!(*ssl = SSL_new(s_ctx))) {
         EST_LOG_ERR("Error creating TLS context");
         ossl_dump_ssl_errors();
@@ -2431,7 +2500,7 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
     }
     if (SSL_connect(*ssl) <= 0) {
         EST_LOG_ERR("Error connecting TLS context");
-	ossl_dump_ssl_errors();
+	ossl_dump_ssl_errors();   
         rv = EST_ERR_SSL_CONNECT;
     }
     /*
@@ -2538,6 +2607,7 @@ static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
     /*
      * Send the request to the server and wait for a response
      */
+    ctx->last_http_status = 0;
     write_size = SSL_write(ssl, http_data, hdr_len);
     if (write_size < 0) {
         EST_LOG_ERR("TLS write error");
@@ -2550,7 +2620,7 @@ static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
         /*
          * Try to get the response from the server
          */
-        rv = est_io_get_response(ctx, ssl, EST_GET_CACERTS,
+        rv = est_io_get_response(ctx, ssl, EST_OP_CACERTS,
                                  &ca_certs_buf, &ca_certs_buf_len);
 
         switch (rv) {
@@ -2588,7 +2658,8 @@ static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
             }
             
             ctx->retrieved_ca_certs[ca_certs_buf_len] = '\0';
-            memcpy(ctx->retrieved_ca_certs, ca_certs_buf, ca_certs_buf_len);
+            memcpy_s(ctx->retrieved_ca_certs, ca_certs_buf_len+1, ca_certs_buf,
+                   ca_certs_buf_len);
             ctx->retrieved_ca_certs_len = ca_certs_buf_len;
 
             /*
@@ -2657,11 +2728,14 @@ EST_ERROR est_client_set_uid_pw (EST_CTX *ctx, const char *uid, const char *pwd)
      * if uid/pwd set, then we're doing basic/digest authentication
      */
     if (uid != NULL) {
-	if (strlen(uid) > MAX_UIDPWD-1) {
-	    return EST_ERR_INVALID_PARAMETERS;
-	}
-        strncpy(ctx->userid, uid, MAX_UIDPWD); 
-        strncpy(ctx->password, pwd, MAX_UIDPWD);
+        if (EOK != strncpy_s(ctx->userid, MAX_UIDPWD, uid, MAX_UIDPWD)) {
+            EST_LOG_ERR("Invalid User ID provided");
+            return EST_ERR_INVALID_PARAMETERS;   
+        }
+        if (EOK != strncpy_s(ctx->password, MAX_UIDPWD, pwd, MAX_UIDPWD)) {
+            EST_LOG_ERR("Invalid Password provided");
+            return EST_ERR_INVALID_PARAMETERS;
+        }
     }
 
     return (EST_ERR_NONE);
@@ -2680,7 +2754,7 @@ EST_ERROR est_client_set_uid_pw (EST_CTX *ctx, const char *uid, const char *pwd)
     @param pkcs7_len Pointer to an integer to hold the length of the PKCS7
     buffer.
     @param priv_key Pointer to the private key that will be used to sign the CSR,
-    or NULL if the CSR is already signed.
+    or NULL
  
     @return EST_ERROR
 
@@ -2689,9 +2763,9 @@ EST_ERROR est_client_set_uid_pw (EST_CTX *ctx, const char *uid, const char *pwd)
     est_client_set_server(), and sends the simple enroll request.  The application
     layer must provide the PKCS10 CSR that will be enrolled.
     If the priv_key argument given is not NULL, then the CSR should not
-    need to be signed by the private key, and the EST library will take care of
-    signing the CSR.  However, the CSR must contain everything else that is
-    required, including the public key.  
+    need to be signed by the private key. However, the CSR must contain everything 
+    else that is required, including the public key. If the private key is provided
+    with an already signed CSR, then the EST library will re-sign the CSR. 
     
     The enroll response is stored in the EST context and the length 
     is passed back to the application through the pkcs7_len paramter of this 
@@ -2707,7 +2781,7 @@ EST_ERROR est_client_set_uid_pw (EST_CTX *ctx, const char *uid, const char *pwd)
     again.
 
     Be aware that the X509_REQ data passed to this function must be valid.  Passing
-    corrupted CSR data may result in a system crash.  libest utilizes the OpenSSL
+    corrupted CSR data may result in a system crash.  libEST utilizes the OpenSSL
     ASN decoding logic to read the X509_REQ data.  OpenSSL does not perform
     safety checks on the X509_REQ data when parsing.  If your application is
     reading externally generated PEM or DER encoded CSR data, then please use
@@ -2731,15 +2805,6 @@ EST_ERROR est_client_enroll_csr (EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EV
         return EST_ERR_CLIENT_NOT_INITIALIZED;
     }
 
-    if (priv_key) {
-	/*
-	 * Do a sanity check on the CSR
-	*/
-        rv = est_client_check_csr(csr); 
-	if (EST_ERR_NONE != rv) {
-	    return (rv);
-	}
-    }
     /*
      * Establish TLS session with the EST server
      */
@@ -2883,7 +2948,7 @@ EST_ERROR est_client_enroll (EST_CTX *ctx, char *cn, int *pkcs7_len,
                             ctx->token_error, ctx->token_error_desc);
                 ctx->token_error[0] = '\0';
                 ctx->token_error_desc[0] = '\0';
-            }
+            }            
         }
         
         est_client_disconnect(ctx, &ssl);
@@ -2929,8 +2994,9 @@ EST_ERROR est_client_enroll (EST_CTX *ctx, char *cn, int *pkcs7_len,
     est_client_enroll() 
 
     This function takes a Common Name (CN) as the only entity identifier
-    that will be used in the certificate.  If additional X509 attributes
-    or extensions are required, then this function should not be used
+    that will be used in the CSR.  If additional X509 attributes
+    or extensions are required because the EST server is enforcing the
+    presence of all the CSR attributes, then this function should not be used
     to provision a certificate.  The est_client_enroll_csr() function should
     be used when additional X509 attributes are to be included in the
     enroll request. 
@@ -2986,6 +3052,11 @@ EST_ERROR est_client_provision_cert (EST_CTX *ctx, char *cn,
 	return rv;
     }
     new_ta_p7 = malloc(*ca_cert_len);
+    if (new_ta_p7 == NULL) {
+        EST_LOG_ERR("Unable to allocate CA certs buffer");
+        rv = EST_ERR_MALLOC;
+        return rv;
+    }
     rv = est_client_copy_cacerts(ctx, new_ta_p7);
     if (rv != EST_ERR_NONE) {
 	free(new_ta_p7);
@@ -3024,7 +3095,7 @@ EST_ERROR est_client_provision_cert (EST_CTX *ctx, char *cn,
     ctx->est_client_initialized = 1;
 
     /*
-     * Next we need to get the CSR attributes, which allows libest
+     * Next we need to get the CSR attributes, which allows libEST
      * to know if the challengePassword needs to be included in the
      * CSR.
      */
@@ -3120,23 +3191,6 @@ EST_ERROR est_client_reenroll (EST_CTX *ctx, X509 *cert, int *pkcs7_len, EVP_PKE
         return (EST_ERR_CLIENT_INVALID_KEY);
     }
 
-    /*
-     * Ensure the enrolled certificate fits with the
-     * current trust anchor before using it. 
-     */
-    
-    if (cert && (ctx->userid[0] == '\0' && ctx->password[0] == '\0')) {
-      if (!priv_key) {
-	return EST_ERR_NO_KEY;
-      }
-      else {	
-	  rv = ossl_check_cert(cert, priv_key, ctx->ssl_ctx);
-	  if (rv != EST_ERR_NONE) {
-	    return (rv);
-	  }
-      }
-    }
-    
     /*
      * Convert the existing certificate to a CSR
      * This will copy the subject name from the cert into
@@ -3270,8 +3324,9 @@ EST_ERROR est_client_copy_enrolled_cert (EST_CTX *ctx, unsigned char *pkcs7)
         return(EST_ERR_NO_CERTIFICATE);
     }
 
-    memset(pkcs7, 0, ctx->enrolled_client_cert_len);            
-    memcpy(pkcs7, ctx->enrolled_client_cert, ctx->enrolled_client_cert_len);
+    memzero_s(pkcs7, ctx->enrolled_client_cert_len);
+    memcpy_s(pkcs7, ctx->enrolled_client_cert_len, ctx->enrolled_client_cert,
+             ctx->enrolled_client_cert_len);
     
     /*
      * Now that the copy in the context has been handed over,
@@ -3382,8 +3437,9 @@ EST_ERROR est_client_copy_cacerts (EST_CTX *ctx, unsigned char *ca_certs)
         return(EST_ERR_NO_CERTIFICATE);
     }
 
-    memset(ca_certs, 0, ctx->retrieved_ca_certs_len);
-    memcpy(ca_certs, ctx->retrieved_ca_certs, ctx->retrieved_ca_certs_len);
+    memzero_s(ca_certs, ctx->retrieved_ca_certs_len);
+    memcpy_s(ca_certs, ctx->retrieved_ca_certs_len, ctx->retrieved_ca_certs,
+             ctx->retrieved_ca_certs_len);
 
     /*
      * if the CA certs were obtained, then the client lib needs to be reset.
@@ -3412,7 +3468,7 @@ EST_ERROR est_client_copy_cacerts (EST_CTX *ctx, unsigned char *ca_certs)
 EST_ERROR est_client_get_csrattrs (EST_CTX *ctx, unsigned char **csr_data, int *csr_len)
 {
     int rv, new_csr_len, pop_required = 0;
-    SSL *ssl;
+    SSL *ssl = NULL;
     unsigned char *new_csr_data;
 
     if (!ctx) {
@@ -3436,6 +3492,11 @@ EST_ERROR est_client_get_csrattrs (EST_CTX *ctx, unsigned char **csr_data, int *
      */
     rv = est_client_connect(ctx, &ssl);
     if (rv != EST_ERR_NONE) {
+        if (ssl) {
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+        }
+
         return (rv);
     }
 
@@ -3461,7 +3522,16 @@ EST_ERROR est_client_get_csrattrs (EST_CTX *ctx, unsigned char **csr_data, int *
 	if (new_csr_data) {
 	    free(new_csr_data);
 	}
+	if (ssl) {
+	    SSL_shutdown(ssl);
+	    SSL_free(ssl);
+	}
 	return (rv);
+    }
+
+    if (ssl) {
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
     }
 
     if (new_csr_data == NULL) {
@@ -3479,7 +3549,7 @@ EST_ERROR est_client_get_csrattrs (EST_CTX *ctx, unsigned char **csr_data, int *
     }
 
     ctx->retrieved_csrattrs_len = new_csr_len;
-    memcpy(ctx->retrieved_csrattrs, new_csr_data, new_csr_len);
+    memcpy_s(ctx->retrieved_csrattrs, new_csr_len+1, new_csr_data, new_csr_len);
     ctx->retrieved_csrattrs[new_csr_len] = 0;
     EST_LOG_INFO("CSR attributes are(%d): %s", ctx->retrieved_csrattrs_len, 
 		 ctx->retrieved_csrattrs);
@@ -3525,7 +3595,7 @@ EST_ERROR est_client_get_csrattrs (EST_CTX *ctx, unsigned char **csr_data, int *
 
     All string parameters are NULL terminated strings.
     
-    @return EST_ERROR.  If error, NULL.
+    @return EST_ERROR.  
 */
 EST_ERROR est_client_enable_srp (EST_CTX *ctx, int strength, char *uid, char *pwd) 
 {
@@ -3647,24 +3717,6 @@ EST_ERROR est_client_set_auth (EST_CTX *ctx, const char *uid, const char *pwd,
     ctx->auth_mode = AUTH_NONE;
 
     /*
-     * Ensure the enrolled certificate fits with the
-     * current trust anchor before using it. 
-     */
-    
-    if (client_cert && (uid == NULL && pwd == NULL)) {
-      if (!private_key) {
-	return EST_ERR_NO_KEY;
-      }
-      else {	
-	  rv = ossl_check_cert(client_cert, private_key, ctx->ssl_ctx);
-	  if (rv != EST_ERR_NONE) {
-	    return (rv);
-	  }
-      }
-      } 
-
-
-    /*
      * cache away the client cert and the associated private key, then
      * get them loaded into the SSL context so that they'll be used.
      */
@@ -3754,7 +3806,7 @@ EST_ERROR est_client_set_auth_cred_cb (EST_CTX *ctx, auth_credentials_cb callbac
  
     @param ctx Pointer to EST context for a client session
 
-    Normally libest will send an anonymous HTTP request when doing the
+    Normally libEST will send an anonymous HTTP request when doing the
     initial request from the EST server.  This function allows an application 
     to improve performance by sending the HTTP Basic Auth header in the initial 
     request sent to the EST server.  This eliminates the need for the server to send
@@ -3821,6 +3873,20 @@ EST_CTX *est_client_init (unsigned char *ca_chain, int ca_chain_len,
     EST_CTX *ctx;
     volatile int len;
     int rv;
+	
+#ifdef WIN32
+	int iResult;
+
+	/*
+	*Initialize Winsock
+	*/
+	iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+	if (iResult != 0) {
+		EST_LOG_ERR("WSAStartup Failed: %d\n", iResult);
+		return 0;
+
+	}
+#endif	
 
     if (cert_format != EST_CERT_FORMAT_PEM) {
         EST_LOG_ERR("Only PEM encoding of certificates is supported.");
@@ -3834,7 +3900,7 @@ EST_CTX *est_client_init (unsigned char *ca_chain, int ca_chain_len,
      * null terminated.
      */
     if (ca_chain) {    
-        len = (int) strnlen((char *)ca_chain, EST_CA_MAX);
+        len = (int) strnlen_s((char *)ca_chain, EST_CA_MAX);
         if (len != ca_chain_len) {
             EST_LOG_ERR("Length of ca_chain doesn't match passed ca_chain_len");
             return NULL;
@@ -3846,7 +3912,7 @@ EST_CTX *est_client_init (unsigned char *ca_chain, int ca_chain_len,
         EST_LOG_ERR("Unable to allocate memory for EST Context");
         return NULL;
     }
-    memset(ctx, 0, sizeof(EST_CTX));
+    memzero_s(ctx, sizeof(EST_CTX));
     ctx->est_mode = EST_CLIENT;
 
     /*
@@ -3873,10 +3939,7 @@ EST_CTX *est_client_init (unsigned char *ca_chain, int ca_chain_len,
     ctx->manual_cert_verify_cb = cert_verify_cb;
     
     /*
-     * PDB TODO: change this to be configurable with a default value when the
-     * init() API changes to using X509 structures instead of char buffers.
-     *
-     * For now, hard code the socket read timeout to 10 seconds
+     * Set the default value for the  socket read timeout.
      */
     ctx->read_timeout = EST_SSL_READ_TIMEOUT_DEF;
 
@@ -3895,6 +3958,70 @@ EST_CTX *est_client_init (unsigned char *ca_chain, int ca_chain_len,
     return (ctx);
 }
 
+#ifdef HAVE_URIPARSER
+static EST_ERROR est_client_parse_path_seg (char *path_seg) 
+{
+    UriParserStateA state;
+    UriUriA parsed_uri;
+    int uriparse_rc;
+    UriPathSegmentA *cur_seg = NULL;
+    char *cur_seg_str = NULL;
+    EST_OPERATION operation;
+    char canned_uri[EST_URI_MAX_LEN];
+
+    /*
+     * build out a canned URI to pass to the uriparser library.
+     * This will cause the incoming path segment to be in the
+     * correct spot within a URI as it gets validated.  Main issue
+     * is the possible use of a ':' in the path segment becoming a
+     * theme delimiter
+     */
+    memzero_s(canned_uri, EST_URI_MAX_LEN);
+    strcpy_s(canned_uri, EST_URI_MAX_LEN, "/.well-known/est/");
+    strcat_s(canned_uri, EST_URI_MAX_LEN, path_seg);
+
+    state.uri = &parsed_uri;
+    uriparse_rc = uriParseUriA(&state, canned_uri);
+    if (uriparse_rc != URI_SUCCESS) {
+        uriFreeUriMembersA(state.uri);
+        return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+    }
+
+    cur_seg = parsed_uri.pathHead;
+    if (cur_seg == NULL) {
+        EST_LOG_ERR("No valid path segment in supplied string");
+        uriFreeUriMembersA(state.uri);
+        return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+    }
+
+    cur_seg = cur_seg->next->next;
+    cur_seg_str = (char *)cur_seg->text.first;
+    operation = est_parse_operation(cur_seg_str);
+        /*
+         * look to see if the operation path comes next:
+         * cacerts, csrattrs, simpleenroll, simplereenroll.
+         * If any of the operations occur in this path segment
+         * string, then this is a problem.
+         */
+    if (operation != EST_OP_MAX) {
+        EST_LOG_ERR("Path segment string contains an operation value. path segment passed in =  %s\n", cur_seg_str);
+        uriFreeUriMembersA(state.uri);
+        return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+    }
+
+    /*
+     * Look to see if there are multiple segments
+     */
+    if ((char *)cur_seg->next != NULL || *(cur_seg->text.afterLast) != '\0') {
+        EST_LOG_ERR("Path segment string contains multiple path segments or more than a path segment");
+        uriFreeUriMembersA(state.uri);        
+        return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+    }
+    
+    uriFreeUriMembersA(state.uri);    
+    return (EST_ERR_NONE);
+}
+#endif
 
 /*! @brief est_client_set_server() is called by the application layer to
      specify the address/port of the EST server. It must be called after
@@ -3904,6 +4031,8 @@ EST_CTX *est_client_init (unsigned char *ca_chain, int ca_chain_len,
     @param server Name of the EST server to connect to.  The ASCII string
     representing the name of the server is limited to 254 characters
     @param port TCP port on the EST server to connect
+    @param path_segment A string containing the optional path segment
+    to be added to the URI.  If not used, set to NULL.
  
     @return EST_ERROR
     EST_ERR_NONE - Success.
@@ -3917,8 +4046,10 @@ EST_CTX *est_client_init (unsigned char *ca_chain, int ca_chain_len,
     est_client_set_server error checks its input parameters and then stores
     both the hostname and port number into the EST context.
  */
-EST_ERROR est_client_set_server (EST_CTX *ctx, const char *server, int port)
+EST_ERROR est_client_set_server (EST_CTX *ctx, const char *server, int port,
+                                 char *path_segment)
 {
+    
     if (!ctx) {
         return EST_ERR_NO_CTX;
     }
@@ -3931,18 +4062,67 @@ EST_ERROR est_client_set_server (EST_CTX *ctx, const char *server, int port)
         return EST_ERR_INVALID_SERVER_NAME;
     }
     
-    if (strlen(server) > EST_MAX_SERVERNAME_LEN-1) {
-        return EST_ERR_INVALID_SERVER_NAME;
-    }
-    
     if (port <= 0 || port > 65535) {
         return EST_ERR_INVALID_PORT_NUM;
     }
     
-    strncpy(ctx->est_server, server, EST_MAX_SERVERNAME_LEN);
+    if (EOK != strncpy_s(ctx->est_server, EST_MAX_SERVERNAME_LEN, server,
+                         EST_MAX_SERVERNAME_LEN)) {
+        return EST_ERR_INVALID_SERVER_NAME;
+    }   
 
     ctx->est_port_num = port;
 
+#ifdef HAVE_URIPARSER
+    {
+        int path_segment_len;
+        EST_ERROR rc;
+
+        if (path_segment != NULL) {
+
+            if (*path_segment == '\0') {
+                return EST_ERR_HTTP_INVALID_PATH_SEGMENT;
+            }
+            
+            /*
+             * Make sure it's not too long
+             */
+            path_segment_len = strnlen_s(path_segment, EST_MAX_PATH_SEGMENT_LEN+1);
+            if (path_segment_len > EST_MAX_PATH_SEGMENT_LEN) {
+                return EST_ERR_HTTP_INVALID_PATH_SEGMENT;
+            }
+
+            /*
+             * Validate the incoming path segment string
+             */
+            rc = est_client_parse_path_seg(path_segment);
+            if (rc != EST_ERR_NONE) {
+                EST_LOG_ERR("path segment failed validation.");
+                return (rc);
+            }
+
+            /*
+             * valid.  store it away in the context
+             */
+            rc = est_store_path_segment(ctx, path_segment, path_segment_len);
+            if (rc != EST_ERR_NONE) {
+                EST_LOG_ERR("Failed to store URI path segment.");
+                return (rc);
+            }        
+        }
+    }
+#else
+    {
+        /*
+         * If no uriparser support, then we cannot support
+         * a path segment being passed in
+         */
+        if (path_segment) {
+            EST_LOG_ERR("Use of path segments not supported in this build of libEST.");
+            return EST_ERR_HTTP_PATH_SEGMENT_NOT_SUPPORTED;
+        }  
+    }
+#endif
     return EST_ERR_NONE;
 }
 
@@ -3960,7 +4140,7 @@ EST_ERROR est_client_set_server (EST_CTX *ctx, const char *server, int port)
     EST_ERR_NO_CTX - NULL value passed for EST context
     EST_ERR_INVALID_DIGEST - An unsupported NID was provided.
 
-    libest supports SHA1, SHA224, SHA256, SHA384, and SHA512 digests.  
+    libEST supports SHA1, SHA224, SHA256, SHA384, and SHA512 digests.
     SHA256 is the default digest to use for signing.  There's no need
     to invoke this function unless another digest is desired. The
     supported NID values are:
@@ -4145,4 +4325,31 @@ EST_ERROR est_client_set_read_timeout (EST_CTX *ctx, int timeout)
         
     ctx->read_timeout = timeout;
     return (EST_ERR_NONE);
+}
+
+/*! @brief est_client_get_last_http_status() is used by an application to get
+    the HTTP status code returned by the EST server for the most recent
+    operation. 
+
+    @param ctx Pointer to the EST context
+
+    This can be called after an EST operation, such as an enroll operation.
+    This function will return the most recent HTTP status code received
+    from the EST server.  Normally, a status of 200 would be returned
+    by the EST server to indicate a successful operation.  However, if the
+    operation failed for some reason, the HTTP status code may be useful
+    to understand the reason for failure.  For instance, the EST server 
+    would return a HTTP status of 401 if the EST client was not authorized.
+    Please see RFC 2616 for a description of the various HTTP status codes.
+ 
+    @return int value representing the HTTP status code, or NULL if the
+    a NULL EST context was provided.
+ */
+int est_client_get_last_http_status (EST_CTX *ctx)
+{
+    if (ctx) {
+	return ctx->last_http_status;
+    } else {
+	return 0;
+    }
 }

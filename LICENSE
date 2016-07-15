@@ -59,7 +59,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 ******************************************************************************
 * libcurl license
 *
-* CiscoEST uses RFC 6125 FQDN logic from libcurl
+* libEST uses RFC 6125 FQDN logic from libcurl
 ******************************************************************************
 COPYRIGHT AND PERMISSION NOTICE
 
@@ -88,7 +88,7 @@ in this Software without prior written authorization of the copyright holder.
 ******************************************************************************
 * libwww license
 *
-* CiscoEST uses HTTP header parsing logic from libwww
+* libEST uses HTTP header parsing logic from libwww
 ******************************************************************************
 libwww: W3C's implementation of HTTP can be found at: http://www.w3.org/Library/
 
@@ -101,7 +101,7 @@ Copyright © 1995 CERN. This product includes computer software created and made
 ******************************************************************************
 * openssl license
 *
-* CiscoEST uses some OpenSSL code in the example server
+* libEST uses some OpenSSL code in the example server
 ******************************************************************************
 /* Copyright (C) 1995-1998 Eric Young (eay@cryptsoft.com)
  * All rights reserved.
@@ -159,4 +159,3 @@ Copyright © 1995 CERN. This product includes computer software created and made
  * copied and put under another distribution licence
  * [including the GNU Public Licence.]
  */
-

@@ -3,7 +3,7 @@
  *
  * November, 2012
  *
- * Copyright (c) 2012-2014 by cisco Systems, Inc.
+ * Copyright (c) 2012-2014, 2016 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -12,7 +12,24 @@
 #define HEADER_EST_LOCL_H
 #include <openssl/srp.h>
 
+/* Windows only option: Export local API functions for testing */
+#ifdef WIN32
+#ifdef DEVTEST
+#ifdef DT_EXPORTS
+#define LIBEST_TEST_API __declspec(dllexport) 
+#else
+#define LIBEST_TEST_API __declspec(dllimport) 
+#endif /* DT_EXPORTS */ 
+#else
+#define LIBEST_TEST_API
+#endif /* DEVTEST */ 
+#else
+#define LIBEST_TEST_API
+#endif /* WIN32 */ 
+
+#ifndef WIN32
 #include "est_config.h"
+#endif 
 /*
  * Version identifiers.  These should be updated appropriately
  * for each release.
@@ -20,11 +37,15 @@
 #define EST_API_LEVEL       4  //Update this whenever there's a change to the public API
 #define EST_VER_STRING      PACKAGE_STRING
 
-#define EST_URI_MAX_LEN     32
+#define EST_URI_PATH_PREFIX_MAX_LEN (16)
+/* one segment for the possible CA path seg and one for the operation path */
+#define EST_URI_MAX_LEN     (EST_URI_PATH_PREFIX_MAX_LEN+EST_MAX_PATH_SEGMENT_LEN+EST_MAX_PATH_SEGMENT_LEN)
 #define EST_BODY_MAX_LEN    16384
 #define EST_CA_MAX	    1000000
 #define EST_TLS_UID_LEN     17
 #define EST_RAW_CSR_LEN_MAX 8192
+
+#define EST_MAX_CONTENT_LEN 8192
 
 /* The retry-after values below are in seconds */
 #define EST_RETRY_PERIOD_DEF	3600 
@@ -51,12 +72,14 @@
 #define EST_HTTP_STAT_400	    400 
 #define EST_HTTP_STAT_401	    401
 #define EST_HTTP_STAT_404	    404
+#define EST_HTTP_STAT_423	    423
 
 #define EST_HTTP_STAT_202_TXT	    "Accepted" 
 #define EST_HTTP_STAT_204_TXT	    "No Content" 
 #define EST_HTTP_STAT_400_TXT	    "Bad Request" 
 #define EST_HTTP_STAT_401_TXT	    "Unauthorized" 
 #define EST_HTTP_STAT_404_TXT	    "Not Found" 
+#define EST_HTTP_STAT_423_TXT	    "Locked"
 
 #define EST_HTTP_HDR_MAX            1024 
 #define EST_HTTP_HDR_200            "HTTP/1.1 200 OK"
@@ -67,6 +90,7 @@
 #define EST_HTTP_HDR_400            "HTTP/1.1 400 " EST_HTTP_STAT_400_TXT
 #define EST_HTTP_HDR_401            "HTTP/1.1 401 " EST_HTTP_STAT_401_TXT
 #define EST_HTTP_HDR_404            "HTTP/1.1 404 " EST_HTTP_STAT_404_TXT
+#define EST_HTTP_HDR_423            "HTTP/1.1 423 " EST_HTTP_STAT_423_TXT
 #define EST_HTTP_HDR_CT             "Content-Type"
 #define EST_HTTP_HDR_CE             "Content-Transfer-Encoding"
 #define EST_HTTP_HDR_CL             "Content-Length"
@@ -81,7 +105,7 @@
 #define EST_CSRATTRS_POP            "MAsGCSqGSIb3DQEJBw=="
 #define EST_CSRATTRS_POP_LEN         20
 
-#define EST_HTTP_HDR_EST_CLIENT     "libest client 1.0"
+#define EST_HTTP_HDR_EST_CLIENT     "libEST client 1.0"
 
 #define EST_HTTP_REQ_DATA_MAX       4096
 #define EST_HTTP_REQ_TERMINATOR_LEN 5
@@ -103,6 +127,15 @@
 /*
  * URI definitions
  */
+#define EST_GET_CACERTS         "cacerts"
+#define EST_GET_CSRATTRS        "csrattrs"
+#define EST_SIMPLE_ENROLL       "simpleenroll"
+#define EST_SIMPLE_REENROLL     "simplereenroll"
+#define WELL_KNOWN_SEGMENT      ".well-known"
+#define WELL_KNOWN_SEGMENT_LEN  11
+#define EST_SEGMENT             "est"
+#define EST_SEGMENT_LEN         3
+#define EST_PATH_PREFIX         "/"WELL_KNOWN_SEGMENT"/"EST_SEGMENT
 #define EST_SIMPLE_ENROLL_URI   "/.well-known/est/simpleenroll"
 #define EST_RE_ENROLL_URI       "/.well-known/est/simplereenroll"
 #define EST_CSR_ATTRS_URI       "/.well-known/est/csrattrs"
@@ -126,12 +159,12 @@ typedef enum {
 } EST_AUTH_STATE;
 
 
-#define EST_MAX_OPS     4
 typedef enum {
-    EST_SIMPLE_ENROLL = 0,
-    EST_RE_ENROLL,
-    EST_GET_CACERTS,
-    EST_GET_CSRATTRS
+    EST_OP_SIMPLE_ENROLL,
+    EST_OP_SIMPLE_REENROLL,
+    EST_OP_CACERTS,
+    EST_OP_CSRATTRS,
+    EST_OP_MAX
 } EST_OPERATION;
 
 typedef struct {
@@ -159,7 +192,8 @@ typedef struct mg_context EST_MG_CONTEXT;
 struct est_ctx {
     EST_MODE est_mode;        /* operational mode of the instance: client or server */
     unsigned char   *ca_certs;
-    int ca_certs_len;
+    int              local_cacerts_processing;
+    int              ca_certs_len;
     unsigned char   *retrieved_ca_certs;
     int              retrieved_ca_certs_len;
     unsigned char   *enrolled_client_cert;
@@ -182,20 +216,23 @@ struct est_ctx {
     int (*est_enroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len, 
 	                        unsigned char **pkcs7, int *cert_len,
 				char *user_id, X509 *peer_cert,
-				void *ex_data);
+                                char *path_seg, void *ex_data);
     int (*est_reenroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len, 
 	                          unsigned char **pkcs7, int *cert_len,
 				  char *user_id, X509 *peer_cert,
-				  void *ex_data);
-    unsigned char *(*est_get_csr_cb)(int *csr_len, void *ex_data);
+                                  char *path_seg, void *ex_data);
+    unsigned char *(*est_get_cacerts_cb)(int *cacerts_len, char *path_seg,
+                                         void *ex_data);
+    unsigned char *(*est_get_csr_cb)(int *csr_len, char *path_seg, void *ex_data);
     int (*est_http_auth_cb)(struct est_ctx *ctx, EST_HTTP_AUTH_HDR *ah, 
-	                    X509 *peer_cert, void *ex_data);
+	                    X509 *peer_cert, char *path_seg, void *ex_data);
 
     /*
      * Client mode configuration options
      */
     char est_server[EST_MAX_SERVERNAME_LEN+1];
     int est_port_num;
+    char *uri_path_segment;
     X509 *client_cert;
     EVP_PKEY   *client_key;
     EST_HTTP_AUTH_CRED_RC (*auth_credentials_cb)(EST_HTTP_AUTH_HDR *auth_credentials);
@@ -216,6 +253,7 @@ struct est_ctx {
      * The following are used for server and/or proxy mode
      */
     EST_MG_CONTEXT *mg_ctx;
+    int server_read_timeout;
     X509 *server_cert;
     EVP_PKEY *server_priv_key;
     int server_enable_pop; /* enable proof-of-possession check */
@@ -237,6 +275,9 @@ struct est_ctx {
     void *ex_data;
     int enable_srp;
     int (*est_srp_username_cb)(SSL *s, int *ad, void *arg);
+
+    int last_http_status;
+    int enable_tls10; /* Used to allow TLS 1.0 on the server-side */
     int enforce_csrattrs; /* Used to force the client to provide the CSR attrs in the CSR */
 };
 
@@ -256,46 +297,81 @@ typedef struct est_oid_list {
 int e_ctx_ssl_exdata_index;
 
 
-void est_log (EST_LOG_LEVEL lvl, char *format, ...);
-void est_log_backtrace (void);
+LIBEST_TEST_API void est_log (EST_LOG_LEVEL lvl, char *format, ...);
+LIBEST_TEST_API void est_log_backtrace (void);
 
+#ifdef WIN32
 #ifndef EST_LOG_INFO
 #define EST_LOG_INFO(...) do { \
-        est_log(EST_LOG_LVL_INFO, "\n***EST [INFO][%s:%d]--> ", \
-                __FUNCTION__, __LINE__); \
-        est_log(EST_LOG_LVL_INFO, __VA_ARGS__); \
+	est_log(EST_LOG_LVL_INFO, "\n***EST [INFO][%s:%d]--> ", \
+	__FUNCTION__, __LINE__); \
+	est_log(EST_LOG_LVL_INFO, __VA_ARGS__); \
 } while (0)
 #endif
 
 #ifndef EST_LOG_WARN
 #define EST_LOG_WARN(...) do { \
-        est_log(EST_LOG_LVL_WARN, "\n***EST [WARNING][%s:%d]--> ", \
-                __FUNCTION__, __LINE__); \
-        est_log(EST_LOG_LVL_WARN, __VA_ARGS__); \
-        est_log_backtrace(); \
+	est_log(EST_LOG_LVL_WARN, "\n***EST [WARNING][%s:%d]--> ", \
+	__FUNCTION__, __LINE__); \
+	est_log(EST_LOG_LVL_WARN, __VA_ARGS__); \
+	est_log_backtrace(); \
 } while (0)
 #endif
 
 #ifndef EST_LOG_ERR
 #define EST_LOG_ERR(...) do { \
-        est_log(EST_LOG_LVL_ERR, "\n***EST [ERROR][%s:%d]--> ", \
-                __FUNCTION__, __LINE__); \
-        est_log(EST_LOG_LVL_ERR, __VA_ARGS__); \
+	est_log(EST_LOG_LVL_ERR, "\n***EST [ERROR][%s:%d]--> ", \
+	__FUNCTION__, __LINE__); \
+	est_log(EST_LOG_LVL_ERR, __VA_ARGS__); \
+	est_log_backtrace(); \
+} while (0)
+#endif
+#else
+#ifndef EST_LOG_INFO
+#define EST_LOG_INFO(format, args ...) do { \
+        est_log(EST_LOG_LVL_INFO, "***EST [INFO][%s:%d]--> " format "\n", \
+                __func__, __LINE__, ##args); \
+} while (0)
+#endif
+
+#ifndef EST_LOG_WARN
+#define EST_LOG_WARN(format, args ...) do { \
+        est_log(EST_LOG_LVL_WARN, "***EST [WARNING][%s:%d]--> " format "\n", \
+                __func__, __LINE__, ##args); \
         est_log_backtrace(); \
 } while (0)
 #endif
 
+#ifndef EST_LOG_ERR
+#define EST_LOG_ERR(format, args ...) do { \
+        est_log(EST_LOG_LVL_ERR, "***EST [ERROR][%s:%d]--> " format "\n", \
+                __func__, __LINE__, ##args); \
+        est_log_backtrace(); \
+} while (0)
+#endif 
+#endif /* WIN32 */
+
+/*
+ * Not every CRT library has an implementation of strndup.  For example,
+ * Windows.  In this case we use an internal version that originally
+ * came with the Mongoose version we used for HTTP server.
+ */
+#ifdef WIN32
+#define STRNDUP mg_strndup
+#else
+#define STRNDUP strndup
+#endif
 
 /* From est.c */
 char * est_get_tls_uid(SSL *ssl, int is_client);
-EST_ERROR est_load_ca_certs(EST_CTX *ctx, unsigned char *raw, int size);
+LIBEST_TEST_API EST_ERROR est_load_ca_certs(EST_CTX *ctx, unsigned char *raw, int size);
 
-EST_ERROR est_load_trusted_certs(EST_CTX *ctx, unsigned char *certs, int certs_len);
+LIBEST_TEST_API EST_ERROR est_load_trusted_certs(EST_CTX *ctx, unsigned char *certs, int certs_len);
 void est_log(EST_LOG_LEVEL lvl, char *format, ...);
-void est_log_version(void);
+LIBEST_TEST_API void est_log_version(void);
 void est_hex_to_str(char *dst, unsigned char *src, int len);
-void est_base64_encode(const unsigned char *src, int src_len, char *dst);
-int est_base64_decode(const char *src, char *dst, int max_len);
+int est_base64_encode (const char *src, int actual_src_len, char *dst, int max_dst_len);
+LIBEST_TEST_API int est_base64_decode(const char *src, char *dst, int max_len);
 
 /* From est_server.c */
 int est_http_request(EST_CTX *ctx, void *http_ctx,
@@ -303,13 +379,12 @@ int est_http_request(EST_CTX *ctx, void *http_ctx,
                      char *body, int body_len, const char *ct);
 
 /* From est_client.c */
-EST_ERROR est_client_init_ssl_ctx(EST_CTX *ctx);
-EST_ERROR est_client_connect(EST_CTX *ctx, SSL **ssl);
+LIBEST_TEST_API EST_ERROR est_client_connect(EST_CTX *ctx, SSL **ssl);
 int est_client_send_enroll_request(EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
                                    unsigned char *pkcs7, int *pkcs7_len,
 				   int reenroll);
-void est_client_disconnect(EST_CTX *ctx, SSL **ssl);
-int est_client_set_cert_and_key(SSL_CTX *ctx, X509 *cert, EVP_PKEY *key);
+LIBEST_TEST_API void est_client_disconnect(EST_CTX *ctx, SSL **ssl);
+LIBEST_TEST_API int est_client_set_cert_and_key(SSL_CTX *ctx, X509 *cert, EVP_PKEY *key);
 EST_ERROR est_client_set_uid_pw(EST_CTX *ctx, const char *uid, const char *pwd);
 
 /* From est_client_http.c */
@@ -317,15 +392,21 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
                          unsigned char **buf, int *payload_len);
 
 /* From est_proxy.c */
-EST_ERROR est_proxy_http_request(EST_CTX *ctx, void *http_ctx,
+LIBEST_TEST_API EST_ERROR est_proxy_http_request(EST_CTX *ctx, void *http_ctx,
                            char *method, char *uri,
                            char *body, int body_len, const char *ct);
 void proxy_cleanup(EST_CTX *p_ctx);
 EST_ERROR est_asn1_parse_attributes(const char *p, int len, int *offset);
 EST_ERROR est_is_challengePassword_present(const char *base64_ptr, int b64_len, int *offset);
 EST_ERROR est_add_challengePassword(const char *base64_ptr, int b64_len, char **new_csr, int *pop_len);
-EST_ERROR est_proxy_retrieve_cacerts (EST_CTX *ctx, unsigned char **cacerts_rtn,
+LIBEST_TEST_API EST_ERROR est_proxy_retrieve_cacerts (EST_CTX *ctx, unsigned char **cacerts_rtn,
                                       int *cacerts_rtn_len);
 EST_ERROR est_send_csrattr_data(EST_CTX *ctx, char *csr_data, int csr_len, void *http_ctx);
 void cleanse_auth_credentials(EST_HTTP_AUTH_HDR *auth_cred);
+EST_ERROR est_parse_uri (char *uri, EST_OPERATION *operation,
+                         char **path_seg);
+EST_ERROR est_store_path_segment (EST_CTX *ctx, char *path_segment,
+                                  int path_segment_len);
+EST_OPERATION est_parse_operation (char *op_path);
+int est_strcasecmp_s (char *s1, char *s2);
 #endif

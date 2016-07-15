@@ -1,0 +1,104 @@
+apply plugin: 'c'
+
+model {
+    repositories {
+        libs(PrebuiltLibraries) {
+            libcrypto {
+                headers.srcDir System.getenv().SSL_DIR + "\\include"
+                        binaries.withType(SharedLibraryBinary) {
+                    sharedLibraryFile =
+                            file(System.getenv().SSL_DIR + "\\bin\\libeay32.dll")
+                            sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\libeay32.lib")
+                }
+            }
+            libssl {
+                headers.srcDir System.getenv().SSL_DIR + "\\include"
+                        binaries.withType(SharedLibraryBinary) {
+                    sharedLibraryFile =
+                            file(System.getenv().SSL_DIR + "\\bin\\ssleay32.dll")
+                            sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\ssleay32.lib")
+                }
+            }            
+            cunit {
+                headers.srcDir System.getenv().CUNIT_DIR + "\\include"
+                        binaries.withType(StaticLibraryBinary) {
+                    staticLibraryFile =
+                            file(System.getenv().CUNIT_DIR + "\\lib\\libcunit.lib")
+                }               
+            }
+            curl {
+                headers.srcDir System.getenv().CURL_DIR + "\\include"
+                        binaries.withType(SharedLibraryBinary) {
+                    sharedLibraryFile =
+                            file(System.getenv().CURL_DIR + "\\bin\\libcurl.dll")
+                            sharedLibraryLinkFile = file(System.getenv().CURL_DIR + "\\lib\\libcurl.lib")
+                }
+            }
+            est {
+                headers.srcDir System.getenv().EST_DIR + "\\include"
+                        binaries.withType(SharedLibraryBinary) {
+                    sharedLibraryFile =
+                            file(System.getenv().EST_DIR + "\\est.dll")
+                            sharedLibraryLinkFile = file(System.getenv().EST_DIR + "\\est.lib")
+                }
+            }
+        }
+    }    
+
+}
+
+model {
+    components {
+        ut(NativeExecutableSpec) {
+            sources {
+                c{
+                    source {
+                        srcDir "UT"
+                        include "**/*.c"
+                        srcDir "util"
+                        srcDir "safe_c_stub/src"
+                        exclude "st_proxy.c"
+                        exclude "st_server.c"
+                        exclude "US1060/us1060.c"
+                        exclude "US748/perftest.c"
+                        exclude "US903/perftest.c"
+                    }
+                    exportedHeaders {
+                        srcDir "safe_c_stub/include"
+                        srcDir "util"
+                    }
+                }
+            }
+            binaries.all {
+                lib library: "libcrypto", linkage: "shared"
+                lib library: "libssl", linkage: "shared"
+                lib library: "cunit", linkage: "static"
+                lib library: "est", linkage: "shared"
+                lib library: "curl", linkage: "shared"
+            }               
+        }
+    }
+}
+
+
+
+model {
+    binaries {
+        all {
+            // Define toolchain-specific compiler and linker options
+            if (toolChain in Gcc) {
+                // Example GCC args
+                cCompiler.args "-g", "-O0", "-Wall"
+            }
+            else if(toolChain in VisualCpp) {
+                cCompiler.define "HAVE_CUNIT"
+                cCompiler.define "WIN32"
+                cCompiler.define "__STDC_WANT_SECURE_LIB__" , "0"
+                cCompiler.define "DISABLE_PTHREADS", "1"
+                cCompiler.define "_WINSOCK_DEPRECATED_NO_WARNINGS", "1"
+                cCompiler.args "/GS", "/GL", "/analyze-", "/W3", "/Gy", "/Zc:wchar_t", "/Zi", "/Gm-", "/fp:precise", "/errorReport:prompt", "/WX-", "/Zc:forScope", "/Gd", "/Oy-","/Oi","/MD", "/EHsc", "/nologo", "/FS"
+                linker.args "/DEBUG", "/SAFESEH", "/MANIFEST", "/LTCG", "/NXCOMPAT" , "/OPT:ICF"
+            }
+        }
+    }
+}

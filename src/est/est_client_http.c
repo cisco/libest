@@ -3,7 +3,7 @@
  *
  * November, 2012
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -39,14 +39,29 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#ifdef WIN32
+#include <Ws2tcpip.h>
+#else
+#include <sys/poll.h>
+#endif
 #include <openssl/ssl.h>
 #include <assert.h>
 #include "est.h"
 #include "est_locl.h"
 #include "est_server_http.h"
+#include "safe_mem_lib.h"
+#include "safe_str_lib.h"
+#ifdef WIN32
+#define snprintf _snprintf
+#define vsnprintf _vsnprintf
+#define strcasecmp _stricmp
+#define strncasecmp _strnicmp
+#define atoll(string) _atoi64(string)
+#endif
+#include <limits.h>
 #include "est_ossl_util.h"
 
-#define INT_MAX         (  2147483647 )
+#define AUTH_STR_LEN 4
 
 #ifdef RETRY_AFTER_DELAY_TIME_SUPPORT
 
@@ -160,6 +175,8 @@ static int parsedate(const char *date, time_t *output);
 #define PARSEDATE_FAIL   -1
 #define PARSEDATE_LATER  1
 #define PARSEDATE_SOONER 2
+
+#define EST_CURL_MAX_NAME_STR 32
 
 /* Here's a bunch of frequently used time zone names. These were supported
    by the old getdate parser. */
@@ -396,11 +413,11 @@ static int parsedate(const char *date, time_t *output)
 
     if(ISALPHA(*date)) {
       /* a name coming up */
-      char buf[32]="";
+      char buf[EST_CURL_MAX_NAME_STR]="";
       size_t len;
       sscanf(date, "%31[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz]",
              buf);
-      len = strlen(buf);
+      len = strnlen_s(buf, EST_CURL_MAX_NAME_STR);
 
       if(wdaynum == -1) {
         wdaynum = checkday(buf, len);
@@ -588,13 +605,15 @@ static int parsedate(const char *date, time_t *output)
 /*
  * This table maps an EST operation to the expected
  * URI and HTTP content type.  It's used to verify that
- * the response from the server meets the EST draft.
+ * the response from the server meets the EST draft.  This
+ * table is implicitly tied to EST_OPERATION.  If that ENUM
+ * changes, this table must change.
  */
-EST_OP_DEF est_op_map [EST_MAX_OPS] = {
-    { EST_SIMPLE_ENROLL, EST_SIMPLE_ENROLL_URI, EST_HTTP_CT_PKCS7_CO, sizeof(EST_HTTP_CT_PKCS7_CO) },
-    { EST_RE_ENROLL,     EST_RE_ENROLL_URI,     EST_HTTP_CT_PKCS7_CO, sizeof(EST_HTTP_CT_PKCS7_CO) },
-    { EST_GET_CACERTS,   EST_CACERTS_URI,       EST_HTTP_CT_PKCS7,    sizeof(EST_HTTP_CT_PKCS7)    },
-    { EST_GET_CSRATTRS,  EST_CSR_ATTRS_URI,     EST_HTTP_CT_CSRATTRS, sizeof(EST_HTTP_CT_CSRATTRS) }
+EST_OP_DEF est_op_map [EST_OP_MAX] = {
+    { EST_OP_SIMPLE_ENROLL,   EST_SIMPLE_ENROLL_URI, EST_HTTP_CT_PKCS7_CO, sizeof(EST_HTTP_CT_PKCS7_CO) },
+    { EST_OP_SIMPLE_REENROLL, EST_RE_ENROLL_URI,     EST_HTTP_CT_PKCS7_CO, sizeof(EST_HTTP_CT_PKCS7_CO) },
+    { EST_OP_CACERTS,         EST_CACERTS_URI,       EST_HTTP_CT_PKCS7,    sizeof(EST_HTTP_CT_PKCS7)    },
+    { EST_OP_CSRATTRS,        EST_CSR_ATTRS_URI,     EST_HTTP_CT_CSRATTRS, sizeof(EST_HTTP_CT_CSRATTRS) }
 };
 
 /**********************************************************************
@@ -674,8 +693,24 @@ static char * HTNextField (char ** pstr)
     *pstr = p;
     return start;
 }
+#if 0
+static int est_strcasecmp_s (char *s1, char *s2)
+{
+    errno_t safec_rc;
+    int diff;
+    
+    safec_rc = strcasecmp_s(s1, strnlen_s(s1, RSIZE_MAX_STR), s2, &diff);
 
+    if (safec_rc != EOK) {
+    	/*
+    	 * Log that we encountered a SafeC error
+     	 */
+     	EST_LOG_INFO("strcasecmp_s error 0x%xO\n", safec_rc);
+    } 
 
+    return diff;
+}
+#endif
 /*
  * This function parses the authentication tokens from
  * the server when the server is requesting HTTP digest
@@ -689,53 +724,69 @@ static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
     char *p = hdr;
     char *token = NULL;
     char *value = NULL;
+    int diff;
+    errno_t safec_rc;
 
     /*
      * header will come in with the basic or digest field still on the front.
      * skip over it.
      */
+
     token = HTNextField(&p);
-    
+
     while ((token = HTNextField(&p))) {
-        if (!strcasecmp(token, "realm")) {
+        if (!est_strcasecmp_s(token, "realm")) {
             if ((value = HTNextField(&p))) {
-                strncpy(ctx->realm, value, MAX_REALM);
-            } else {
-                rv = EST_ERR_INVALID_TOKEN;
-            }
-        } else if (!strcasecmp(token, "nonce")) {
-            if ((value = HTNextField(&p))) {
-                strncpy(ctx->s_nonce, value, MAX_NONCE);
-            } else {
-                rv = EST_ERR_INVALID_TOKEN;
-            }
-        } else if (!strcasecmp(token, "qop")) {
-            if ((value = HTNextField(&p))) {
-                if (strcmp(value, "auth")) {
-                    EST_LOG_WARN("Unsupported qop value: %s", value);
-                }
-            } else {
-                rv = EST_ERR_INVALID_TOKEN;
-            }
-        } else if (!strcasecmp(token, "algorithm")) {
-            if ((value = HTNextField(&p)) && strcasecmp(value, "md5")) {
-                EST_LOG_ERR("Unsupported digest algorithm: %s", value);
-                /*
-                **  We only support MD5 for the moment
-                */
-                rv = EST_ERR_INVALID_TOKEN;
-            }
-        } else if (!strcasecmp(token, "error")) {
-            if ((value = HTNextField(&p))) {
-                if (!strncpy(ctx->token_error, value, MAX_TOKEN_ERROR)) {
+                if (EOK != strncpy_s(ctx->realm, MAX_REALM, value, MAX_REALM)) {
                     rv = EST_ERR_INVALID_TOKEN;
                 }
             } else {
                 rv = EST_ERR_INVALID_TOKEN;
             }
-        } else if (!strcasecmp(token, "error_description")) {
+        } else if (!est_strcasecmp_s(token, "nonce")) {
             if ((value = HTNextField(&p))) {
-                if (!strncpy(ctx->token_error_desc, value, MAX_TOKEN_ERROR_DESC)) {
+                if (EOK != strncpy_s(ctx->s_nonce, MAX_NONCE, value, MAX_NONCE)) {
+                    rv = EST_ERR_INVALID_TOKEN;
+                }                
+            } else {
+                rv = EST_ERR_INVALID_TOKEN;
+            }
+        } else if (!est_strcasecmp_s(token, "qop")) {
+            if ((value = HTNextField(&p))) {
+
+                if (value[0] == '\0') {
+                    EST_LOG_WARN("Unsupported qop value: %s", value);
+                } else {
+                    safec_rc = strcmp_s(value, strnlen_s(value, RSIZE_MAX_STR), "auth", &diff);
+                    if (safec_rc != EOK) {
+                        EST_LOG_INFO("strcmp_s error 0x%xO\n", safec_rc);
+                    }
+                    if (diff && (safec_rc == EOK)) {
+                        EST_LOG_WARN("Unsupported qop value: %s", value);
+                    }
+                }
+            } else {
+                rv = EST_ERR_INVALID_TOKEN;
+            }
+        } else if (!est_strcasecmp_s(token, "algorithm")) {
+            if ((value = HTNextField(&p)) && est_strcasecmp_s(value, "md5")) {
+                EST_LOG_ERR("Unsupported digest algorithm: %s", value);
+                /*
+                 **  We only support MD5 for the moment
+                 */
+                rv = EST_ERR_INVALID_TOKEN;
+            }
+        } else if (!est_strcasecmp_s(token, "error")) {
+            if ((value = HTNextField(&p))) {
+                if (EOK != strncpy_s(ctx->token_error, MAX_TOKEN_ERROR, value, MAX_TOKEN_ERROR)) {
+                    rv = EST_ERR_INVALID_TOKEN;
+                }
+            } else {
+                rv = EST_ERR_INVALID_TOKEN;
+            }
+        } else if (!est_strcasecmp_s(token, "error_description")) {
+            if ((value = HTNextField(&p))) {
+                if (EOK != strncpy_s(ctx->token_error_desc, MAX_TOKEN_ERROR_DESC, value, MAX_TOKEN_ERROR_DESC)) {
                     rv = EST_ERR_INVALID_TOKEN;
                 }
             } else {
@@ -744,9 +795,9 @@ static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
         } else {
             EST_LOG_WARN("Unsupported auth token ignored: %s", token);
         }
-        
+
         if (rv == EST_ERR_INVALID_TOKEN) {
-            memset(ctx->s_nonce, 0, MAX_NONCE);
+            memzero_s(ctx->s_nonce, MAX_NONCE+1);
             break;
         }   
     }
@@ -786,11 +837,13 @@ typedef struct {
     char *value;         // HTTP header value
 } HTTP_HEADER;
 #define MAX_HEADERS 16
+#define MAX_HEADER_DELIMITER_LEN 4
 static HTTP_HEADER * parse_http_headers (unsigned char **buf, int *num_headers)
 {
     int i;
     HTTP_HEADER *hdrs;
     char *hdr_end;
+    errno_t safec_rc;
 
     *num_headers = 0;
     hdrs = malloc(sizeof(HTTP_HEADER) * MAX_HEADERS);
@@ -802,7 +855,12 @@ static HTTP_HEADER * parse_http_headers (unsigned char **buf, int *num_headers)
     /*
      * Find offset of header deliminter
      */
-    hdr_end = strstr((const char *)*buf, "\r\n\r\n");
+    safec_rc = strstr_s((char *) *buf, strnlen_s((char *) *buf, RSIZE_MAX_STR),
+            "\r\n\r\n", MAX_HEADER_DELIMITER_LEN, &hdr_end);
+
+    if (safec_rc != EOK) {
+        EST_LOG_INFO("strstr_s error 0x%xO\n", safec_rc);
+    }
 
     /*
      * Skip the first line
@@ -838,23 +896,26 @@ static HTTP_HEADER * parse_http_headers (unsigned char **buf, int *num_headers)
 static int est_io_parse_response_status_code (unsigned char *buf)
 {
     if (!strncmp((const char *)buf, EST_HTTP_HDR_200,
-                 strnlen(EST_HTTP_HDR_200, EST_HTTP_HDR_MAX))) {
+                        strnlen_s(EST_HTTP_HDR_200, EST_HTTP_HDR_MAX))) {
         return 200;
     } else if (!strncmp((const char *)buf, EST_HTTP_HDR_202,
-                        strnlen(EST_HTTP_HDR_202, EST_HTTP_HDR_MAX))) {
+                        strnlen_s(EST_HTTP_HDR_202, EST_HTTP_HDR_MAX))) {
         return 202;
     } else if (!strncmp((const char *)buf, EST_HTTP_HDR_204,
-                        strnlen(EST_HTTP_HDR_204, EST_HTTP_HDR_MAX))) {
+                        strnlen_s(EST_HTTP_HDR_204, EST_HTTP_HDR_MAX))) {
         return 204;
     } else if (!strncmp((const char *)buf, EST_HTTP_HDR_400,
-                        strnlen(EST_HTTP_HDR_400, EST_HTTP_HDR_MAX))) {
+                        strnlen_s(EST_HTTP_HDR_400, EST_HTTP_HDR_MAX))) {
         return 400;
     } else if (!strncmp((const char *)buf, EST_HTTP_HDR_401,
-                        strnlen(EST_HTTP_HDR_401, EST_HTTP_HDR_MAX))) {
+                        strnlen_s(EST_HTTP_HDR_401, EST_HTTP_HDR_MAX))) {
         return 401;
     } else if (!strncmp((const char *)buf, EST_HTTP_HDR_404,
-                        strnlen(EST_HTTP_HDR_404, EST_HTTP_HDR_MAX))) {
+                        strnlen_s(EST_HTTP_HDR_404, EST_HTTP_HDR_MAX))) {
         return 404;
+    } else if (!strncmp((const char *)buf, EST_HTTP_HDR_423,
+                        strnlen_s(EST_HTTP_HDR_423, EST_HTTP_HDR_MAX))) {
+        return 423;
     } else {
         EST_LOG_ERR("Unhandled HTTP response %s", buf);
         return -1;
@@ -926,32 +987,6 @@ static void est_io_parse_http_auth_request (EST_CTX *ctx,
     return;
 }
 
-
-static int strisdigit (const char *dest, int dmax)
-{
-    if (!dest) {
-        return (0);
-    }
-
-    if (dmax == 0) {
-        return (0);
-    }
-
-    if (*dest == '\0') {
-        return (0);
-    }
-
-    while (*dest && dmax) {
-        if ((*dest < '0') || (*dest > '9')) {
-            return (0);
-        }
-        dest++; 
-        dmax--;
-    }
-
-    return (1);
-}
-
 /*
  * This function takes in the list of headers that were in the server's
  * response, it walks through the headers looking for a Retry-After response
@@ -974,7 +1009,7 @@ static EST_ERROR est_io_parse_http_retry_after_resp (EST_CTX *ctx,
 {
     EST_ERROR rv = EST_ERR_INVALID_RETRY_VALUE;
     int i;
-    int cmp_result;
+    int cmp_result, diff;
     int rc;
     long long int temp_ll;
     int found = 0;
@@ -987,9 +1022,9 @@ static EST_ERROR est_io_parse_http_retry_after_resp (EST_CTX *ctx,
     
     for (i = 0; i < hdr_cnt; i++) {
         
-        cmp_result = strncasecmp(hdrs[i].name, EST_HTTP_HDR_RETRY_AFTER, 
-		sizeof(EST_HTTP_HDR_RETRY_AFTER));
-        if (!cmp_result) {
+        cmp_result = strcasecmp_s(hdrs[i].name, sizeof(EST_HTTP_HDR_RETRY_AFTER),
+                                  EST_HTTP_HDR_RETRY_AFTER, &diff);
+        if (cmp_result == EOK && !diff) {
             
             EST_LOG_INFO("Retry-After value = %s", hdrs[i].value);
             found = 1;
@@ -1020,7 +1055,7 @@ static EST_ERROR est_io_parse_http_retry_after_resp (EST_CTX *ctx,
                  * four byte integer, and cache away the value returned for
                  * the retry delay.
                  */
-                rc = strisdigit(hdrs[i].value, 10); // max of 10 decimal places
+                rc = strisdigit_s(hdrs[i].value, 10); // max of 10 decimal places
                 if (rc) {
                     temp_ll = atoll(hdrs[i].value);
                     if (temp_ll <= INT_MAX) {
@@ -1045,7 +1080,7 @@ static EST_ERROR est_io_parse_http_retry_after_resp (EST_CTX *ctx,
 
 /*
  * This function verifies the content type header and also
- * returns the length of of the content header.  The
+ * returns the length of the content header.  The
  * content type is important.  For example, the content
  * type is expected to be pkcs7 on a simple enrollment.
  */
@@ -1054,7 +1089,7 @@ static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
 {
     int i;
     int cl = 0;
-    int status_present = 0, content_type_present = 0, content_length_present = 0;
+    int content_type_present = 0, content_length_present = 0;
     int cmp_result;
 
     /*
@@ -1063,41 +1098,31 @@ static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
      */
     for (i = 0; i < hdr_cnt; i++) {
         /*
-         * status header
+         * Content type
          */
-        cmp_result = strncmp(hdrs[i].name, "Status", 6);
+        strcmp_s(hdrs[i].name, sizeof(EST_HTTP_HDR_CT), EST_HTTP_HDR_CT,
+                 &cmp_result);
         if (!cmp_result) {
-            status_present = 1;
-            if (strncmp(hdrs[i].value, "200 OK", 6)) {
-                EST_LOG_ERR("HTTP status is not 200");
+            content_type_present = 1;
+            /*
+             * Verify content is pkcs7 data
+             */
+            strcmp_s(hdrs[i].value,
+                     strnlen_s(est_op_map[op].content_type, est_op_map[op].length),
+                     est_op_map[op].content_type, &cmp_result);
+            if (cmp_result) {
+                EST_LOG_ERR("HTTP content type is %s", hdrs[i].value);
                 return 0;
-            }
+                }
         } else {
             /*
-             * Content type
+             * Content Length
              */
-            cmp_result = strncmp(hdrs[i].name, EST_HTTP_HDR_CT, sizeof(EST_HTTP_HDR_CT));
+            strcmp_s(hdrs[i].name, sizeof(EST_HTTP_HDR_CL), EST_HTTP_HDR_CL,
+                     &cmp_result);
             if (!cmp_result) {
-                content_type_present = 1;
-                /*
-                 * Verify content is pkcs7 data
-                 */
-                cmp_result = strncmp(hdrs[i].value,
-                         est_op_map[op].content_type, 
-                         strnlen(est_op_map[op].content_type, est_op_map[op].length));
-                if (cmp_result) {
-                    EST_LOG_ERR("HTTP content type is %s", hdrs[i].value);
-                    return 0;
-                }
-            } else {
-                /*
-                 * Content Length
-                 */
-                cmp_result = strncmp(hdrs[i].name, EST_HTTP_HDR_CL, sizeof(EST_HTTP_HDR_CL));
-                if (!cmp_result) {
-                    content_length_present = 1;
-                    cl = atoi(hdrs[i].value);
-                }
+                content_length_present = 1;
+                cl = atoi(hdrs[i].value);
             }
         }
     }
@@ -1105,10 +1130,7 @@ static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
     /*
      * Make sure all the necessary headers were present.
      */
-    if (status_present == 0 ) {
-        EST_LOG_ERR("Missing HTTP status header");
-        return 0;
-    } else if (content_type_present == 0 ) {
+    if (content_type_present == 0 ) {
         EST_LOG_ERR("Missing HTTP content type  header");
         return 0;
     } else if (content_length_present == 0 ) {
@@ -1119,35 +1141,36 @@ static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
     return cl;
 }
 
-/*
- * Take care of the blocking IO aspect of ssl_read.  Make sure there's
- * something waiting to be read from the socket before calling ssl_read.
- */
+
 static int est_ssl_read (SSL *ssl, unsigned char *buf, int buf_max,
-                         int sock_read_timeout) 
+                       int sock_read_timeout) 
 {
-    struct timeval timeout;
-    fd_set set;
+    int timeout;
     int read_fd;
     int rv;
+    struct pollfd pfd;
     
     /*
      * load up the timeval struct to be passed to the select
      */
-    timeout.tv_sec = sock_read_timeout;
-    timeout.tv_usec = 0;
+    timeout = sock_read_timeout * 1000;
 
     read_fd = SSL_get_fd(ssl);
-    
-    FD_ZERO(&set);
-    FD_SET(read_fd, &set);
-    rv = select(read_fd + 1, &set, NULL, NULL, &timeout);
-    if (rv == 0) {
-        EST_LOG_ERR("Socket read timeout.  No data received from server.");
-        return -1;
-    }
+    pfd.fd = read_fd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
 
-    return (SSL_read(ssl, buf, buf_max));    
+    errno = 0;
+    rv = POLL(&pfd, 1, timeout);
+    if (rv == 0) {
+        EST_LOG_ERR("Socket poll timeout.  No data received from server.");
+        return -1;
+    } else if ( rv == -1) {
+        EST_LOG_ERR("Socket read failure. errno = %d", errno);
+        return -1;
+    } else {
+        return (SSL_read(ssl, buf, buf_max));
+    }
 }
 
 
@@ -1218,7 +1241,7 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
         EST_LOG_ERR("Unable to allocate memory");
         return EST_ERR_MALLOC;
     }
-    memset(raw_buf, 0, EST_CA_MAX);
+    memzero_s(raw_buf, EST_CA_MAX);
     payload = raw_buf;
     
     /*
@@ -1242,6 +1265,7 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
      * Look for status 200 for success
      */
     http_status = est_io_parse_response_status_code(raw_buf);
+    ctx->last_http_status = http_status;
     hdrs = parse_http_headers(&payload, &hdr_cnt);
     EST_LOG_INFO("HTTP status %d received", http_status);
 
@@ -1256,7 +1280,7 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
     case 204:
     case 404:
         EST_LOG_ERR("Server responded with 204/404, no content or not found");
-        if (op == EST_GET_CSRATTRS) {
+        if (op == EST_OP_CSRATTRS) {
 	    rv = EST_ERR_NONE;
         } else if (http_status == 404) {
             rv = EST_ERR_HTTP_NOT_FOUND;            
@@ -1289,6 +1313,11 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
         }
         est_io_parse_http_auth_request(ctx, hdrs, hdr_cnt);
         rv = EST_ERR_AUTH_FAIL;
+        break;
+            
+    case 423:
+        EST_LOG_ERR("Server responded with 423, the content we are attempting to access is locked");
+        rv = EST_ERR_HTTP_LOCKED;
         break;
     case -1:
         /* Unsupported HTTP response */
@@ -1331,7 +1360,7 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
                 free(hdrs);
                 return EST_ERR_MALLOC;
             }
-            memcpy(payload_buf, payload, *payload_len);
+            memcpy_s(payload_buf, *payload_len, payload, *payload_len);
             *buf = payload_buf;
         }
     }

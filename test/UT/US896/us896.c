@@ -3,12 +3,14 @@
  *
  * November, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
 #include <stdio.h>
+#ifndef WIN32
 #include <unistd.h>
+#endif 
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -21,15 +23,21 @@
 #include "CUnit/Automated.h"
 #endif
 
+#ifndef WIN32
 #define CLIENT_UT_CACERT "CA/estCA/cacert.crt"
-#define CLIENT_UT_PUBKEY "./est_client_ut_keypair"
-
-#define US896_SERVER_PORT   29896
-#define US896_SERVER_IP	    "127.0.0.1"	
-#define US896_CACERTS	    "CA/estCA/cacert.crt"
+#define US896_CACERTS       "CA/estCA/cacert.crt"
 #define US896_TRUST_CERTS   "CA/trustedcerts.crt"
 #define US896_SERVER_CERTKEY "CA/estCA/private/estservercertandkey.pem"
+#else 
+#define CLIENT_UT_CACERT "CA\\estCA\\cacert.crt"
+#define US896_CACERTS       "CA\\estCA\\cacert.crt"
+#define US896_TRUST_CERTS   "CA\\trustedcerts.crt"
+#define US896_SERVER_CERTKEY "CA\\estCA\\private\\estservercertandkey.pem"
+#endif 
 
+#define CLIENT_UT_PUBKEY "./est_client_ut_keypair"
+#define US896_SERVER_PORT   29896
+#define US896_SERVER_IP     "127.0.0.1" 
 #define TEST_SHORT_ATTR "M==\0"
 #define TEST_LONG_ATTR "MIIENzCCA54GA4g3AjGCA5UGA4g3AwYDiDcEEmUxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAwMTIzNDU2Nzg5MBJlMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMDEyMzQ1Njc4OTASZTEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDAxMjM0NTY3ODkwEmUxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAwMTIzNDU2Nzg5MBJlMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMDEyMzQ1Njc4OTASZTEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDAxMjM0NTY3ODkwEmUxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAwMTIzNDU2Nzg5MBJlMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMDEyMzQ1Njc4OTATUVBhcnNlIFNFVCBhcyAyLjk5OS4yIDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MAYJYIZIAWUDBAICBgkrJAMDAggBAQswawYDiDcBMWQTYlBhcnNlIFNFVCBhcyAyLjk5OS4xIGRhdGEgMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwYWIxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTEyMzQ1BgcrBgEBAQEWBgcrBgEBAQEW\0"
 #define TEST_CORRUPT_ATTR1 "MHwwLAYDiDcCMSUGA4g3AwYDiDcEExlQYXJzZSBTRVQgYXMgMi45OTkuMiBkYXRhBglghkgBZQMEAgIGCSskAwMCCAEBCzAiBgOIExGxMZUGFyc2UgU0VUIGFzIDIuOTk5LjEgZGF0YQYHKwYBAQEBFgYJKoZIhvcNAQkH\0"
@@ -37,27 +45,19 @@
 
 #define EST_UT_MAX_CMD_LEN 255
 
-static void us896_clean (void)
-{
+static void us896_clean(void) {
 }
 
-static int us896_start_server (int manual_enroll, int nid)
-{
+static int us896_start_server(int manual_enroll, int nid) {
     int rv;
 
-    rv = st_start(US896_SERVER_PORT, 
-	          US896_SERVER_CERTKEY,
-	          US896_SERVER_CERTKEY,
-	          "US896 test realm",
-	          US896_CACERTS,
-	          US896_TRUST_CERTS,
-	          "CA/estExampleCA.cnf",
-		  manual_enroll,
-		  0,
-		  nid);
+    rv = st_start(US896_SERVER_PORT,
+    US896_SERVER_CERTKEY,
+    US896_SERVER_CERTKEY, "US896 test realm",
+    US896_CACERTS,
+    US896_TRUST_CERTS, "CA/estExampleCA.cnf", manual_enroll, 0, nid);
 
-
-    sleep(1);
+    SLEEP(1);
     return rv;
 }
 
@@ -66,10 +66,9 @@ static int us896_start_server (int manual_enroll, int nid)
  * suite.  This can be used to allocate data or open any
  * resources required for all the test cases.
  */
-static int us896_init_suite (void)
-{
+static int us896_init_suite(void) {
     int rv = 0;
-    char cmd[EST_UT_MAX_CMD_LEN];    
+    char cmd[EST_UT_MAX_CMD_LEN];
 
     printf("Starting EST Server CSR attributes unit tests.\n");
 
@@ -77,9 +76,10 @@ static int us896_init_suite (void)
      * gen the keypair to be used for EST Client testing
      */
     snprintf(cmd, EST_UT_MAX_CMD_LEN,
-             "openssl ecparam -name prime256v1 -genkey -out %s", CLIENT_UT_PUBKEY);
+            "openssl ecparam -name prime256v1 -genkey -out %s",
+            CLIENT_UT_PUBKEY);
     printf("%s\n", cmd);
-    
+
     rv = system(cmd);
 
     /*
@@ -95,37 +95,35 @@ static int us896_init_suite (void)
     return rv;
 }
 
-
 /*
  * This routine is called when CUnit uninitializes this test
  * suite.  This can be used to deallocate data or close any
  * resources that were used for the test cases.
  */
-static int us896_destroy_suite (void)
-{
+static int us896_destroy_suite(void) {
     st_stop();
-    sleep(2);
+    SLEEP(2);
     return 0;
 }
 
 /*
  * Callback function passed to est_client_init()
  */
-static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
-{
+static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error) {
     BIO *bio_err;
-    bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
+    bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
     int approve = 0;
 
     /*
      * Print out the specifics of this cert
      */
-    printf("%s: OpenSSL/EST server cert verification failed with the following error: openssl_cert_error = %d (%s)\n",
-           __FUNCTION__, openssl_cert_error,
-           X509_verify_cert_error_string(openssl_cert_error));
+    printf(
+            "%s: OpenSSL/EST server cert verification failed with the following error: openssl_cert_error = %d (%s)\n",
+            __FUNCTION__, openssl_cert_error,
+            X509_verify_cert_error_string(openssl_cert_error));
 
     printf("Failing Cert:\n");
-    X509_print_fp(stdout,cur_cert);
+    X509_print_fp(stdout, cur_cert);
     /*
      * Next call prints out the signature which can be used as the fingerprint
      * This fingerprint can be checked against the anticipated value to determine
@@ -145,46 +143,44 @@ static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
 /*
  * Test1 - exercise the est_client_get_csrattrs() API.
  */
-static void us896_test1 (void) 
-{
+static void us896_test1(void) {
     int rc;
     unsigned char *csr_data;
     int csr_len;
     EST_CTX *ctx = NULL;
 
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
-    CU_ASSERT(rc != EST_ERR_NONE);    
+    CU_ASSERT(rc != EST_ERR_NONE);
 
     rc = est_client_get_csrattrs(ctx, NULL, &csr_len);
-    CU_ASSERT(rc != EST_ERR_NONE);    
+    CU_ASSERT(rc != EST_ERR_NONE);
 
     rc = est_client_get_csrattrs(ctx, &csr_data, NULL);
-    CU_ASSERT(rc != EST_ERR_NONE);    
+    CU_ASSERT(rc != EST_ERR_NONE);
 
 }
-
-
 
 /*
  * Test2 - exercise the response  variations triggered
  *         by est_client_get_csrattrs()
  */
-static void us896_test2 (void) 
-{
+static void us896_test2(void) {
     EST_CTX *ctx;
     unsigned char *pkey = NULL;
     unsigned char *cacerts = NULL;
     int cacerts_len = 0;
     EST_ERROR rc = EST_ERR_NONE;
     unsigned char *retrieved_cacerts = NULL;
-    int  retrieved_cacerts_len = 0;
+    int retrieved_cacerts_len = 0;
     EVP_PKEY *priv_key;
 
-    sleep(1);
-    
-    LOG_FUNC_NM;
+    SLEEP(1);
+
+    LOG_FUNC_NM
+    ;
 
     /*
      * Read in the CA certificates
@@ -197,19 +193,19 @@ static void us896_test2 (void)
      */
     priv_key = read_private_key(CLIENT_UT_PUBKEY);
     if (priv_key == NULL) {
-	printf("\nError while reading private key file %s\n", CLIENT_UT_PUBKEY);
+        printf("\nError while reading private key file %s\n", CLIENT_UT_PUBKEY);
         return;
     }
 
     ctx = est_client_init(cacerts, cacerts_len, EST_CERT_FORMAT_PEM,
-                           client_manual_cert_verify);
+            client_manual_cert_verify);
     CU_ASSERT(ctx != NULL);
 
     rc = est_client_set_auth(ctx, "", "", NULL, priv_key);
-    CU_ASSERT(rc == EST_ERR_NONE);    
+    CU_ASSERT(rc == EST_ERR_NONE);
 
-    est_client_set_server(ctx, US896_SERVER_IP, US896_SERVER_PORT);
-    
+    est_client_set_server(ctx, US896_SERVER_IP, US896_SERVER_PORT, NULL);
+
     /*
      * issue the get ca certs request
      */
@@ -222,19 +218,18 @@ static void us896_test2 (void)
     CU_ASSERT(retrieved_cacerts_len > 0);
 
     retrieved_cacerts = malloc(retrieved_cacerts_len);
-    
+
     rc = est_client_copy_cacerts(ctx, retrieved_cacerts);
-    
+
     /*
      * output the retrieved ca certs and compare to what they should be
-     */    
+     */
     if (retrieved_cacerts) {
 
         printf("\nRetrieved CA Certs buffer:\n %s\n", retrieved_cacerts);
-        printf("Retrieved CA certs buffer length: %d\n", retrieved_cacerts_len);    
+        printf("Retrieved CA certs buffer length: %d\n", retrieved_cacerts_len);
     }
     free(retrieved_cacerts);
-
 
     /* 
      * All of these are negative tests and require that code in the
@@ -267,7 +262,6 @@ static void us896_test2 (void)
     CU_ASSERT(csr_len == 0);
     CU_ASSERT(csr_data == NULL);
 
-
     rc = est_server_init_csrattrs(ectx, TEST_SHORT_ATTR, strlen(TEST_SHORT_ATTR));
     CU_ASSERT(rc == EST_ERR_NONE);
 
@@ -297,35 +291,32 @@ static void us896_test2 (void)
     }
 }
 
-
-
 /* The main() function for setting up and running the tests.
  * Returns a CUE_SUCCESS on successful running, another
  * CUnit error code on failure.
  */
-int us896_add_suite (void)
-{
+int us896_add_suite(void) {
 #ifdef HAVE_CUNIT
-   CU_pSuite pSuite = NULL;
+    CU_pSuite pSuite = NULL;
 
-   /* add a suite to the registry */
-   pSuite = CU_add_suite("us896_client_csrattrs", 
-	                  us896_init_suite, 
-			  us896_destroy_suite);
-   if (NULL == pSuite) {
-      CU_cleanup_registry();
-      return CU_get_error();
-   }
+    /* add a suite to the registry */
+    pSuite = CU_add_suite("us896_client_csrattrs",
+            us896_init_suite,
+            us896_destroy_suite);
+    if (NULL == pSuite) {
+        CU_cleanup_registry();
+        return CU_get_error();
+    }
 
-   /* add the tests to the suite */
-   if ((NULL == CU_add_test(pSuite, "CSR Client Attributes API1", us896_test1)) ||
-       (NULL == CU_add_test(pSuite, "CSR Client Attributes API2 ", us896_test2)))
-   {
-      CU_cleanup_registry();
-      return CU_get_error();
-   }
+    /* add the tests to the suite */
+    if ((NULL == CU_add_test(pSuite, "CSR Client Attributes API1", us896_test1)) ||
+            (NULL == CU_add_test(pSuite, "CSR Client Attributes API2 ", us896_test2)))
+    {
+        CU_cleanup_registry();
+        return CU_get_error();
+    }
 
-   return CUE_SUCCESS;
+    return CUE_SUCCESS;
 #endif
 }
 

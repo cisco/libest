@@ -1,14 +1,16 @@
 /*------------------------------------------------------------------
- * us2174.c - Unit Tests for User Story 2174 - Proxy simple enroll 
+ * us2174.c - Unit Tests for User Story 2174 - Proxy simple enroll
  *
  * August, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
 #include <stdio.h>
+#ifndef WIN32
 #include <unistd.h>
+#endif
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -25,19 +27,38 @@
 static unsigned char *cacerts = NULL;
 static int cacerts_len = 0;
 
-#define US2174_RETRY_INTERVAL	3600
-//#define US2174_TCP_PORT		29001
+#define US2174_RETRY_INTERVAL   3600
+//#define US2174_TCP_PORT       29001
 
-#define US2174_TCP_SERVER_PORT		52174
-#define US2174_TCP_PROXY_PORT		62174
+#define US2174_TCP_SERVER_PORT      52174
+#define US2174_TCP_PROXY_PORT       62174
 
-#define US2174_SERVER_CERT "CA/estCA/private/estservercertandkey.pem"
-#define US2174_SERVER_KEY "CA/estCA/private/estservercertandkey.pem"
+#ifndef WIN32
+#define US2174_SERVER_CERT      "CA/estCA/private/estservercertandkey.pem"
+#define US2174_SERVER_KEY       "CA/estCA/private/estservercertandkey.pem"
 /* #define US2174_PROXY_CERT "CA/estCA/private/estservercertandkey.pem"   */
 /* #define US2174_PROXY_KEY "CA/estCA/private/estservercertandkey.pem" */
-#define US2174_PROXY_CERT "US2174/cert.pem"  
-#define US2174_PROXY_KEY "US2174/key.pem"
-#define US2174_CACERT "CA/estCA/cacert.crt"
+#define US2174_PROXY_CERT       "US2174/cert.pem"
+#define US2174_PROXY_KEY        "US2174/key.pem"
+#define US2174_CACERT           "CA/estCA/cacert.crt"
+#define US2174_CACERTS          "CA/estCA/cacert.crt"
+#define US2174_TRUSTED_CERTS    "CA/trustedcerts.crt"
+#define US2174_EXPLICIT_CERT    "US2174/cert-RA.pem"
+#define US2174_EXPLICIT_KEY     "US2174/key-RA.pem"
+
+#else
+#define US2174_SERVER_CERT      "CA\\estCA\\private\\estservercertandkey.pem"
+#define US2174_SERVER_KEY       "CA\\estCA\\private/estservercertandkey.pem"
+/* #define US2174_PROXY_CERT "CA/estCA/private/estservercertandkey.pem"   */
+/* #define US2174_PROXY_KEY "CA/estCA/private/estservercertandkey.pem" */
+#define US2174_PROXY_CERT       "US2174\\cert.pem"
+#define US2174_PROXY_KEY        "US2174\\key.pem"
+#define US2174_CACERT           "CA\\estCA\\cacert.crt"
+#define US2174_CACERTS          "CA\\estCA\\cacert.crt"
+#define US2174_TRUSTED_CERTS    "CA\\trustedcerts.crt"
+#define US2174_EXPLICIT_CERT    "US2174\\cert-RA.pem"
+#define US2174_EXPLICIT_KEY     "US2174\\key-RA.pem"
+#endif
 
 #define US2174_SERVER_IP        "127.0.0.1"
 #define US2174_TCP_PORT         US2174_TCP_SERVER_PORT
@@ -66,25 +87,19 @@ static int cacerts_len = 0;
  */
 #define US2174_PKCS10_ECDSA256 "MIIBMTCB2gIBADB4MQswCQYDVQQGEwJVUzELMAkGA1UECAwCTkMxDDAKBgNVBAcM\nA1JUUDESMBAGA1UECgwJRUNDb21wYW55MQ4wDAYDVQQLDAVFQ29yZzEPMA0GA1UE\nAwwGRUMgZG9lMRkwFwYJKoZIhvcNAQkBFgplY0Bkb2UuY29tMFkwEwYHKoZIzj0C\nAQYIKoZIzj0DAQcDQgAEO1uszCKdXNFzygNLNeS8azQKod1516GT9qdDddt9iJN4\nLpBTnv+7K7+tji5kts1kWSYyvqLxvnq8Q/TU1iQJ56AAMAkGByqGSM49BAEDRwAw\nRAIgP6qda+0TEKZFPopgUfwFMRsxcNmuQUe2yuz16460/SQCIBfLvmuMeyYOqbbD\nX0Ifde9yzkROVBCEPvK0hcU5KsTO"
 
-
 #define US2174_PKCS10_CORRUPT "MIIBMTCB2gIBADB4MQswCQYDVQQGEwJVUzELMAkGA1UECAwCTkMxDDAKBgNVBAcM\nA1JUUDESMBAGA1UECgwJRUNDb21wYW55MQ4wDAYDVQQLDAVFQ39yZzEPMA0GA1UE\nAwwGRUMgZG9lMRkwFwYJKoZIhvcNAQkBFgplY0Bkb2UuY29tMFkwEwYHKoZIzj0C\nAQYIKoZIzj0DAQcDQgAEO1uszCKdXNFzygNLNeS8azQKod1516GT9qdDddt9iJN4\nLpBTnv+7K7+tji5kts1kWSYyvqLxvnq8Q/TU1iQJ56AAMAkGByqGSM49BAEDRwAw\nRAIgP6qda+0TEKZFPopgUfwFMRsxcNmuQUe2yuz16460/SQCIBfLvmuMeyYOqbbD\nX0Ifde9yzkROVBCEPvK0hcU5KsTO"
 
 /*
- * The following is a valid CSR that already contains a PoP 
+ * The following is a valid CSR that already contains a PoP
  * challengePassword.  This was collected using estserver with
- * the dumpbin() function.  This CSR should never work since 
+ * the dumpbin() function.  This CSR should never work since
  * the PoP value in it will be stale.
  */
 #define US2174_PKCS10_STALE_POP "MIIBcjCB3AIBADARMQ8wDQYDVQQDEwZURVNUQ04wgZ8wDQYJKoZIhvcNAQEBBQAD\ngY0AMIGJAoGBAPDHvrkVB3+rFHl+KuIsrZGixldRYRD50S2vFs8mW5wWVxDS3xFR\nzcKtqg7JUyW8NYOFNWX0ozhCe87XP2h7tUpHyHlL/8N/84zuMtAtKTLU3Bjgq1xg\nuu8a1ht10wiy8u2r/uEKMhQwpvt56UY5pHzuqmqlO0qlmE+M58WN49IhAgMBAAGg\nIjAgBgkqhkiG9w0BCQcxExYRUjdGN1ZUNUwyd2VueWtMcAowDQYJKoZIhvcNAQEF\nBQADgYEAyenrskmfRIXcpeKBvL3VnW5N4HcLTwI9Hcbr744SWFQaw/R+ru+UXd2j\n99AGBr/GvTkTghINWg2C7vzGF/zhIuG6Ok9FtiMnNr9hZ+5SLYhfSFJbuIv65rWH\nvfLR9N9M2Q9jlf7p4AYfWXD2qD2XOTZw2t4trGZGKA2JR/OiB40="
 
-#define US2174_ENROLL_URL_BA "https://127.0.0.1:62175/.well-known/est/simpleenroll"
-#define US2174_PKCS10_CT	    "Content-Type: application/pkcs10" 
-#define US2174_UIDPWD_GOOD   "estuser:estpwd"
-#define US2174_CACERTS	    "CA/estCA/cacert.crt"
-#define US2174_EXPLICIT_CERT "US2174/cert-RA.pem" 
-#define US2174_EXPLICIT_KEY  "US2174/key-RA.pem"
-
-
+#define US2174_ENROLL_URL_BA    "https://127.0.0.1:62175/.well-known/est/simpleenroll"
+#define US2174_PKCS10_CT        "Content-Type: application/pkcs10" 
+#define US2174_UIDPWD_GOOD      "estuser:estpwd"
 
 static EVP_PKEY * generate_private_key (void)
 {
@@ -96,24 +111,23 @@ static EVP_PKEY * generate_private_key (void)
      * create an RSA keypair and assign them to a PKEY and return it.
      */
     BN_set_word(bn, 0x10001);
-    RSA_generate_key_ex(rsa, 1024, bn, NULL);    
+    RSA_generate_key_ex(rsa, 1024, bn, NULL);
 
     pkey = EVP_PKEY_new();
-    if (pkey==NULL) {
+    if (pkey == NULL) {
         printf("\nError allocating PKEY structure for new key pair\n");
         return NULL;
     }
     if (!EVP_PKEY_set1_RSA(pkey, rsa)) {
         printf("\nError assigning RSA key pair to PKEY structure\n");
         return NULL;
-    }        
-    
+    }
+
     RSA_free(rsa);
     BN_free(bn);
-    
+
     return (pkey);
 }
-
 
 #define GOOD_TOKEN "WW91IGRvbid0IGhhdmUgdG8gaG9sbGVyIEkgaGVhciB5b3U="
 #define DIFFERENT_TOKEN "V2VsbCwgSSd2ZSBnb3QgdG8gcnVuIHRvIGtlZXAgZnJvbSBoaWRpbicNCkFuZCBJJ20gYm91bmQgdG8ga2VlcCBvbiByaWRpbicNCkFuZCBJJ3ZlIGdvdCBvbmUgbW9yZSBzaWx2ZXIgZG9sbGFyDQpCdXQgSSdtIG5vdCBnb25uYSBsZXQgJ2VtIGNhdGNoIG1lLCBubw0KTm90IGdvbm5hIGxldCAnZW0gY2F0Y2ggdGhlIG1pZG5pZ2h0IHJpZGVy"
@@ -137,8 +151,8 @@ static int auth_cred_force_error = 0;
  * ownership of that buffer is implicitly transferred to the ET client library upon
  * return.
  */
-static
-EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credentials)
+static EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (
+        EST_HTTP_AUTH_HDR *auth_credentials)
 {
     char *token_ptr = NULL;
     int token_len = 0;
@@ -155,24 +169,26 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
      * callback
      */
     if (auth_cred_force_error) {
-        return(EST_HTTP_AUTH_CRED_NOT_AVAILABLE);
+        return (EST_HTTP_AUTH_CRED_NOT_AVAILABLE);
     }
 
     if (auth_credentials->mode == AUTH_TOKEN) {
-    /*
-     * If the test_token is set to anything, then we need to allocate
-     * space from the heap and copy in the value.
-     */
+        /*
+         * If the test_token is set to anything, then we need to allocate
+         * space from the heap and copy in the value.
+         */
         if (test_token != NULL) {
             token_len = strlen(test_token); /* use strlen() so that the string can be as large
-                                               as needed to test the EST client */
+             as needed to test the EST client */
             if (token_len == 0) {
-                printf("\nError determining length of token string used for credentials\n");
+                printf(
+                    "\nError determining length of token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
             }
-            token_ptr = malloc(token_len+1);
-            if (token_ptr == NULL){
-                printf("\nError allocating token string used for credentials\n");
+            token_ptr = malloc(token_len + 1);
+            if (token_ptr == NULL) {
+                printf(
+                    "\nError allocating token string used for credentials\n");
                 return EST_HTTP_AUTH_CRED_NOT_AVAILABLE;
             }
             strncpy(token_ptr, test_token, strlen(test_token));
@@ -190,13 +206,12 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
     return (EST_HTTP_AUTH_CRED_NOT_AVAILABLE);
 }
 
-
 /*
  * auth_credentials_basic_cb() is the same as the token based one above, but
  * instead returns the basic credentials of userid and password
  */
-static
-EST_HTTP_AUTH_CRED_RC auth_credentials_basic_cb (EST_HTTP_AUTH_HDR *auth_credentials)
+static EST_HTTP_AUTH_CRED_RC auth_credentials_basic_cb (
+        EST_HTTP_AUTH_HDR *auth_credentials)
 {
     CU_ASSERT(auth_credentials->mode == AUTH_BASIC);
 
@@ -210,19 +225,19 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_basic_cb (EST_HTTP_AUTH_HDR *auth_credent
      * callback
      */
     if (auth_cred_force_error) {
-        return(EST_HTTP_AUTH_CRED_NOT_AVAILABLE);
+        return (EST_HTTP_AUTH_CRED_NOT_AVAILABLE);
     }
-    
+
     if (auth_credentials->mode == AUTH_BASIC) {
 
         auth_credentials->user = malloc(sizeof("estuser"));
         strncpy(auth_credentials->user, "estuser", sizeof("estuser"));
         auth_credentials->pwd = malloc(sizeof("estpwd"));
         strncpy(auth_credentials->pwd, "estpwd", sizeof("estpwd"));
-        
+
         return (EST_HTTP_AUTH_CRED_SUCCESS);
     }
-    
+
     return (EST_HTTP_AUTH_CRED_NOT_AVAILABLE);
 }
 
@@ -232,7 +247,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_basic_cb (EST_HTTP_AUTH_HDR *auth_credent
  * instead verfies that the auth_mode passed is digest
  */
 static
-EST_HTTP_AUTH_CRED_RC auth_credentials_digest_cb (EST_HTTP_AUTH_HDR *auth_credentials)
+EST_HTTP_AUTH_CRED_RC auth_credentials_digest_cb(EST_HTTP_AUTH_HDR *auth_credentials)
 {
     CU_ASSERT(auth_credentials->mode == AUTH_DIGEST);
 
@@ -248,17 +263,17 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_digest_cb (EST_HTTP_AUTH_HDR *auth_creden
     if (auth_cred_force_error) {
         return(EST_HTTP_AUTH_CRED_NOT_AVAILABLE);
     }
-    
+
     if (auth_credentials->mode == AUTH_DIGEST) {
 
         auth_credentials->user = malloc(sizeof("estuser"));
         strncpy(auth_credentials->user, "estuser", sizeof("estuser"));
         auth_credentials->pwd = malloc(sizeof("estpwd"));
         strncpy(auth_credentials->pwd, "estpwd", sizeof("estpwd"));
-        
+
         return (EST_HTTP_AUTH_CRED_SUCCESS);
     }
-    
+
     return (EST_HTTP_AUTH_CRED_NOT_AVAILABLE);
 }
 #endif
@@ -266,21 +281,22 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_digest_cb (EST_HTTP_AUTH_HDR *auth_creden
 /*
  * Callback function passed to est_client_init()
  */
-static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
+static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
 {
-    BIO *bio_err;
-    bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
-    int approve = 0; 
-    
+    BIO * bio_err;
+    bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
+    int approve = 0;
+
     /*
      * Print out the specifics of this cert
      */
-    printf("%s: OpenSSL/EST server cert verification failed with the following error: openssl_cert_error = %d (%s)\n",
-           __FUNCTION__, openssl_cert_error,
-           X509_verify_cert_error_string(openssl_cert_error));
-    
+    printf(
+        "%s: OpenSSL/EST server cert verification failed with the following error: openssl_cert_error = %d (%s)\n",
+        __FUNCTION__, openssl_cert_error,
+        X509_verify_cert_error_string(openssl_cert_error));
+
     printf("Failing Cert:\n");
-    X509_print_fp(stdout,cur_cert);
+    X509_print_fp(stdout, cur_cert);
     /*
      * Next call prints out the signature which can be used as the fingerprint
      * This fingerprint can be checked against the anticipated value to determine
@@ -290,17 +306,18 @@ static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
 
     if (openssl_cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
         approve = 1;
-    }    
+    }
 
     BIO_free(bio_err);
-    
+
     return approve;
-}    
+}
 
 /*
  * us2174_simple_enroll() is used by test cases to perform a simple enroll.
  */
-static void us2174_simple_enroll (char *cn, char *server, EST_ERROR expected_enroll_rv,
+static void us2174_simple_enroll (char *cn, char *server,
+                                  EST_ERROR expected_enroll_rv,
                                   auth_credentials_cb callback)
 {
     EST_CTX *ectx;
@@ -308,14 +325,13 @@ static void us2174_simple_enroll (char *cn, char *server, EST_ERROR expected_enr
     EST_ERROR rv;
     int pkcs7_len = 0;
     unsigned char *new_cert = NULL;
-    EST_ERROR e_rc; 
+    EST_ERROR e_rc;
 
     /*
-     * Create a client context 
+     * Create a client context
      */
-    ectx = est_client_init(cacerts, cacerts_len, 
-                           EST_CERT_FORMAT_PEM,
-                           client_manual_cert_verify);
+    ectx = est_client_init(cacerts, cacerts_len, EST_CERT_FORMAT_PEM,
+        client_manual_cert_verify);
     CU_ASSERT(ectx != NULL);
 
     e_rc = est_client_set_auth_cred_cb(ectx, callback);
@@ -324,14 +340,14 @@ static void us2174_simple_enroll (char *cn, char *server, EST_ERROR expected_enr
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, server, US2174_TCP_PROXY_PORT);
+    est_client_set_server(ectx, server, US2174_TCP_PROXY_PORT, NULL);
 
     /*
      * generate a private key
      */
     key = generate_private_key();
     CU_ASSERT(key != NULL);
-    
+
     /*
      * Use the simplified API to enroll a CSR
      */
@@ -342,12 +358,14 @@ static void us2174_simple_enroll (char *cn, char *server, EST_ERROR expected_enr
      * Cleanup
      */
     EVP_PKEY_free(key);
-    if (new_cert) free(new_cert);
+    if (new_cert)
+        free(new_cert);
     est_destroy(ectx);
 }
 
 static
-void us2174_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_rv,
+void us2174_simple_reenroll (char *cn, char *server,
+                             EST_ERROR expected_enroll_rv,
                              auth_credentials_cb callback)
 {
     EST_CTX *ectx;
@@ -359,17 +377,16 @@ void us2174_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
     PKCS7 *p7 = NULL;
     BIO *b64, *out;
     X509 *cert = NULL;
-    STACK_OF(X509) *certs = NULL;
+    STACK_OF(X509) * certs = NULL;
     int i;
-    
-    EST_ERROR e_rc;    
+
+    EST_ERROR e_rc;
 
     /*
-     * Create a client context 
+     * Create a client context
      */
-    ectx = est_client_init(cacerts, cacerts_len, 
-                           EST_CERT_FORMAT_PEM,
-                           client_manual_cert_verify);
+    ectx = est_client_init(cacerts, cacerts_len, EST_CERT_FORMAT_PEM,
+        client_manual_cert_verify);
     CU_ASSERT(ectx != NULL);
 
     e_rc = est_client_set_auth_cred_cb(ectx, callback);
@@ -378,7 +395,7 @@ void us2174_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, server, US2174_TCP_PROXY_PORT);
+    est_client_set_server(ectx, server, US2174_TCP_PROXY_PORT, NULL);
 
     /*
      * generate a private key
@@ -396,35 +413,34 @@ void us2174_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
      * Retrieve the cert that was given to us by the EST server
      */
     if (rv == EST_ERR_NONE) {
-	new_cert = malloc(pkcs7_len);
-	CU_ASSERT(new_cert != NULL);
-	rv = est_client_copy_enrolled_cert(ectx, new_cert);
-	CU_ASSERT(rv == EST_ERR_NONE);
+        new_cert = malloc(pkcs7_len);
+        CU_ASSERT(new_cert != NULL);
+        rv = est_client_copy_enrolled_cert(ectx, new_cert);
+        CU_ASSERT(rv == EST_ERR_NONE);
     }
 
     est_destroy(ectx);
     ectx = NULL;
     /*
-     * Create a client context 
+     * Create a client context
      */
-    ectx = est_client_init(cacerts, cacerts_len, 
-                           EST_CERT_FORMAT_PEM,
-                           client_manual_cert_verify);
-    CU_ASSERT(ectx != NULL);    
-    
+    ectx = est_client_init(cacerts, cacerts_len, EST_CERT_FORMAT_PEM,
+        client_manual_cert_verify);
+    CU_ASSERT(ectx != NULL);
+
     /*
      * Now that we have the cert, switch the server over to token mode
      */
     st_enable_http_token_auth();
-    
+
     e_rc = est_client_set_auth_cred_cb(ectx, callback);
     CU_ASSERT(e_rc == EST_ERR_NONE);
 
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, server, US2174_TCP_PORT);
-    
+    est_client_set_server(ectx, server, US2174_TCP_PORT, NULL);
+
     /*
      * And attempt a reenroll while in token mode
      *
@@ -435,22 +451,23 @@ void us2174_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
     b64 = BIO_new(BIO_f_base64());
     out = BIO_new_mem_buf(new_cert, pkcs7_len);
     out = BIO_push(b64, out);
-    p7 = d2i_PKCS7_bio(out,NULL);
+    p7 = d2i_PKCS7_bio(out, NULL);
     CU_ASSERT(p7 != NULL);
     BIO_free_all(out);
-    i=OBJ_obj2nid(p7->type);
+    i = OBJ_obj2nid(p7->type);
     switch (i) {
     case NID_pkcs7_signed:
-	certs = p7->d.sign->cert;
-	break;
+        certs = p7->d.sign->cert;
+        break;
     case NID_pkcs7_signedAndEnveloped:
-	certs = p7->d.signed_and_enveloped->cert;
-	break;
+        certs = p7->d.signed_and_enveloped->cert;
+        break;
     default:
-	break;
+        break;
     }
     CU_ASSERT(certs != NULL);
-    if (!certs) return;
+    if (!certs)
+        return;
     /* our new cert should be the one and only
      * cert in the pkcs7 blob.  We shouldn't have to
      * iterate through the full list to find it. */
@@ -465,15 +482,15 @@ void us2174_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
      */
     rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
     CU_ASSERT(rv == expected_enroll_rv);
-    
+
     /*
      * Cleanup
      */
     EVP_PKEY_free(key);
-    if (new_cert) free(new_cert);
+    if (new_cert)
+        free(new_cert);
     est_destroy(ectx);
 }
-
 
 static void us2174_clean (void)
 {
@@ -486,46 +503,45 @@ static int us2174_start_server (int manual_enroll, int nid)
     /*
      * First we start an EST server acting as the CA
      */
-    rv = st_start(US2174_TCP_SERVER_PORT, 
-	          US2174_SERVER_CERT,
-	          US2174_SERVER_KEY,
-	          "estrealm",
-	          US2174_CACERT,
-	          "CA/trustedcerts.crt",
-	          "US2174/estExampleCA.cnf",
-		  manual_enroll,  // manual enroll
-		  0,  // disable PoP
-		  nid); // ecdhe nid info
-    sleep(1);
-    if (rv != EST_ERR_NONE) return rv;
+    rv = st_start(US2174_TCP_SERVER_PORT,
+                  US2174_SERVER_CERT,
+                  US2174_SERVER_KEY,
+                  "estrealm",
+                  US2174_CACERT,
+                  US2174_TRUSTED_CERTS,
+                  "US2174/estExampleCA.cnf",
+                  manual_enroll, // manual enroll
+                  0,  // disable PoP
+                  nid); // ecdhe nid info
+    SLEEP(1);
+    if (rv != EST_ERR_NONE)
+        return rv;
 
     /*
      * Next we start an EST proxy acting as an RA with the server side
      * operating in token auth mode.
      */
-    rv = st_proxy_start_token(US2174_TCP_PROXY_PORT, 
+    rv = st_proxy_start_token(US2174_TCP_PROXY_PORT,
                               US2174_PROXY_CERT,
-                              US2174_PROXY_KEY,
-                              "estrealm",
+                              US2174_PROXY_KEY, "estrealm",
                               US2174_CACERT,
-                              "CA/trustedcerts.crt",
+                              US2174_TRUSTED_CERTS,
                               "estuser",
                               "estpwd",
                               "127.0.0.1",
                               US2174_TCP_SERVER_PORT,
                               0); //  disable PoP
-    
-    sleep(1);
+
+    SLEEP(1);
 
     return rv;
 }
 
-
-void us2174_stop_server() 
+void us2174_stop_server ()
 {
     st_stop();
     st_proxy_stop();
-    sleep(2);
+    SLEEP(2);
 }
 
 /*
@@ -544,20 +560,19 @@ static int us2174_init_suite (void)
      */
     cacerts_len = read_binary_file(US2174_CACERTS, &cacerts);
     if (cacerts_len <= 0) {
-	return 1;
+        return 1;
     }
 
     us2174_clean();
 
     /*
-     * Start an instance of the EST server with 
+     * Start an instance of the EST server with
      * automatic enrollment enabled.
      */
     rv = us2174_start_server(0, 0);
 
     return rv;
 }
-
 
 /*
  * This routine is called when CUnit uninitializes this test
@@ -580,17 +595,17 @@ static int us2174_destroy_suite (void)
  * Make sure token auth mode did not break anything.
  *
  */
-static void us2174_test1 (void) 
+static void us2174_test1(void)
 {
     long rv;
 
     LOG_FUNC_NM;
 
-    rv = curl_http_post(US2174_ENROLL_URL_BA, US2174_PKCS10_CT, 
-	                US2174_PKCS10_RSA2048, 
-	                US2174_UIDPWD_GOOD, US2174_CACERTS, CURLAUTH_BASIC, 
-			NULL, NULL, NULL);
-    /* 
+    rv = curl_http_post(US2174_ENROLL_URL_BA, US2174_PKCS10_CT,
+            US2174_PKCS10_RSA2048,
+            US2174_UIDPWD_GOOD, US2174_CACERTS, CURLAUTH_BASIC,
+            NULL, NULL, NULL);
+    /*
      * Since we passed in a valid userID/password,
      * we expect the server to respond with 200
      */
@@ -604,9 +619,10 @@ static void us2174_test1 (void)
  * server - TOKEN
  *
  */
-static void us2174_test2 (void) 
+static void us2174_test2 (void)
 {
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
     auth_cred_callback_called = 0;
     auth_cred_force_error = 0;
@@ -628,21 +644,20 @@ static void us2174_test2 (void)
      * use
      */
     st_proxy_set_clnt_token_cred(GOOD_TOKEN);
-    
+
     /*
      * Set up the EST Client and have it perform a simple enroll.
      *
      * Enroll should succeed.
      */
     us2174_simple_enroll("TC2174-4", US2174_SERVER_IP, EST_ERR_NONE,
-                         auth_credentials_token_cb);
+        auth_credentials_token_cb);
 
     /*
      * callback should have been called
      */
     CU_ASSERT(auth_cred_callback_called == 1);
 }
-
 
 /*
  * Simple enroll -
@@ -651,7 +666,8 @@ static void us2174_test2 (void)
  */
 static void us2174_test3 (void)
 {
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
     auth_cred_callback_called = 0;
     auth_cred_force_error = 0;
@@ -671,21 +687,20 @@ static void us2174_test3 (void)
      * use
      */
     st_proxy_set_clnt_token_cred(GOOD_TOKEN);
-    
+
     /*
      * Set up the EST Client and have it perform a simple enroll.
      *
      * Enroll should succeed.
      */
     us2174_simple_enroll("TC2174-4", US2174_SERVER_IP, EST_ERR_NONE,
-                         auth_credentials_token_cb);
+        auth_credentials_token_cb);
 
     /*
      * callback should have been called
      */
     CU_ASSERT(auth_cred_callback_called == 1);
 }
-
 
 /*
  * Simple enroll -
@@ -694,7 +709,8 @@ static void us2174_test3 (void)
  */
 static void us2174_test4 (void)
 {
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
     auth_cred_callback_called = 0;
     auth_cred_force_error = 0;
@@ -710,20 +726,20 @@ static void us2174_test4 (void)
      * tell it what tokens to accept.
      */
     st_proxy_enable_http_basic_auth();
-/*     st_proxy_set_srv_valid_token(GOOD_TOKEN); */
+    /*     st_proxy_set_srv_valid_token(GOOD_TOKEN); */
     /*
      * tell the client side of proxy which token credential to
      * use
      */
     st_proxy_set_clnt_token_cred(GOOD_TOKEN);
-    
+
     /*
      * Set up the EST Client and have it perform a simple enroll.
      *
      * Enroll should succeed.
      */
     us2174_simple_enroll("TC2174-4", US2174_SERVER_IP, EST_ERR_NONE,
-                         auth_credentials_basic_cb);
+        auth_credentials_basic_cb);
 
     /*
      * callback should have been called
@@ -731,16 +747,16 @@ static void us2174_test4 (void)
     CU_ASSERT(auth_cred_callback_called == 1);
 }
 
-
 /*
  * Simple RE-enroll -
  * proxy - TOKEN
  * server - TOKEN
  *
  */
-static void us2174_test5 (void) 
+static void us2174_test5 (void)
 {
-    LOG_FUNC_NM;
+    LOG_FUNC_NM
+    ;
 
     auth_cred_callback_called = 0;
     auth_cred_force_error = 0;
@@ -762,21 +778,20 @@ static void us2174_test5 (void)
      * use
      */
     st_proxy_set_clnt_token_cred(GOOD_TOKEN);
-    
+
     /*
      * Set up the EST Client and have it perform a simple RE-enroll.
      *
      * RE-enroll should succeed.
      */
     us2174_simple_reenroll("TC2174-4", US2174_SERVER_IP, EST_ERR_NONE,
-                         auth_credentials_token_cb);
+        auth_credentials_token_cb);
 
     /*
      * callback should have been called
      */
     CU_ASSERT(auth_cred_callback_called == 1);
 }
-
 
 /* The main() function for setting up and running the tests.
  * Returns a CUE_SUCCESS on successful running, another
@@ -785,31 +800,30 @@ static void us2174_test5 (void)
 int us2174_add_suite (void)
 {
 #ifdef HAVE_CUNIT
-   CU_pSuite pSuite = NULL;
+    CU_pSuite pSuite = NULL;
 
-   /* add a suite to the registry */
-   pSuite = CU_add_suite("us2174_token_proxy", 
-	                  us2174_init_suite, 
-			  us2174_destroy_suite);
-   if (NULL == pSuite) {
-      CU_cleanup_registry();
-      return CU_get_error();
-   }
+    /* add a suite to the registry */
+    pSuite = CU_add_suite("us2174_token_proxy",
+            us2174_init_suite,
+            us2174_destroy_suite);
+    if (NULL == pSuite) {
+        CU_cleanup_registry();
+        return CU_get_error();
+    }
 
-   /* add the tests to the suite */
-   if (/* (NULL == CU_add_test(pSuite, "Proxy Enroll basic sanity test", us2174_test1)) || */
-       (NULL == CU_add_test(pSuite, "Proxy Enroll token auth, both proxy and server", us2174_test2)) ||
-       (NULL == CU_add_test(pSuite, "Proxy Enroll token auth, proxy token/server basic", us2174_test3)) ||
-       (NULL == CU_add_test(pSuite, "Proxy Enroll token auth, proxy basic/server token", us2174_test4)) ||
-       (NULL == CU_add_test(pSuite, "Proxy RE-Enroll token auth, proxy basic/server token", us2174_test5))
-       )
-   {
-      CU_cleanup_registry();
-      return CU_get_error();
-   }
+    /* add the tests to the suite */
+    if (/* (NULL == CU_add_test(pSuite, "Proxy Enroll basic sanity test", us2174_test1)) || */
+        (NULL == CU_add_test(pSuite, "Proxy Enroll token auth, both proxy and server", us2174_test2)) ||
+        (NULL == CU_add_test(pSuite, "Proxy Enroll token auth, proxy token/server basic", us2174_test3)) ||
+        (NULL == CU_add_test(pSuite, "Proxy Enroll token auth, proxy basic/server token", us2174_test4)) ||
+        (NULL == CU_add_test(pSuite, "Proxy RE-Enroll token auth, proxy basic/server token", us2174_test5))
+        )
+    {
+       CU_cleanup_registry();
+       return CU_get_error();
+    }
 
-   return CUE_SUCCESS;
+    return CUE_SUCCESS;
 #endif
 }
-
 

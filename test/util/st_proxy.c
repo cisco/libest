@@ -7,7 +7,7 @@
  *
  * October, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -56,6 +56,8 @@ static char server_valid_token[MAX_AUTH_TOKEN_LEN+1];
 static char client_token_cred[MAX_AUTH_TOKEN_LEN+1];
 
 extern void dumpbin(char *buf, size_t len);
+
+char tst_proxy_path_seg_auth[EST_MAX_PATH_SEGMENT_LEN+1];
 
 /*
  * We hard-code the DH parameters here.  THIS SHOULD NOT
@@ -125,11 +127,18 @@ static char digest_user[3][32] =
  * Return 1 to signal the user is valid, 0 to fail the auth
  */
 static int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, 
-	                      X509 *peer_cert, void *app_data)
+	                      X509 *peer_cert, char *path_seg, void *app_data)
 {
     int user_valid = 0; 
     char *digest;
 
+    
+    if (path_seg) {
+        printf("\n %s: Path segment in the authenticate callback is: %s\n",
+               __FUNCTION__, path_seg);
+        strcpy(tst_proxy_path_seg_auth, path_seg);
+    }    
+    
     switch (ah->mode) {
     case AUTH_BASIC:
 	/*
@@ -137,7 +146,7 @@ static int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah,
 	 * or some external database to authenticate a 
 	 * userID/password.  But for this example code,
 	 * we just hard-code a local user for testing
-	 * the libest API.
+	 * the CiscoEST API.
 	 */
 	if (!strcmp(ah->user, "estuser") && !strcmp(ah->pwd, "estpwd")) {
 	    /* The user is valid */
@@ -231,7 +240,7 @@ static int ssl_srp_server_param_cb (SSL *s, int *ad, void *arg) {
 
 static void cleanup() 
 {
-    est_server_stop(epctx);
+    est_proxy_stop(epctx);
     est_destroy(epctx);
     free(proxy_cacerts_raw);
     free(proxy_trustcerts);
@@ -383,7 +392,9 @@ static int st_proxy_start_internal (int listen_port,
 	            int ec_nid, 
 		    int enable_srp,
 		    char *srp_vfile,
-                    int enable_server_token_auth)
+                    int enable_tls10,
+                    int enable_server_token_auth,
+                    int disable_cacerts_response)
 {
     X509 *x;
     EVP_PKEY *priv_key;
@@ -465,10 +476,19 @@ static int st_proxy_start_internal (int listen_port,
     //est_apps_startup();
 
     est_init_logger(EST_LOG_LVL_INFO, NULL);
-    epctx = est_proxy_init(proxy_trustcerts, proxy_trustcerts_len, 
-                           proxy_cacerts_raw, proxy_cacerts_len,
-	                   EST_CERT_FORMAT_PEM, realm, x, priv_key,
-			   userid, password);
+
+    if (disable_cacerts_response) {    
+        epctx = est_proxy_init(proxy_trustcerts, proxy_trustcerts_len, 
+                               NULL, 0,
+                               EST_CERT_FORMAT_PEM, realm, x, priv_key,
+                               userid, password);
+    } else {
+        epctx = est_proxy_init(proxy_trustcerts, proxy_trustcerts_len, 
+                               proxy_cacerts_raw, proxy_cacerts_len,
+                               EST_CERT_FORMAT_PEM, realm, x, priv_key,
+                               userid, password);        
+    }
+    
     if (!epctx) {
         printf("\nUnable to initialize EST context.  Aborting!!!\n");
         return (-1);
@@ -480,6 +500,10 @@ static int st_proxy_start_internal (int listen_port,
 
     if (!enable_pop) {
 	est_server_disable_pop(epctx);
+    }
+
+    if (enable_tls10) {
+	est_server_enable_tls10(epctx);
     }
 
     if (est_set_http_auth_cb(epctx, &process_http_auth)) {
@@ -610,9 +634,64 @@ int st_proxy_start (int listen_port,
 	            int enable_pop,
 	            int ec_nid)
 {
-    return st_proxy_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
-	    trusted_certs_file, userid, password, server, server_port, enable_pop, ec_nid,
-	    0, NULL, 0);
+    return st_proxy_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file, trusted_certs_file, userid, password, server, server_port, enable_pop, ec_nid, 0, NULL, 0, 0, 0);
+}
+
+
+/*
+ * Call this to start a simple EST proxy server.  This server will not
+ * be thread safe.  It can only handle a single EST request on
+ * the listening socket at any given time.  This server will run
+ * until st_proxy_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  userid          User ID used by proxy to identify itself to the server for
+ *                  HTTP authentication.
+ *  password        The password associated with userid.
+ *  server          Hostname or IP address of the CA EST server that this
+ *                  proxy will forward requests too.
+ *  server_port     TCP port number used by the CA EST server.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_proxy_start_nocacerts (int listen_port,
+                              char *certfile,
+                              char *keyfile,
+                              char *realm,
+                              char *ca_chain_file,
+                              char *trusted_certs_file,
+                              char *userid,
+                              char *password,
+                              char *server,
+                              int server_port,
+                              int enable_pop,
+                              int ec_nid)
+{
+    return st_proxy_start_internal(listen_port,
+                                   certfile,
+                                   keyfile,
+                                   realm,
+                                   ca_chain_file,
+                                   trusted_certs_file,
+                                   userid,
+                                   password,
+                                   server,
+                                   server_port,
+                                   enable_pop,
+                                   ec_nid,
+                                   0,
+                                   NULL,
+                                   0,
+                                   0,
+                                   1);
 }
 
 /*
@@ -654,7 +733,89 @@ int st_proxy_start_srp (int listen_port,
 {
     return st_proxy_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
 	    trusted_certs_file, userid, password, server, server_port, enable_pop, 0,
-	    1, vfile, 0);
+				   1, vfile, 0, 0, 0);
+}
+
+/*
+ * Call this to start a simple EST proxy server with TLS1.0.
+ * This server will not
+ * be thread safe.  It can only handle a single EST request on
+ * the listening socket at any given time.  This server will run
+ * until st_proxy_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  userid          User ID used by proxy to identify itself to the server for
+ *                  HTTP authentication.
+ *  password        The password associated with userid.
+ *  server          Hostname or IP address of the CA EST server that this
+ *                  proxy will forward requests too.
+ *  server_port     TCP port number used by the CA EST server.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_proxy_start_tls10 (int listen_port,
+	            char *certfile,
+	            char *keyfile,
+	            char *realm,
+	            char *ca_chain_file,
+	            char *trusted_certs_file,
+		    char *userid,
+		    char *password,
+		    char *server,
+		    int server_port,
+	            int enable_pop,
+	            int ec_nid)
+{
+    return st_proxy_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file, trusted_certs_file, userid, password, server, server_port, enable_pop, ec_nid, 0, NULL, 1, 0, 0);
+}
+
+/*
+ * Call this to start a simple EST proxy server with SRP *and* TLS1.0
+ * This server will not
+ * be thread safe.  It can only handle a single EST request on
+ * the listening socket at any given time.  This server will run
+ * until st_proxy_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  userid          User ID used by proxy to identify itself to the server for
+ *                  HTTP authentication.
+ *  password        The password associated with userid.
+ *  server          Hostname or IP address of the CA EST server that this
+ *                  proxy will forward requests too.
+ *  server_port     TCP port number used by the CA EST server.
+ *  enable_pop      Enable PoP of the CSR challengePassword.
+ *  vfile:          Name of Openssl compatible SRP verifier file.
+ */
+int st_proxy_start_srp_tls10 (int listen_port,
+	            char *certfile,
+	            char *keyfile,
+	            char *realm,
+	            char *ca_chain_file,
+	            char *trusted_certs_file,
+		    char *userid,
+		    char *password,
+		    char *server,
+		    int server_port,
+	            int enable_pop,
+		    char *vfile)
+{
+    return st_proxy_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file, trusted_certs_file, userid, password, server, server_port, enable_pop, 0, 1, vfile, 1, 0, 0);
 }
 
 
@@ -696,7 +857,7 @@ int st_proxy_start_token (int listen_port,
 {
     return st_proxy_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
 	    trusted_certs_file, userid, password, server, server_port, enable_pop, 0,
-				   0, NULL, 1);
+				   0, NULL, 0, 1, 0);
 }
 
 void st_proxy_enable_pop ()
@@ -740,6 +901,16 @@ int st_proxy_http_disable (int disable)
     return (0);
 }
 
+void st_proxy_set_http_auth_optional ()
+{
+    est_set_http_auth_required(epctx, HTTP_AUTH_NOT_REQUIRED);
+}
+
+void st_proxy_set_http_auth_required ()
+{
+    est_set_http_auth_required(epctx, HTTP_AUTH_REQUIRED);
+}
+
 void st_proxy_enable_http_basic_auth ()
 {
     est_proxy_set_auth_mode(epctx, AUTH_BASIC);
@@ -770,3 +941,9 @@ void st_proxy_set_clnt_token_cred (char *value)
     memset(client_token_cred, MAX_AUTH_TOKEN_LEN+1, 0);
     strncpy(&(client_token_cred[0]), value, MAX_AUTH_TOKEN_LEN);    
 }
+
+void st_proxy_set_server_read_timeout (int timeout)
+{
+    est_server_set_read_timeout(epctx, timeout);
+}
+

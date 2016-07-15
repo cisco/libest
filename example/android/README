@@ -1,0 +1,21 @@
+To build libest for Android, first you'll need to build OpenSSL
+for Android and install it to some location.  For example, install
+OpenSSL to /nobackup/tmp/Wood/est/android/ssl
+
+Next, set the following environment variables:
+
+CC=arm-linux-androideabi-gcc
+LDFLAGS=-L/nobackup/tmp/Wood/est/android/ssl/lib
+
+Next, configure using this command:
+
+../configure --with-ssl_dir=/nobackup/tmp/Wood/est/android/ssl --prefix=/nobackup/tmp/Wood/est/android/est --host=arm
+
+Then do the normal make and make install
+
+
+
+NOTE:  There were some issues with libc that looked to be resolved by 
+       manually adding the following path to CFLAGs in the build/src/Makefile
+
+-I/home/user/Android/android-ndk-r7/platforms/android-14/arch-arm/usr/include

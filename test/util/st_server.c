@@ -7,7 +7,7 @@
  *
  * August, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -33,6 +33,8 @@
 #include <sys/select.h>
 #include <netinet/in.h>
 
+#define MAX_CERT_LEN 8192
+#define MAX_FILENAME_LEN 255
 
 BIO *bio_err = NULL;
 static int tcp_port;
@@ -44,12 +46,24 @@ EST_CTX *ectx;
 SRP_VBASE *srp_db = NULL;
 unsigned char *trustcerts = NULL;
 int trustcerts_len = 0;
-static char conf_file[255];
+static char conf_file[MAX_FILENAME_LEN];
 static char *csr_attr_value = NULL;
+int write_csr = 0;
+static char csr_filename[MAX_FILENAME_LEN];
 
 static char valid_token_value[MAX_AUTH_TOKEN_LEN+1];
 
 extern void dumpbin(char *buf, size_t len);
+
+char tst_srvr_path_seg_auth[EST_MAX_PATH_SEGMENT_LEN+1];
+
+char tst_srvr_path_seg_enroll[EST_MAX_PATH_SEGMENT_LEN+1];
+char tst_srvr_path_seg_cacerts[EST_MAX_PATH_SEGMENT_LEN+1];
+char tst_srvr_path_seg_csrattrs[EST_MAX_PATH_SEGMENT_LEN+1];
+
+
+unsigned char *p7_ca_certs = NULL;
+int   p7_ca_certs_len = 0;
 
 /*
  * We hard-code the DH parameters here.  THIS SHOULD NOT
@@ -226,22 +240,29 @@ DONE:
 }
 
 
-/****************************************************************************************
- * The following funcitons are the callbacks used by libest.a to bind
+/******************************************************************************
+ * The following functions are the callbacks used by libest.so to bind
  * the EST stack to the HTTP/SSL layer and the CA server.
- ***************************************************************************************/
-#define MAX_CERT_LEN 8192
+ ******************************************************************************/
+
 /*
  * Callback function used by EST stack to process a PKCS10
  * enrollment request with the CA.
  */
 static int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len, 
-                               unsigned char **cert, int *cert_len,
-			       char *uid, X509 *peercert, void *app_data)
+                                      unsigned char **cert, int *cert_len,
+                                      char *uid, X509 *peercert,
+                                      char *path_seg, void *app_data)
 {
     BIO *result = NULL;
     char *buf;
-
+    
+    if (path_seg){
+        printf("\n %s: Path segment in the enroll request is: %s\n",
+               __FUNCTION__, path_seg);
+        strcpy(tst_srvr_path_seg_enroll, path_seg);
+    }
+    
     /*
      * If we're simulating manual certificate enrollment, 
      * the CA will not automatically sign the cert request.
@@ -273,6 +294,14 @@ static int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
 
     }
 
+    /*
+     * Dump out pkcs10 to a file,
+     * this will contain a list of the OIDs in the CSR.
+     */
+    if (write_csr) {
+        write_binary_file(csr_filename, pkcs10, p10_len);
+    }
+
     result = ossl_simple_enroll(pkcs10, p10_len, conf_file);
 
     /*
@@ -293,10 +322,17 @@ static int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
 //This CSR attributes contains the challengePassword OID and others
 #define TEST_CSR "MCYGBysGAQEBARYGCSqGSIb3DQEJBwYFK4EEACIGCWCGSAFlAwQCAg==\0"
 
-static unsigned char * process_csrattrs_request (int *csr_len, void *app_data)
+static unsigned char * process_csrattrs_request (int *csr_len, char *path_seg,
+                                                 void *app_data)
 {
     unsigned char *csr_data;
 
+    if (path_seg){
+        printf("\n %s: Path segment in the casrattrs request is: %s\n",
+               __FUNCTION__, path_seg);
+        strcpy(tst_srvr_path_seg_csrattrs, path_seg);
+    }    
+    
     if (csr_attr_value) {
 	*csr_len = strlen(csr_attr_value);
 	csr_data = malloc(*csr_len + 1);
@@ -307,6 +343,246 @@ static unsigned char * process_csrattrs_request (int *csr_len, void *app_data)
 	strcpy((char *)csr_data, TEST_CSR);
     }
     return (csr_data);
+}
+
+
+/*
+ * This function can be used to output the OpenSSL
+ * error buffer.  This is useful when an OpenSSL
+ * API call fails and you'd like to provide some
+ * detail to the user regarding the cause of the
+ * failure.
+ */
+void ossl_dump_ssl_errors ()
+{
+    BIO		*e = NULL;
+    BUF_MEM	*bptr = NULL;
+
+    e = BIO_new(BIO_s_mem());
+    if (!e) {
+	printf("BIO_new failed\n");
+	return;
+    }
+    ERR_print_errors(e);
+    (void)BIO_flush(e);
+    BIO_get_mem_ptr(e, &bptr);
+    printf("OSSL error: %s\n", bptr->data); 
+    BIO_free_all(e);
+}
+
+
+/*
+ * This function is used to read the CERTS in a BIO and build a
+ * stack of X509* pointers.  This is used during the PEM to
+ * PKCS7 conversion process.
+ */
+static int add_certs_from_BIO (STACK_OF(X509) *stack, BIO *in)
+{
+    int count = 0;
+    int ret = -1;
+
+    STACK_OF(X509_INFO) * sk = NULL;
+    X509_INFO *xi;
+
+
+    /* This loads from a file, a stack of x509/crl/pkey sets */
+    sk = PEM_X509_INFO_read_bio(in, NULL, NULL, NULL);
+    if (sk == NULL) {
+        printf("Unable to read certs from PEM encoded data\n");
+        return (ret);
+    }
+
+    /* scan over it and pull out the CRL's */
+    while (sk_X509_INFO_num(sk)) {
+        xi = sk_X509_INFO_shift(sk);
+        if (xi->x509 != NULL) {
+            sk_X509_push(stack, xi->x509);
+            xi->x509 = NULL;
+            count++;
+        }
+        X509_INFO_free(xi);
+    }
+
+    ret = count;
+
+    /* never need to OPENSSL_free x */
+    if (sk != NULL) {
+        sk_X509_INFO_free(sk);
+    }
+    return (ret);
+}
+
+
+static BIO *get_certs_pkcs7 (BIO *in, int do_base_64)
+{
+    STACK_OF(X509) * cert_stack = NULL;
+    PKCS7_SIGNED *p7s = NULL;
+    PKCS7 *p7 = NULL;
+    BIO *out = NULL;
+    BIO *b64;
+    int buflen = 0;
+
+
+    /*
+     * Create a PKCS7 object 
+     */
+    if ((p7 = PKCS7_new()) == NULL) {
+        printf("pkcs7_new failed\n");
+	goto cleanup;
+    }
+    /*
+     * Create the PKCS7 signed object
+     */
+    if ((p7s = PKCS7_SIGNED_new()) == NULL) {
+        printf("pkcs7_signed_new failed\n");
+	goto cleanup;
+    }
+    /*
+     * Set the version
+     */
+    if (!ASN1_INTEGER_set(p7s->version, 1)) {
+        printf("ASN1_integer_set failed\n");
+	goto cleanup;
+    }
+
+    /*
+     * Create a stack of X509 certs
+     */
+    if ((cert_stack = sk_X509_new_null()) == NULL) {
+        printf("stack malloc failed\n");
+	goto cleanup;
+    }
+
+    /*
+     * Populate the cert stack
+     */
+    if (add_certs_from_BIO(cert_stack, in) < 0) {
+        printf("Unable to load certificates\n");
+	ossl_dump_ssl_errors();
+	goto cleanup;
+    }
+
+    /*
+     * Create the BIO which will receive the output
+     */
+    out = BIO_new(BIO_s_mem());
+    if (!out) {
+        printf("BIO_new failed\n");
+	goto cleanup;
+    }
+
+    /*
+     * Add the base64 encoder if needed
+     */
+    if (do_base_64) {
+	b64 = BIO_new(BIO_f_base64());
+        if (b64 == NULL) {
+            printf("BIO_new failed while attempting to create base64 BIO\n");
+            ossl_dump_ssl_errors();
+            goto cleanup;
+        }    
+	out = BIO_push(b64, out);
+    }
+
+    p7->type = OBJ_nid2obj(NID_pkcs7_signed);
+    p7->d.sign = p7s;
+    p7s->contents->type = OBJ_nid2obj(NID_pkcs7_data);
+    p7s->cert = cert_stack;
+
+    /*
+     * Convert from PEM to PKCS7
+     */
+    buflen = i2d_PKCS7_bio(out, p7);
+    if (!buflen) {
+        printf("PEM_write_bio_PKCS7 failed\n");
+	ossl_dump_ssl_errors();
+	BIO_free_all(out);
+        out = NULL;
+	goto cleanup;
+    }
+    (void)BIO_flush(out);
+
+cleanup:
+    /* 
+     * Only need to cleanup p7.  This frees up the p7s and
+     * cert_stack allocations for us since these are linked
+     * to the p7.
+     */
+    if (p7) {
+        PKCS7_free(p7);
+    }
+
+    return out;
+}
+
+
+/*
+ * Takes in a PEM based buffer and length containing the CA certificates trust
+ * chain, reads the data in and loads the certificates into a global buffer
+ * which is used to respond to the /cacerts callback requests.
+ */
+static int load_ca_certs (EST_CTX *ctx, unsigned char *pem_cacerts, int pem_cacerts_len)
+{
+    BIO *cacerts_bio = NULL;
+    BIO *in_bio;
+    unsigned char *retval;
+
+    in_bio = BIO_new_mem_buf(pem_cacerts, pem_cacerts_len);
+    if (in_bio == NULL) {
+        printf("Unable to open the raw cert buffer\n");
+        return (-1);
+    }
+
+    /*
+     * convert the CA certs to PKCS7 encoded char array
+     * This is used by an EST server to respond to the
+     * cacerts request.
+     */
+    cacerts_bio = get_certs_pkcs7(in_bio, 1);
+    if (!cacerts_bio) {
+        printf("get_certs_pkcs7 failed\n");
+        BIO_free(in_bio);
+        return (-1);
+    }
+
+    p7_ca_certs_len = (int) BIO_get_mem_data(cacerts_bio, (char**)&retval);
+    if (p7_ca_certs_len <= 0) {
+        printf("Failed to copy PKCS7 data\n");
+        BIO_free_all(cacerts_bio);
+        BIO_free(in_bio);
+        return (-1);
+    }
+
+    p7_ca_certs = malloc(p7_ca_certs_len);
+    if (!p7_ca_certs) {
+        printf("malloc failed\n");
+        BIO_free_all(cacerts_bio);
+        BIO_free(in_bio);
+        return (-1);
+    }
+    memcpy(p7_ca_certs, retval, p7_ca_certs_len);
+    BIO_free_all(cacerts_bio);
+    BIO_free(in_bio);
+    return (0);
+}
+
+
+static unsigned char * process_cacerts_request (int *cacerts_len, char *path_seg,
+                                                void *app_data)
+{
+
+    if (path_seg){
+        printf("\n %s: Path segment in the cacerts request is: %s\n",
+               __FUNCTION__, path_seg);
+        strcpy(tst_srvr_path_seg_cacerts, path_seg);
+    }
+    
+    /*
+     * return the preloaded cacerts chain buffer
+     */
+    *cacerts_len = p7_ca_certs_len;
+    
+    return (p7_ca_certs);
 }
 
 static char digest_user[3][32] = 
@@ -320,10 +596,16 @@ static char digest_user[3][32] =
  * Return 1 to signal the user is valid, 0 to fail the auth
  */
 static int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, 
-	                      X509 *peer_cert, void *app_data)
+	                      X509 *peer_cert, char *path_seg, void *app_data)
 {
     int user_valid = 0; 
     char *digest;
+    
+    if (path_seg){
+        printf("\n %s: Path segment in the authenticate callback is: %s\n",
+               __FUNCTION__, path_seg);
+        strcpy(tst_srvr_path_seg_auth, path_seg);
+    }    
 
     switch (ah->mode) {
     case AUTH_BASIC:
@@ -332,7 +614,7 @@ static int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah,
 	 * or some external database to authenticate a 
 	 * userID/password.  But for this example code,
 	 * we just hard-code a local user for testing
-	 * the libest API.
+	 * the CiscoEST API.
 	 */
 	if (!strcmp(ah->user, "estuser") && !strcmp(ah->pwd, "estpwd")) {
 	    /* The user is valid */
@@ -552,7 +834,9 @@ static int st_start_internal (
     int enable_pop,
     int ec_nid,
     int enable_srp,
-    char *srp_vfile)
+    char *srp_vfile,
+    int enable_tls10,
+    int disable_cacerts_response)
 {
     X509 *x;
     EVP_PKEY *priv_key;
@@ -560,9 +844,10 @@ static int st_start_internal (
     DH *dh;
     EST_ERROR rv;
     pthread_t thread;
-
+    int rc;
+    
     manual_enroll = simulate_manual_enroll;
-
+    
     /*
      * Read in the CA certificates
      * This is the explicit chain
@@ -572,6 +857,7 @@ static int st_start_internal (
         printf("\nCA chain file %s file could not be read\n", ca_chain_file);
         return (-1);
     }
+
     /*
      * Read in the external CA certificates
      * This is the implicit chain
@@ -591,8 +877,17 @@ static int st_start_internal (
      * configured.
      */
     if (ossl_conf_file) {
-	strncpy(conf_file, ossl_conf_file, 255);
+	strncpy(conf_file, ossl_conf_file, MAX_FILENAME_LEN);
     }
+
+    /*
+     * Build out a default file name used to write out CSRs received
+     */
+#ifdef WIN32
+    snprintf(csr_filename, MAX_FILENAME_LEN, "%s\\%s", getenv(TEMP), "csr.p10");
+#else
+    strncpy(csr_filename, "/tmp/csr.p10", MAX_FILENAME_LEN);
+#endif
 
     /*
      * Read in the local server certificate 
@@ -644,9 +939,16 @@ static int st_start_internal (
         return (-1);
     }
 
-    ectx = est_server_init(trustcerts, trustcerts_len, 
-                           cacerts_raw, cacerts_len, 
-	                   EST_CERT_FORMAT_PEM, realm, x, priv_key);
+    if (disable_cacerts_response) {
+        ectx = est_server_init(trustcerts, trustcerts_len, 
+                               NULL, 0, 
+                               EST_CERT_FORMAT_PEM, realm, x, priv_key);
+    } else {
+        ectx = est_server_init(trustcerts, trustcerts_len, 
+                               cacerts_raw, cacerts_len, 
+                               EST_CERT_FORMAT_PEM, realm, x, priv_key);
+    }
+    
     if (!ectx) {
         printf("\nUnable to initialize EST context.  Aborting!!!\n");
         return (-1);
@@ -658,6 +960,10 @@ static int st_start_internal (
 
     if (!enable_pop) {
 	est_server_disable_pop(ectx);
+    }
+
+    if (enable_tls10) {
+	est_server_enable_tls10(ectx);
     }
 
     if (est_set_ca_enroll_cb(ectx, &process_pkcs10_enrollment)) {
@@ -676,6 +982,31 @@ static int st_start_internal (
         printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");
         return (-1);
     }    
+
+    /*
+     * If we've been told to not pass down the CA certs response chain
+     * to the library then we need to set them up and register the call
+     * back to provide them at the app layer
+     */
+    if (disable_cacerts_response) {
+
+        /*
+         * Convert the PEM encoded buffer previously read the file into the
+         * PKCS7 buffer used for responding to /cacerts requests
+         */
+        rc = load_ca_certs(ectx, cacerts_raw, cacerts_len);
+        if (rc != 0) {
+            printf("\nUnable to convert CA certs chain in PEM format to PKCS7."
+                   " Aborting!!!\n");
+            return (-1);
+        }            
+        
+        if (est_set_cacerts_cb(ectx, &process_cacerts_request)) {
+            printf("\nUnable to set EST CACerts callback.  Aborting!!!\n");
+            return (-1);
+        }
+    }
+    
 
     /*
      * Set DH parameters for TLS
@@ -729,6 +1060,50 @@ static int st_start_internal (
 }
 
 /*
+ * Call this to start a simple EST server with legacy TLS 1.0
+ * support enabled, which is not compliant.  This server will not
+ * be thread safe.  It can only handle a single EST request on
+ * the listening socket at any given time.  This server will run
+ * until st_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  ossl_conf_file: Configuration file that specifies the OpenSSL
+ *                  CA to use.
+ *  simulate_manual_enroll: Pass in a non-zero value to have the EST
+ *                  simulate manual approval at the CA level.  This
+ *                  is used to test the retry-after logic.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_start_tls10 (int listen_port,
+	      char *certfile,
+	      char *keyfile,
+	      char *realm,
+	      char *ca_chain_file,
+	      char *trusted_certs_file,
+	      char *ossl_conf_file,
+              int simulate_manual_enroll,
+	      int enable_pop,
+	      int ec_nid)
+{
+    int rv;
+
+    rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+	      trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
+                           enable_pop, ec_nid, 0, NULL, 1, 0);
+
+    return (rv);
+}
+
+/*
  * Call this to start a simple EST server.  This server will not
  * be thread safe.  It can only handle a single EST request on
  * the listening socket at any given time.  This server will run
@@ -766,7 +1141,51 @@ int st_start (int listen_port,
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
 	      trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
-	      enable_pop, ec_nid, 0, NULL);
+                           enable_pop, ec_nid, 0, NULL, 0, 0);
+
+    return (rv);
+}
+
+
+/*
+ * Call this to start a simple EST server where the CAcerts are responded to
+ * through the callback up to the application layer.  This server will not be
+ * thread safe.  It can only handle a single EST request on the listening
+ * socket at any given time.  This server will run until st_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  ossl_conf_file: Configuration file that specifies the OpenSSL
+ *                  CA to use.
+ *  simulate_manual_enroll: Pass in a non-zero value to have the EST
+ *                  simulate manual approval at the CA level.  This
+ *                  is used to test the retry-after logic.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_start_nocacerts (int listen_port,
+                        char *certfile,
+                        char *keyfile,
+                        char *realm,
+                        char *ca_chain_file,
+                        char *trusted_certs_file,
+                        char *ossl_conf_file,
+                        int simulate_manual_enroll,
+                        int enable_pop,
+                        int ec_nid)
+{
+    int rv;
+
+    rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+	      trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
+                           enable_pop, ec_nid, 0, NULL, 0, 1);
 
     return (rv);
 }
@@ -804,7 +1223,48 @@ int st_start_srp (int listen_port,
     int rv;
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
-	      trusted_certs_file, ossl_conf_file, 0, enable_pop, 0, 1, vfile);
+                           trusted_certs_file, ossl_conf_file, 0, enable_pop,
+                           0, 1, vfile, 0, 0);
+
+    return (rv);
+}
+
+/*
+ * Call this to start a simple EST server with SRP *and* TLS1.0.
+ * This server will not
+ * be thread safe.  It can only handle a single EST request on
+ * the listening socket at any given time.  This server will run
+ * until st_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  ossl_conf_file: Configuration file that specifies the OpenSSL
+ *                  CA to use.
+ *  enable_pop:     Set to non-zero value to require Proof-of-possession check.
+ *  vfile:          Full path name of OpenSSL SRP verifier file
+ */
+int st_start_srp_tls10 (int listen_port,
+	          char *certfile,
+	          char *keyfile,
+	          char *realm,
+	          char *ca_chain_file,
+	          char *trusted_certs_file,
+	          char *ossl_conf_file,
+	          int enable_pop,
+		  char *vfile)
+{
+    int rv;
+    /* Note here that the last parm turns on tls1.0 */
+    rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+                           trusted_certs_file, ossl_conf_file, 0, enable_pop, 0,
+                           1, vfile, 1, 0);
 
     return (rv);
 }
@@ -868,6 +1328,11 @@ void st_disable_pop ()
     est_server_disable_pop(ectx);
 }
 
+void st_enable_crl ()
+{
+    est_enable_crl(ectx);
+}
+
 void st_set_http_auth_optional ()
 {
     est_set_http_auth_required(ectx, HTTP_AUTH_NOT_REQUIRED);
@@ -883,4 +1348,34 @@ void st_enable_csrattr_enforce ()
     est_server_enforce_csrattr(ectx);
 }
 
+void st_set_read_timeout (int timeout)
+{
+    est_server_set_read_timeout(ectx, timeout);
+}
+
+/*
+ * Call to enable or disable the writing of the CSR to a file
+ * 1 = write, 0 = do NOT write (default)
+ */
+void st_write_csr (int state)
+{
+    write_csr = state;
+}
+
+/*
+ * Change the default filename used when writing out the CSR to a file
+ */
+void st_csr_filename (char *incoming_name)
+{
+    if (incoming_name == NULL) {
+#ifdef WIN32
+        snprintf(csr_filename, MAX_FILENAME_LEN, "%s\\%s",
+                 getenv(TEMP), "csr.p10");
+#else
+        snprintf(csr_filename, MAX_FILENAME_LEN, "/tmp/csr.p10");
+#endif
+    } else {
+        snprintf(csr_filename, MAX_FILENAME_LEN, incoming_name);
+    }
+}
 

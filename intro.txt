@@ -1,15 +1,15 @@
 /**
  
-@mainpage Introduction to libest 
+@mainpage Introduction to libEST
  
-This document describes libest, a library that implements the 
+This document describes libEST, a library that implements the 
 Enrollment over Secure Transport protocol (RFC 7030).  This protocol is a
 replacement for SCEP.  It allows X509 certificates to be provisioned
 on end-user devices and network infrastructure devices.  Users of
-libest are encouraged to read RFC 7030 prior to using the API.
+libEST are encouraged to read RFC 7030 prior to using the API.
 See the @ref Features section for more detailed information.
 
-libest provides a subset of the EST specification.  The 
+libEST provides a subset of the EST specification.  The 
 following message flows are provided:
 
 @latexonly
@@ -23,15 +23,15 @@ following message flows are provided:
 
  
 This document is organized as follows.  The first chapter provides 
-background material on EST and an overview of libest.  The subsequent
-chapters provide a detailed reference to the libest API and related
+background material on EST and an overview of libEST.  The subsequent
+chapters provide a detailed reference to the libEST API and related
 functions.  The reference material is created automatically (using the
 doxygen utility) from comments embedded in some of the C header
 files. 
 
 @section LICENSE License and Disclaimer
 
-libest is distributed under the following license, which is included
+libEST is distributed under the following license, which is included
 in the source code distribution.  It is reproduced in the manual in
 case you attained the library from another source.
 	
@@ -73,9 +73,9 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 The EST specification defines requirements for enrolling X509
 certifications for end-entities, Registration Authorities (RA), and 
 Certificate Authorities (CA).  There are six message flows described
-in the EST specification.  libest supports a subset of these
+in the EST specification.  libEST supports a subset of these
 message flows, but it designed to operate as a client, RA, or CA.
-libest supports the following four EST message flows:
+libEST supports the following four EST message flows:
 
 @latexonly
 \begin{itemize}
@@ -101,21 +101,21 @@ section of the EST specification (RFC 7030).  In addition, it is important that
 you read and understand the terms outlined in the @ref LICENSE section.
 
 
-@section Installing Installing and Building libest 
+@section Installing Installing and Building libEST 
 
 @latexonly
 
-To install libest, download the latest release of the distribution.  
+To install libEST, download the latest release of the distribution.  
 The naming convention of the tarball is 
-\texttt{libest-A.B.gz}, where \texttt{A} is the
+\texttt{libEST-A.B.gz}, where \texttt{A} is the
 major release number and \texttt{B} is
 the minor release number, and \texttt{gz} is the file
 extension.  Users are encouraged to use the most recent release.  
 Unpack the distribution and
 extract the source files; the directory into which the source files
-will go is named \texttt{libest-A-B}.
+will go is named \texttt{libEST-A-B}.
 
-libest uses the GNU \texttt{autoconf} and \texttt{make}
+libEST uses the GNU \texttt{autoconf} and \texttt{make}
 utilities\footnote{BSD make may not work; if both versions of make
 are on your platform, you may have to invoke GNU make as \texttt{gmake}.}.  In
 the \texttt{libest} directory, run the configure script and then make:
@@ -127,7 +127,7 @@ the \texttt{libest} directory, run the configure script and then make:
 
 This package has been tested on both 32 and 64 bit Linux systems running
 CentOS and Ubuntu.  The OpenSSL development package should be installed
-on the system.  libest is designed to work 
+on the system.  libEST is designed to work 
 with the OpenSSL 1.0.1 API.  You can use the --with-ssl-dir option with
 the ./configure command to specify the location of the OpenSSL
 installation on the host system.
@@ -135,14 +135,27 @@ installation on the host system.
 \subsection{Static Linking}
 
 By default, both the shared and statically linked version of 
-libest are built.  If only the static version is to be used, 
+libEST are built.  If only the static version is to be used, 
 the --disable-shared option should be used with ./configure.
-This will disbale the generation of the shared version of the libest 
+This will disbale the generation of the shared version of the libEST
 library, forcing the linker to use the statically linked version.
+
+\subsection{SafeC Library}
+
+libEST is dependent upon the Cisco SafeC library.  Starting with libEST
+release 1.2.0 the SafeC library is not included with libEST and must be
+obtained separately from the Common Security Modules download site.  
+
+libEST release 1.2.0 requires the use of Cisco SafeC 3.0 or above.  Cisco
+SafeC 3.0 is built as a shared library by default and libEST requires a
+shared version of the SafeC library.
+
+When configuring the libEST build, the --with-safec-dir option is used to
+point to the installed SafeC library to be used.
 
 \subsection{Release builds}
 
-By default libest includes debug symbols in the target binary.  To perform
+By default libEST includes debug symbols in the target binary.  To perform
 a production release build that does not contain debug symbols, the 
 following procedure can be used:
 
@@ -151,6 +164,40 @@ following procedure can be used:
   make                          
   make install-strip
 \end{verbatim}
+
+@endlatexonly
+
+@latexonly
+
+\subsection{Java build}
+
+libEST is used by JEST, which provides Java support for EST client-side 
+operations.  JEST requires the libEST libary (libest.so). JEST 
+provides a Java wrapper class to invoke the client-side API available in
+libest.so. JEST consists of a native JNI library (libjest.so) and
+an associated Jar file containg the wrapper class.  This allows your Java
+applications to leverage libEST (via JEST).
+
+If you plan to use JEST for Java support, you will still need to
+build libEST. Use the \texttt{--enable-jni} option when
+configuring libEST.  When this option is used, the libciscojest.so
+target is built in addition to the libest.so target.  libjest.so is
+installed into the same directory as libest.so (/usr/local/est/lib by default).
+You will need to ensure the LD\_LIBRARY\_PATH is configured properly for your
+JVM to include the libEST and JEST native libraries.
+
+The following procedure shows how to build and install libEST with Java support: 
+
+\begin{verbatim}
+  ./configure --enable-jni       
+  make                          
+  make install
+\end{verbatim}
+
+The JEST Jar file is distributed separately from libEST. The Jar file
+should be included into your JVM using the CLASSPATH setting.  Please refer
+to the JEST API documentation for using JEST within your Java
+application.
 
 @endlatexonly
 
@@ -175,7 +222,7 @@ proxy	& Example EST proxy application acting as an RA \\
 \end{center}
 
 There are README files in each of the example subdirectories.  The
-samples are built automatically when libest is configured and
+samples are built automatically when libEST is configured and
 compiled.  When running the example server application, there is a
 script called createCA.sh that must be run once to create the
 root CA certificate and certificate chain that is required for 
@@ -186,7 +233,7 @@ operations.
 
 Note, the example code is not suitable for including into 
 commercial software.  The examples are primarily used to test
-the libest library and to show how the API should be used.  The
+the libEST library and to show how the API should be used.  The
 example code does not have all the appropriate error handling
 and robust design required for commercial software.  For example,
 the OpenSSL CA used by the example EST server is not thread safe and
@@ -201,10 +248,10 @@ EST provides for a standards based mechanism to provision X509 certificates
 from either an RA or CA.  An entity that desires to attain a valid
 X509 certificate bound to a trust point acts as an EST client and
 communicates with either an RA or a CA to request and receive an
-X509 certificate from a trusted CA.  libest provides
+X509 certificate from a trusted CA.  libEST provides
 both client-side and server-side capabilities to operate as any
 role in the EST enrollment process (end-entity, RA, or CA). 
-It is important to note that libest is not a CA.  libest is only
+It is important to note that libEST is not a CA.  libEST is only
 the EST stack, which can be used by a CA to comply with RFC 7030.
 
 The EST specification requires the use of TLS for transport.  This 
@@ -220,11 +267,11 @@ minimal setup is required prior to initiating the enrollment process:
 \item   A server certificate must be provisioned for the EST enabled
   CA server.  This allows the CA to identify itself to EST clients.
 \item   The certificate chain used to sign the server certificate 
-  must be provided to libest on the server side.
+  must be provided to libEST on the server side.
 \item   The root certificate of the chain used to sign the server
   certificate should be pre-provisioned on the EST client.  This allows
   the EST client to verify the identity of the EST enabled CA 
-  server\footnote{This statement does not address the bootstrap enrollment process.  The bootstrap method is supported by libest, but requires additional configuration.}.  If this root certificate can not be pre-provisioned, then
+  server\footnote{This statement does not address the bootstrap enrollment process.  The bootstrap method is supported by libEST, but requires additional configuration.}.  If this root certificate can not be pre-provisioned, then
   a fingerprint of the EST server identity certificate can be used by the
   EST client to verify the EST server identity.
 \end{itemize}
@@ -261,15 +308,15 @@ consists of the following procedure:
 @section ESTClient EST Client Operation
 
 Applications that need to provision X509 certificates can utilize
-libest in client mode.  libest provides an API that performs the
+libEST in client mode.  libEST provides an API that performs the
 steps in the enrollment process described in the @ref Overview section. 
 The first step when using the API is to create an EST context.  Once
-created, the context is used for subsequent API calls into the libest 
+created, the context is used for subsequent API calls into the libEST
 library.  The EST specification allows for several authentication methods.
 This includes HTTP basic authentication, HTTP digest authentication, and
 certificate based authentication.  The example client code provided
-with the libest distribution tarball shows how to use the various capabilities 
-in the libest API, including the various authentication methods.
+with the libEST distribution tarball shows how to use the various capabilities 
+in the libEST API, including the various authentication methods.
 
 There are two methods for provisioning a certifice while operating
 in client mode.  The first is the easy provision API, which provides
@@ -287,7 +334,7 @@ easy provision API should not be used.
 \subsection{Easy Provision API}
 @endlatexonly
 
-The easy provision API provides a simplied entry point into libest to
+The easy provision API provides a simplied entry point into libEST to
 enroll a certificate request with a CA.  This API encapsulates the
 recommended steps as defined in RFC 7030, which includes:
 
@@ -331,8 +378,8 @@ While the easy provision API is easier to use, it does not allow the application
 to specify X509 attributes in the PKCS10 CSR other than the Common Name.  Because
 the CA may be configured with policy requiring the certificate requestor to provide
 additional X509 attributes in the CSR, the easy provision API may not be suitable
-for your application.  When this occurs, libest provides a more granular API that
-allows your application to create the PKCS10 CSR itself, rather than having libest 
+for your application.  When this occurs, libEST provides a more granular API that
+allows your application to create the PKCS10 CSR itself, rather than having libEST
 create the CSR on behalf of your application.  This allows your application to include
 any required X509 attributes in the CSR.  The following steps outline the procedure 
 for using the granular API: 
@@ -388,13 +435,14 @@ allows for many variations.  Other considerations include:
 
 The EST specification covers a broad spectrum of the OSI
 model.  EST places requirements on TLS, HTTP, and the certificate
-authority (CA).  libest is not a CA.  libest only implements the
+authority (CA).  libEST is not a CA.  libEST only implements the
 TLS and HTTP layers as defined in RFC 7030.  It
 is the responsibility of your application to bind
-the CA server to libest.  Additionally, libest does not implement
+the CA server to libEST.  Additionally, libEST does not implement
 the TCP server required to accept incoming requests. 
 Your application must initialize and manage the
-TCP sockets for incoming connections.  
+TCP sockets for incoming connections.  Please reference EDCS-1265219
+for a more detailed discussion on the architecture.
 
 When implementing an EST server your application is
 responsible for binding the EST stack to a CA.  The
@@ -407,27 +455,27 @@ receive incoming connections.  An overview of implementing a server is:
     certificate and private key used to identify itself to any
     EST clients.  The application also provides the trusted certificate chain
     to be used when responding to the /cacerts requests. 
-\item  Specify the callback function that libest will use to process
+\item  Specify the callback function that libEST will use to process
     an incoming CSR from the client.  This callback function is the
-    glue that binds libest to the CA.  This function will forward
-    the CSR to the CA and return the response to libest.  Your application
+    glue that binds libEST to the CA.  This function will forward
+    the CSR to the CA and return the response to libEST.  Your application
     must implement this callback function.
-\item  Specify the callback function that libest will invoke to verify
+\item  Specify the callback function that libEST will invoke to verify
     the client identity when HTTP basic or digest authentication
     is used.  This callback function would verify the user's identity
-    and return a response to libest.  A typical use case would be
+    and return a response to libEST.  A typical use case would be
     to utilize a RADIUS server from within callback function.  Your application
     is responsible for hooking into the desired authentication server,
-    such as RADIUS, LDAP, OAuth, etc.  libest currently does not contain
-    support for authentication protocols.  In the future libest may
+    such as RADIUS, LDAP, OAuth, etc.  libEST currently does not contain
+    support for authentication protocols.  In the future libEST may
     include built-in support for RADIUS, LDAP, etc.
 \item  Open one or more listening TCP sockets.  These sockets must be
     managed by the application.  An example of doing this would be
     to write an NGINX module that utlized NGINX to manage the
     listening sockets, while forwarding incoming requests on these
-    sockets to libest.  Another example would be to write a custom
+    sockets to libEST.  Another example would be to write a custom
     multi-threaded TCP server to accept incoming socket requests and
-    forward them to libest.
+    forward them to libEST.
 \end{itemize}
 @endlatexonly
 
@@ -439,11 +487,11 @@ represent the minimal configuration to implementing an EST server:
 2.  Invoke est_server_init() to attain a new EST context.  The server's
     certificate and private key are provided to this call.
 3.  Invoke est_set_ca_enroll_cb() to provide a callback function to 
-    libest that is invoked by libest when a PKCS10 CSR needs to be
+    libEST that is invoked by libEST when a PKCS10 CSR needs to be
     signed by the CA.  Your application must implement this callback
     function to forward the CSR to the CA.
 4.  Invoke est_set_csr_cb() to provide a callback function to
-    libest that is invoked by libest when requesting the CSR 
+    libEST that is invoked by libEST when requesting the CSR 
     attributes that should be included by EST clients during the
     enrollment process.
 5.  Invoke est_server_start() to initialize the HTTPS services.
@@ -456,7 +504,7 @@ represent the minimal configuration to implementing an EST server:
 The procedure outlined above describes the general use case for
 implementing a simple EST server operating as either an RA or CA. 
 The EST specification allows for many
-variations.  libest provides additional API entry points to customize
+variations.  libEST provides additional API entry points to customize
 the behavior of the server.  Other considerations include:
 
 @latexonly
@@ -477,16 +525,16 @@ the behavior of the server.  Other considerations include:
 
 @section ESTProxy EST Proxy Operation
 
-libest provides the ability to operate as an EST proxy.  An EST proxy receives
+libEST provides the ability to operate as an EST proxy.  An EST proxy receives
 incoming EST requests and forwards outgoing EST requests to either an RA or CA.
 A typical use case for EST proxy mode would be to deploy the proxy on a VPN
 head-end device that is dual-homed on both a public and private network.  This would
 allow EST requests orginating from VPN clients on the public Internet to be 
 forwarded to an RA or CA residing on a private network.
 
-Using libest in proxy mode is similar to server mode operation.  The application
+Using libEST in proxy mode is similar to server mode operation.  The application
 is responsible for implementing the TCP listener and managing the TCP connections.
-However, there is no need to integrate a CA with libest when operating in
+However, there is no need to integrate a CA with libEST when operating in
 proxy mode, which makes proxy mode suitable for operating as an RA.  The following 
 steps outline the minimal API calls required to implement an EST proxy:
 
@@ -506,9 +554,9 @@ steps outline the minimal API calls required to implement an EST proxy:
 
 @section FIPS FIPS 140-2 Compliance
 
-Another consideration is FIPS 140 compliance.  libest was developed
-using OpenSSL 1.0.1.  OpenSSL can be configured and compiled 
-with FIPS 140 support.  This allows libest to claim FIPS compliance when the 
+Another consideration is FIPS 140 compliance. libEST was developed
+using OpenSSL and OpenSSL can be configured and compiled 
+with FIPS 140 support.  This allows libEST to claim FIPS compliance when the 
 application invokes the FIPS_mode_set() entry point in the OpenSSL
 API.  When in FIPS mode, some ciphers are not allowed, including MD5.
 Since HTTP digest authentication uses MD5, FIPS should not be enabled

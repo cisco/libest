@@ -4,12 +4,14 @@
  *
  * March, 2015
  *
- * Copyright (c) 2015 by cisco Systems, Inc.
+ * Copyright (c) 2015, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
 #include <stdio.h>
+#ifndef WIN32
 #include <unistd.h>
+#endif 
 #include <est.h>
 #include <curl/curl.h>
 #include "curl_utils.h"
@@ -38,17 +40,34 @@ static int cacerts_len = 0;
  */
 #define US1883_PKCS10_RSA2048 "MIICvTCCAaUCAQAweDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAk5DMQwwCgYDVQQH\nDANSVFAxEjAQBgNVBAoMCVJTQWNlcnRjbzEMMAoGA1UECwwDcnNhMRAwDgYDVQQD\nDAdyc2EgZG9lMRowGAYJKoZIhvcNAQkBFgtyc2FAZG9lLmNvbTCCASIwDQYJKoZI\nhvcNAQEBBQADggEPADCCAQoCggEBAN6pCTBrK7T029Bganq0QHXHyNL8opvxc7JY\nXaQz39R3J9BoBE72XZ0QXsBtUEYGNhHOLaISASNzs2ZKWpvMHJWmPYNt39OCi48Y\nFOgLDbAn83mAOKSfcMLbibCcsh4HOlhaaFrWskRTAsew16MUOzFu6vBkw/AhI82J\nKPYws0dYOxuWFIgE1HL+m/gplbzq7FrBIdrqkNL+ddgyXoDd5NuLMJGDAK7vB1Ww\n9/Baw/6Ai9V5psye1v8fWDr6HW2gg9XnVtMwB4pCg1rl1lSYstumTGYbM6cxJywe\nLuMnDjj1ZwDsZ1wIXaBAXZaxEIS/rXOX0HnZMTefxY/gpFk1Kv0CAwEAAaAAMA0G\nCSqGSIb3DQEBBQUAA4IBAQB6rIwNjE8l8jFKR1hQ/qeSvee/bAQa58RufZ4USKuK\nlsih7UCf8bkQvgljnhscQuczIbnJzeqEPqSdnomFW6CvMc/ah+QfX87FGYxJgpwF\nutnUifjDiZhrWgf/jNNbtHrkecw/Zex4sZ/HC127jtE3cyEkDsrA1oBxYRCq93tC\nW2q9PLVmLlyjcZcS1KHVD2nya79kfS0YGMocsw1GelVL2iz/ocayAS5GB9Y2sEBw\nRkCaYZw6vhj5qjpCUzJ3E8Cl3VD4Kpi3j3bZGDJA9mdmd8j5ZyPY56eAuxarWssD\nciUM/h6E99w3tmrUZbLljkjJ7pBXRnontgm5WZmQFH4X"
 #define US1883_PKCS10_4096_REQ "MIIEZjCCAk4CAQAwITEPMA0GA1UEAwwGSkpUZXN0MQ4wDAYDVQQFEwUwMDAwMTCC\nAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBALfLlHxqzObiKWDfX8saZ4l3\n1JyrCP4xmyQitY2pIIGlLvHT7t1WZ0LO9uo0uB7b/8iGbXki8FgqSm1jROe5lwCN\nDIhTJdG4b705c6XmD3Mh436De9d4gzpjedA2qurSI9+GVNVgU0ZOWJFu9g+y3iRH\ndfsjO9u0E2MfZWWR8M72gBqzvbDDPN4BDwLa9TkQ2Rsxf3h2d7bN2DNShNSYX/dE\nIX89d9uC6FegsHQxHINUOdZzeAn3yuQMBU+FwohEl9Ub8Qu9gub2MJUrYNRQnii7\nduvq5/UjkhjNWzIh7LAbdaM+0wSmCe0ju+wKbayUZZkrqoVK6bWZzFs4dYtn95/S\nVVOv95MD5D1EokXw3Iih7GRJygtWn5e4/YO68LONBF7UE24vgBwEieF6J0bFAlxw\n15s7pIalkGF7CUbitRhbB3kTjGfUDR8YpSsKdqxHNmWBXY7ZVk4T8K7168cNWSOL\netZpTk4BtoUJBnWP8Uq38YOi6389U24gmZtGpSpJEEtDy1MJ8Ha4PZE/VkFtmUWq\nbETOx2kubGwc9vXvWfi5BxE2VvetGNsy2EQEZPVwscYaCy0/yO3fu06coEtr7Ekr\ngapDDEzVtiP9NPe5q18Azu+T9ngoOx3PqrCPG1BDN6z1Ue2tSDdOxKNFMNMwqYIn\nZP9MXh+tz8RaKvsclv9JAgMBAAGgADANBgkqhkiG9w0BAQUFAAOCAgEAJMwZ4IUB\nUSH5wQBfsYT4SxtKsZtvun6QX0+7jNMtzzQUOqO79Kx/DKpzsKxLNvHKmFqcxA7g\ngbEwXkAP5+VaMD92DghcNjXOqGKclZdmGj2oREqZwzvTDRo4zP1yen5vgL/Yz7SA\nxze8wPg2WhlV9+qvkVCpHN3EUIfO+rBgi2reo/vF7xq5CAU4UtQ1h4gHax67Yww8\nJmypyGGa0ad0Z8ruiclI/QtluADUxy1YM0Up2FC0s7j72xzrRpEl1fPlOi/bFaZp\nsr4zllOpwnRdxvffXO7gXtXVIr4IHVHNWj6kmDzyk0ovat2Ms5aGUcMDN6Jm8KIB\nNBVH5FgkBVQOPSngkwnEOj0RsaKSxT5EfmOxm9pCrAE3rNdVOgO4t8wZ6DQUqye/\nBUdmgXtWoGsKIg8oR5HAWBER8yw/qdiRlBGgN/PKZdpmYI2TEfZvp/nXwG7QLjGx\nsj5TWeRKNgghUCu3uF+1s0R+gqgY1S9GgiDSifL7+h+bXJ4ncyRGq+XPnrfMiRkB\neSyv3kyIxtZfAB6TjkUbtVfo2KrfqNxu4lbJYE2b6hs1L6t7YPhjubz9aES7wES7\nk+ZZPZn/k/GsqUpsWHnEFEvi5C5WPrnpvVN6rKh0fB+AukGrS+9EK4KNZWfV/yf8\nXN5qWyOtgd4oLUUsgFDJsqNh6A1mlmx6CnY=\n"
-#define US1883_CLIENT_CERT "CA/estCA/private/estservercertandkey.pem"
-#define US1883_CLIENT_KEY  "CA/estCA/private/estservercertandkey.pem"
-
 #define US1883_ENROLL_URL_BA "https://127.0.0.1:29001/.well-known/est/simpleenroll"
 #define US1883_PKCS10_CT     "Content-Type: application/pkcs10" 
 #define US1883_UIDPWD_GOOD   "estuser:estpwd"
+#ifndef WIN32
 #define US1883_CACERTS	     "CA/estCA/cacert.crt"
-
 #define US1883_CACERT "CA/estCA/cacert.crt"
 #define US1883_SERVER_CERT "CA/estCA/private/estservercertandkey.pem"
 #define US1883_SERVER_KEY "CA/estCA/private/estservercertandkey.pem"
+#define US1883_CLIENT_CERT "CA/estCA/private/estservercertandkey.pem"
+#define US1883_CLIENT_KEY  "CA/estCA/private/estservercertandkey.pem"
+#else
+#define US1883_CACERTS	     "CA\\estCA\\cacert.crt"
+#define US1883_CACERT "CA\\estCA\\cacert.crt"
+#define US1883_SERVER_CERT "CA\\estCA\\private\\estservercertandkey.pem"
+#define US1883_SERVER_KEY "CA\\estCA\\private\\estservercertandkey.pem"
+#define US1883_CLIENT_CERT "CA\\estCA\\private\\estservercertandkey.pem"
+#define US1883_CLIENT_KEY  "CA\\estCA\\private/estservercertandkey.pem"
+
+static CRITICAL_SECTION logger_critical_section;  
+static void us1883_logger_stderr (char *format, va_list l) 
+{
+    EnterCriticalSection(&logger_critical_section);
+	vfprintf(stderr, format, l);
+	fflush(stderr);
+    LeaveCriticalSection(&logger_critical_section); 
+}
+
+#endif 
 
 
 static void us1883_clean (void)
@@ -80,8 +99,10 @@ static int us1883_start_server (int manual_enroll, int nid)
 static int us1883_init_suite (void)
 {
     int rv;
-
-    est_init_logger(EST_LOG_LVL_INFO, NULL);
+#ifdef WIN32
+    InitializeCriticalSection (&logger_critical_section);
+    est_init_logger(EST_LOG_LVL_INFO, &us1883_logger_stderr);
+#endif
 
     /*
      * Read in the CA certificates
@@ -390,7 +411,7 @@ static void us1883_simple_enroll (char *cn, char *server, EST_ERROR expected_enr
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, server, US1883_TCP_PORT);
+    est_client_set_server(ectx, server, US1883_TCP_PORT, NULL);
 
     /*
      * generate a private key
@@ -459,7 +480,7 @@ void us1883_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, server, US1883_TCP_PORT);
+    est_client_set_server(ectx, server, US1883_TCP_PORT, NULL);
 
     /*
      * generate a private key
@@ -504,7 +525,7 @@ void us1883_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, server, US1883_TCP_PORT);
+    est_client_set_server(ectx, server, US1883_TCP_PORT, NULL);
     
     /*
      * And attempt a reenroll while in token mode
@@ -558,7 +579,7 @@ void us1883_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
 
 /*
  * Test2 - Application layer did not register callback, causing an
- *         HTTP Authentication header with an empty token credential
+ *         HTTP Aithentication header with an empty token credential
  *         
  * In this test,
  * - application layer DOES NOT register its callback
@@ -596,8 +617,7 @@ static void us1883_test2 (void)
      *
      * enroll better fail due to missing credentials
      */
-    us1883_simple_enroll("TC1883-2", US1883_SERVER_IP,
-                         EST_ERR_HTTP_CANNOT_BUILD_HEADER, NULL);
+    us1883_simple_enroll("TC1883-2", US1883_SERVER_IP, EST_ERR_AUTH_FAIL, NULL);
 
     /*
      * callback was never registered, so it should not have been invoked.
@@ -648,9 +668,7 @@ static void us1883_test3 (void)
      *
      * enroll better fail due to missing credentials
      */
-    us1883_simple_enroll("TC1883-3", US1883_SERVER_IP,
-                         EST_ERR_HTTP_CANNOT_BUILD_HEADER,
-                         auth_credentials_token_cb);
+    us1883_simple_enroll("TC1883-3", US1883_SERVER_IP, EST_ERR_AUTH_FAIL, auth_credentials_token_cb);
 
     /*
      * callback should have been called
@@ -737,9 +755,7 @@ static void us1883_test5 (void)
      * enroll better fail due to credentials not being supplied by the application layer
      * and eventual failure at the server due to missing credentials.
      */
-    us1883_simple_enroll("TC1883-5", US1883_SERVER_IP,
-                         EST_ERR_HTTP_CANNOT_BUILD_HEADER,
-                         auth_credentials_token_cb);
+    us1883_simple_enroll("TC1883-5", US1883_SERVER_IP, EST_ERR_AUTH_FAIL, auth_credentials_token_cb);
 
     /*
      * callback should have been called
@@ -868,8 +884,7 @@ static void us1883_test8 (void)
      * Pass a callback function to catch and handle the request for a token auth.
      *
      */
-    us1883_simple_enroll("TC1883-8", US1883_SERVER_IP,
-                         EST_ERR_HTTP_CANNOT_BUILD_HEADER,
+    us1883_simple_enroll("TC1883-8", US1883_SERVER_IP, EST_ERR_AUTH_FAIL,
                          auth_credentials_token_cb);
 
     /*

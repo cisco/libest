@@ -40,6 +40,11 @@ unique_subject=no
 # This policy applies to clients *and* it apples to the CA cert itself
 [ policy_any ]
 commonName              = supplied
+#countryName             = optional
+#localityName		= optional
+#stateOrProvinceName	= optional
+#organizationName	= optional
+#organizationalUnitName	= optional
 serialNumber            = optional 
 
 # this section is used when issuing certs from simpleEnroll.sh

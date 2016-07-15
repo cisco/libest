@@ -1,0 +1,13 @@
+<resources>
+
+    <string name="app_name">ESTClient</string>
+    <string name="menu_settings">Settings</string>
+    <string name="title_activity_est">EST Client Test</string>
+    <string name="server_name">EST Server:</string>
+    <string name="server_port">Port#:</string>
+    <string name="pkcs12_password">PKCS12 Password:</string>
+    <string name="common_name">Common Name:</string>
+    <string name="estuid">User ID:</string>
+    <string name="estpwd">Password:</string>
+    
+</resources>

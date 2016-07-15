@@ -3,12 +3,14 @@
  *
  * October, 2013
  *
- * Copyright (c) 2013 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
 #include <stdio.h>
+#ifndef WIN32
 #include <unistd.h>
+#endif 
 #include <est.h>
 #include <est_ossl_util.h>
 #include "test_utils.h"
@@ -28,6 +30,7 @@ static int cacerts_len = 0;
 #define US898_SERVER_IP	    "127.0.0.1"	
 #define US898_UID	    "estuser"
 #define US898_PWD	    "estpwd"
+#ifndef WIN32
 #define US898_CACERTS	    "CA/estCA/cacert.crt"
 #define US898_TRUST_CERTS   "CA/trustedcerts.crt"
 #define US898_SERVER_CERTKEY   "CA/estCA/private/estservercertandkey.pem"
@@ -43,9 +46,33 @@ static int cacerts_len = 0;
 
 #define US898_TC11_KEY	"US898/tc11_key.pem"
 #define US898_TC11_CERT	"US898/tc11_cert.pem"
+#else
+  #define US898_CACERTS	    "CA\\estCA\\cacert.crt"
+#define US898_TRUST_CERTS   "CA\\trustedcerts.crt"
+#define US898_SERVER_CERTKEY   "CA\\estCA\\private\\estservercertandkey.pem"
 
-#define US898_TC12_KEY  "US898/tc12_key.pem"
-#define US898_TC12_CERT "US898/tc12_cert.pem"
+#define US898_TC2_CERT_TXT "US898\\tc2-new-cert.txt"
+#define US898_TC2_CERT_B64 "US898\\tc2-new-cert.pkcs7b64"
+#define US898_TC2_CERT_PK7 "US898\\tc2-new-cert.pkcs7"
+#define US898_TC2_CERT_PEM "US898\\tc2-new-cert.pem"
+
+#define US898_TC10_CSR	"US898\\tc10_csr.pem"
+#define US898_TC10_KEY	"US898\\tc10_key.pem"
+#define US898_TC10_CERT	"US898\\tc10_cert.pem"
+
+#define US898_TC11_KEY	"US898\\tc11_key.pem"
+#define US898_TC11_CERT	"US898\\tc11_cert.pem"
+
+static CRITICAL_SECTION logger_critical_section;  
+static void us898_logger_stderr (char *format, va_list l) 
+{
+    EnterCriticalSection(&logger_critical_section);
+	vfprintf(stderr, format, l);
+	fflush(stderr);
+    LeaveCriticalSection(&logger_critical_section); 
+}
+
+#endif
 
 static void us898_clean (void)
 {
@@ -55,6 +82,7 @@ static void us898_clean (void)
      * These are all temporary files created 
      * by the various test cases.
      */
+#ifndef WIN32
     sprintf(cmd, "rm %s", US898_TC2_CERT_TXT);
     system(cmd);
     sprintf(cmd, "rm %s", US898_TC2_CERT_B64);
@@ -69,6 +97,22 @@ static void us898_clean (void)
     system(cmd);
     sprintf(cmd, "rm %s", US898_TC10_CSR);
     system(cmd);
+#else
+    sprintf(cmd, "del %s", US898_TC2_CERT_TXT);
+    system(cmd);
+    sprintf(cmd, "del %s", US898_TC2_CERT_B64);
+    system(cmd);
+    sprintf(cmd, "del %s", US898_TC2_CERT_PK7);
+    system(cmd);
+    sprintf(cmd, "del %s", US898_TC2_CERT_PEM);
+    system(cmd);
+    sprintf(cmd, "del %s", US898_TC10_CERT);
+    system(cmd);
+    sprintf(cmd, "del %s", US898_TC10_KEY);
+    system(cmd);
+    sprintf(cmd, "del %s", US898_TC10_CSR);
+    system(cmd);
+#endif 
 }
 
 /*
@@ -102,7 +146,10 @@ static int us898_init_suite (void)
 {
     int rv;
 
-    est_init_logger(EST_LOG_LVL_INFO, NULL);
+#ifdef WIN32
+    InitializeCriticalSection (&logger_critical_section);
+    est_init_logger(EST_LOG_LVL_INFO, &us898_logger_stderr);
+#endif
 
     /*
      * Read in the CA certificates
@@ -239,7 +286,7 @@ static void us898_test1 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
+    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT, NULL);
 
     /*
      * generate a private key
@@ -365,7 +412,7 @@ static void us898_test2 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
+    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT, NULL);
 
     /*
      * Read in the private key
@@ -442,36 +489,31 @@ static void us898_test2 (void)
     /*
      * Verify the jimbob DNS extension was preserved
      */
-    sprintf(cmd, "grep jimbob %s", US898_TC2_CERT_TXT);
-    rv = system(cmd);
+    rv = grep(US898_TC2_CERT_TXT, "jimbob");
     CU_ASSERT(rv == 0);
 
     /*
      * Verify the bobcat DNS extension was preserved
      */
-    sprintf(cmd, "grep bobcat %s", US898_TC2_CERT_TXT);
-    rv = system(cmd);
+    rv = grep(US898_TC2_CERT_TXT, "bobcat");
     CU_ASSERT(rv == 0);
 
     /*
      * Verify the IP address extension was preserved
      */
-    sprintf(cmd, "grep 172 %s", US898_TC2_CERT_TXT);
-    rv = system(cmd);
+    rv = grep(US898_TC2_CERT_TXT,"172");
     CU_ASSERT(rv == 0);
 
     /*
      * Verify the Repudiation key usage extension was preserved
      */
-    sprintf(cmd, "grep Repudiation %s", US898_TC2_CERT_TXT);
-    rv = system(cmd);
+    rv = grep(US898_TC2_CERT_TXT,"Repudiation");
     CU_ASSERT(rv == 0);
 
     /*
      * Verify the public key was preserved
      */
-    sprintf(cmd, "grep '00:e3:ca:38:65:fb:9c:46:a6:22:b1:be:17:bc:50' %s", US898_TC2_CERT_TXT);
-    rv = system(cmd);
+    rv = grep(US898_TC2_CERT_TXT, "00:e3:ca:38:65:fb:9c:46:a6:22:b1:be:17:bc:50");
     CU_ASSERT(rv == 0);
 
     /*
@@ -513,7 +555,7 @@ static void us898_test3 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
+    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT, NULL);
 
     /*
      * Generate a private key
@@ -575,7 +617,7 @@ static void us898_test4 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
+    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT, NULL);
 
     /*
      * Read in an old cert that we can use for re-enroll
@@ -648,7 +690,7 @@ static void us898_test5 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
+    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT, NULL);
 
     /*
      * Read in the private key
@@ -742,7 +784,7 @@ static void us898_test6 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
+    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT, NULL);
 
     /*
      * Read in the private key
@@ -834,7 +876,7 @@ static void us898_test7 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
+    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT, NULL);
 
     /*
      * Read in the private key
@@ -917,7 +959,7 @@ static void us898_test8 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
+    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT, NULL);
 
     /*
      * Read in the private key
@@ -981,6 +1023,7 @@ static void us898_test9 (void)
     BIO *in;
     unsigned char *attr_data = NULL;
     int attr_len;
+    int http_status;
 
     LOG_FUNC_NM;
 
@@ -1006,7 +1049,7 @@ static void us898_test9 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
+    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT, NULL);
 
     /*
      * Read in the private key
@@ -1042,6 +1085,12 @@ static void us898_test9 (void)
      */
     rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
     CU_ASSERT(rv == EST_ERR_AUTH_FAIL);
+
+    /*
+     * Check the HTTP status code from the reenroll operation
+     */
+    http_status = est_client_get_last_http_status(ectx);
+    CU_ASSERT(http_status == 401);
 
     est_destroy(ectx);
 
@@ -1134,7 +1183,7 @@ static void us898_test10 (void)
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
+    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT, NULL);
 
     /*
      * Get the latest CSR attributes
@@ -1221,10 +1270,11 @@ static void us898_test11 (void)
      */
     rv = est_client_set_auth(ectx, US898_UID, US898_PWD, cert, key);
     CU_ASSERT(rv == EST_ERR_NONE);
+
     /*
      * Set the EST server address/port
      */
-    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
+    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT, NULL);
 
     /*
      * Get the latest CSR attributes
@@ -1241,88 +1291,6 @@ static void us898_test11 (void)
     est_destroy(ectx);
 }
 
-
-/*
- * Verify the client fails authentication when the
- * client sends an identy cert which doesn't match 
- * the trust anchor. 
- */
-static void us898_test12 (void) 
-{
-    EST_CTX *ectx;
-    EVP_PKEY *key;
-    unsigned char *key_raw;
-    int key_len;
-    unsigned char *cert_raw;
-    int cert_len;
-    int rv;
-    int pkcs7_len = 0;
-    X509 *cert = NULL;
-    BIO *in;
-    unsigned char *attr_data = NULL;
-    int attr_len;
-
-    LOG_FUNC_NM;
-
-    /*
-     * Create a client context 
-     */
-    ectx = est_client_init(cacerts, cacerts_len, 
-                           EST_CERT_FORMAT_PEM,
-                           client_manual_cert_verify);
-    CU_ASSERT(ectx != NULL);
-
-    
-    /*
-     * Read in the private key
-     */
-    key_len = read_binary_file(US898_TC12_KEY, &key_raw);
-    CU_ASSERT(key_len > 0);
-    key = est_load_key(key_raw, key_len, EST_FORMAT_PEM);
-    CU_ASSERT(key != NULL);
-    free(key_raw);
-
-    /*
-     * Read in the old cert
-     */
-    cert_len = read_binary_file(US898_TC12_CERT, &cert_raw);
-    CU_ASSERT(cert_len > 0);
-    in = BIO_new_mem_buf(cert_raw, cert_len);
-    CU_ASSERT(in != NULL);
-    if (!in) return;
-    cert = PEM_read_bio_X509_AUX(in, NULL, NULL, NULL);
-    CU_ASSERT(cert != NULL);
-    if (!cert) return; 
-    BIO_free_all(in);
-    free(cert_raw);
-
-
-    /*
-     * Set the authentication mode to use cert for re-enroll.
-     * This should return an error since the certificate doesn't
-     * match the trust anchor. 
-     */
-    rv = est_client_set_auth(ectx, NULL, NULL, cert, key);
-    CU_ASSERT(rv == EST_ERR_CERT_VERIFICATION);
-
-    /*
-     * Set the EST server address/port
-     */
-    est_client_set_server(ectx, US898_SERVER_IP, US898_SERVER_PORT);
-
-    
-    /*
-     * Get the latest CSR attributes
-     */
-    rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
-    CU_ASSERT(rv == EST_ERR_NONE);
-
-    /*
-     * Enroll a bad cert. The client should reject this cert. 
-     */
-    rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
-    CU_ASSERT(rv == EST_ERR_CERT_VERIFICATION);
-}
 
 int us898_add_suite (void)
 {
@@ -1351,9 +1319,7 @@ int us898_add_suite (void)
        (NULL == CU_add_test(pSuite, "Re-enroll valid UID/PWD Digest", us898_test8)) || 
        (NULL == CU_add_test(pSuite, "Re-enroll invalid UID/PWD Digest", us898_test9)) || 
        (NULL == CU_add_test(pSuite, "Re-enroll valid certificate no HTTP auth", us898_test10)) || 
-       (NULL == CU_add_test(pSuite, "Re-enroll expired certificate with HTTP auth", us898_test11)) ||       
-       (NULL == CU_add_test(pSuite, "Re-enroll Invalid cert", us898_test12)))
-	
+       (NULL == CU_add_test(pSuite, "Re-enroll expired certificate with HTTP auth", us898_test11))) 
    {
       CU_cleanup_registry();
       return CU_get_error();
