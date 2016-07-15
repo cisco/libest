@@ -131,10 +131,10 @@ public class ESTClient {
 	}
 
 	/**
-	 * This method returns a String that contains the CiscoJEST version. 
+	 * This method returns a String that contains the JEST version. 
 	 */
 	public static String getVersion () {
-		return new String("CiscoJEST " + CISCO_JEST_VER_MAJOR + "." + CISCO_JEST_VER_MINOR + "." + 
+		return new String("JEST " + CISCO_JEST_VER_MAJOR + "." + CISCO_JEST_VER_MINOR + "." + 
 					CISCO_JEST_VER_MICRO + " [SVN Revision: " + CISCO_JEST_SVN_REV + "]");
 	}
 	
@@ -276,7 +276,7 @@ public class ESTClient {
 
 	/**
 	 * This method configures the user name and password to use for HTTP authentication.
-	 * CiscoJEST supports both basic and digest authentication.  The EST server 
+	 * JEST supports both basic and digest authentication.  The EST server 
 	 * determines whether basic or digest auth is used.
 	 * 
 	 * @param user
@@ -709,7 +709,7 @@ public class ESTClient {
 	 * Everything below is the JNI layer definitions and mgmt
 	 */
 	static {
-		System.loadLibrary("ciscojest");
+		System.loadLibrary("jest");
 		/*
 		 * Get the maximum allowed certificate length from the JNI layer and
 		 * cache it locally.  This is needed later when allocating the byte

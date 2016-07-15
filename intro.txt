@@ -127,9 +127,9 @@ the \texttt{libest} directory, run the configure script and then make:
 
 This package has been tested on both 32 and 64 bit Linux systems running
 CentOS and Ubuntu.  The OpenSSL development package should be installed
-on the system, or OpenSSL can be used.  libEST is designed to work 
+on the system.  libEST is designed to work 
 with the OpenSSL 1.0.1 API.  You can use the --with-ssl-dir option with
-the ./configure command to specify the location of the OpenSSL/OpenSSL
+the ./configure command to specify the location of the OpenSSL
 installation on the host system.
 
 \subsection{Static Linking}
@@ -171,20 +171,20 @@ following procedure can be used:
 
 \subsection{Java build}
 
-libEST is used by CiscoJEST, which provides Java support for EST client-side 
-operations.  CiscoJEST requires the libEST libary (libest.so).  CiscoJEST 
+libEST is used by JEST, which provides Java support for EST client-side 
+operations.  JEST requires the libEST libary (libest.so). JEST 
 provides a Java wrapper class to invoke the client-side API available in
-libest.so.  CiscoJEST consists of a native JNI library (libciscojest.so) and
+libest.so. JEST consists of a native JNI library (libjest.so) and
 an associated Jar file containg the wrapper class.  This allows your Java
-applications to leverage libEST (via CiscoJEST).
+applications to leverage libEST (via JEST).
 
-If you plan to use CiscoJEST for Java support, you will still need to
+If you plan to use JEST for Java support, you will still need to
 build libEST. Use the \texttt{--enable-jni} option when
 configuring libEST.  When this option is used, the libciscojest.so
-target is built in addition to the libest.so target.  libciscojest.so is
+target is built in addition to the libest.so target.  libjest.so is
 installed into the same directory as libest.so (/usr/local/est/lib by default).
 You will need to ensure the LD\_LIBRARY\_PATH is configured properly for your
-JVM to include the libEST and CiscoJEST native libraries.
+JVM to include the libEST and JEST native libraries.
 
 The following procedure shows how to build and install libEST with Java support: 
 
@@ -194,9 +194,9 @@ The following procedure shows how to build and install libEST with Java support:
   make install
 \end{verbatim}
 
-The CiscoJEST Jar file is distributed separately from libEST. The Jar file
+The JEST Jar file is distributed separately from libEST. The Jar file
 should be included into your JVM using the CLASSPATH setting.  Please refer
-to the CiscoJEST API documentation for using CiscoJEST within your Java
+to the JEST API documentation for using JEST within your Java
 application.
 
 @endlatexonly
