@@ -99,6 +99,14 @@ Android NDK:
     make
     make install
 
+Docker
+------
 
+A Dockerfile is included to make running the examples easy. You can build the container with:
 
+    docker build -t libest:latest .
+
+Once built, the example binaries are installed in /usr/local/est/bin. Run them like so:
+
+    docker run libest:latest /usr/local/est/bin/estserver --help
 
