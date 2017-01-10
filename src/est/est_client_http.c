@@ -1169,7 +1169,45 @@ static int est_ssl_read (SSL *ssl, unsigned char *buf, int buf_max,
         EST_LOG_ERR("Socket read failure. errno = %d", errno);
         return -1;
     } else {
-        return (SSL_read(ssl, buf, buf_max));
+        int err, ret, sock;
+        fd_set fds;
+        struct timeval timeout;
+        timeout.tv_sec = 5;
+
+        for (;;) {
+            ret = SSL_read(ssl, buf, buf_max);
+
+            // If we got bytes, return 
+            if (ret > 0) return ret;
+
+            // Otherwise, check the error
+            switch (SSL_get_error(ssl, ret)) {
+            case SSL_ERROR_NONE:
+                break;
+            case SSL_ERROR_ZERO_RETURN:
+                return 0;
+            case SSL_ERROR_WANT_READ:
+                sock = SSL_get_rfd(ssl);
+                FD_ZERO(&fds);
+                FD_SET(sock, &fds);
+
+                err = select(sock+1, &fds, NULL, NULL, &timeout);
+                
+                if (err > 0) continue;
+                return err;
+            case SSL_ERROR_WANT_WRITE:
+                sock = SSL_get_wfd(ssl);
+                FD_ZERO(&fds);
+                FD_SET(sock, &fds);
+
+                err = select(sock+1, NULL, &fds, NULL, &timeout);
+
+                if (err > 0) continue;
+                return err;
+            default:
+                return ret;
+        	}
+        }
     }
 }
 
