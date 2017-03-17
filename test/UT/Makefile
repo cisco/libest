@@ -23,6 +23,8 @@ SRC =  	runtest.c \
 	US2174/us2174.c \
 	US3496/us3496.c \
 	US3512/us3512.c \
+    US3612/us3612.c \
+	US4020/us4020.c \
 	../util/curl_utils.c \
 	../util/test_utils.c \
 	../util/st_server.c \
@@ -36,6 +38,9 @@ ifndef OPENSSL_DIR
 endif
 ifndef CURL_DIR
     CURL_DIR=/usr/local/curl
+    CURL_CC_DEFINE = 
+else 
+    CURL_CC_DEFINE = -DHAVE_LIBCURL
 endif
 ifndef CISCOSAFEC_DIR
     CISCOSAFEC_DIR=/usr/local/ciscosafec/
@@ -52,7 +57,7 @@ endif
 INCLUDES = -I../../src/est -I../.. -I../util -I$(OPENSSL_DIR)/include -I$(CURL_DIR)/include -I$(CUNIT_DIR)/include -I$(URIPARSER_DIR)/include 
 
 # C++ compiler flags (-g -O2 -Wall)
-CCFLAGS = -Wall -g -DHAVE_CUNIT -DNO_SSL_DL
+CCFLAGS = -Wall -g -DHAVE_CUNIT -DNO_SSL_DL $(CURL_CC_DEFINE)
 
 # compiler
 CC = gcc

@@ -1,4 +1,4 @@
-To generate the CiscoEST documentation using doxygen:
+To generate the libEST documentation using doxygen:
 
 1.  doxygen doxygen.cfg
 2.  cd latex

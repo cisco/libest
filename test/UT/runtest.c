@@ -49,6 +49,8 @@ extern int us1864_add_suite(void);
 extern int us1884_add_suite(void);
 extern int us2174_add_suite(void);
 extern int us3512_add_suite(void);
+extern int us3612_add_suite(void);
+extern int us4020_add_suite(void);
 #if (DISABLE_SUITE != 0)
 extern int us1060_add_suite(void);
 #endif
@@ -300,6 +302,20 @@ int main(int argc, char *argv[]) {
     rv = us3512_add_suite();
     if (rv != CUE_SUCCESS) {
         printf("\nFailed to add test suite for US3512 (%d)", rv);
+        exit(1);
+    }
+#endif
+#ifdef ENABLE_ALL_SUITES
+    rv = us3612_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US3612 (%d)", rv);
+        exit(1);
+    }
+#endif
+#ifdef ENABLE_ALL_SUITES
+    rv = us4020_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US4020 (%d)", rv);
         exit(1);
     }
 #endif

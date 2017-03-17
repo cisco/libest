@@ -1,5 +1,5 @@
 This directory contains a sample EST server application.  It utilizes
-Mongoose for the web server, OpenSSL 1.0.1 for the SSL stack to be used
+Mongoose for the web server, OpenSSL 1.0.2 for the SSL stack to be used
 with Mongoose, libest for the EST stack, and OpenSSL for basic CA
 services. 
 

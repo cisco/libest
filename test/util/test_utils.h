@@ -29,7 +29,7 @@ int grep(char *filename, char *string);
 BIO *open_tcp_socket(char *ipaddr, char *port);
 BIO *open_tcp_socket_ipv4(char *ipaddr, char *port);
 EVP_PKEY *read_private_key(char *key_file);
-
+EVP_PKEY *read_protected_private_key(const char *key_file, pem_password_cb *cb);
 #endif
 
 

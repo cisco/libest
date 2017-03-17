@@ -20,7 +20,7 @@ model {
                 }
             }            
             est {
-                headers.srcDir System.getenv().EST_DIR + "\\include"
+                headers.srcDir "../src/est"
                         binaries.withType(SharedLibraryBinary) {
                     sharedLibraryFile =
                             file(System.getenv().EST_DIR + "\\est.dll")

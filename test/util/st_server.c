@@ -173,7 +173,7 @@ static int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
     BIO *in = NULL;
     BIO *out = NULL;
     BIO *b64;
-    EVP_PKEY *pkey;
+    EVP_PKEY *pkey = NULL;
     BUF_MEM *bptr;
     int rv;
     LOOKUP_ENTRY *l;
@@ -1314,7 +1314,7 @@ void st_enable_http_token_auth ()
 
 void st_set_token (char *value)
 {
-    memset(valid_token_value, MAX_AUTH_TOKEN_LEN+1, 0);
+    memset(valid_token_value, 0, MAX_AUTH_TOKEN_LEN+1);
     strncpy(&(valid_token_value[0]), value, MAX_AUTH_TOKEN_LEN);
 }
 
@@ -1372,10 +1372,10 @@ void st_csr_filename (char *incoming_name)
         snprintf(csr_filename, MAX_FILENAME_LEN, "%s\\%s",
                  getenv(TEMP), "csr.p10");
 #else
-        snprintf(csr_filename, MAX_FILENAME_LEN, "/tmp/csr.p10");
+        snprintf(csr_filename, MAX_FILENAME_LEN, "%s", "/tmp/csr.p10");
 #endif
     } else {
-        snprintf(csr_filename, MAX_FILENAME_LEN, incoming_name);
+        snprintf(csr_filename, MAX_FILENAME_LEN, "%s", incoming_name);
     }
 }
 

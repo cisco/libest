@@ -4,7 +4,7 @@
  *
  * November, 2012
  *
- * Copyright (c) 2012-2014, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2012-2014, 2016, 2017 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -49,6 +49,22 @@ typedef enum {
     EST_CLIENT,
     EST_PROXY
 } EST_MODE;
+
+    
+typedef enum {
+    EST_CLIENT_PROXY_NONE = -1,
+    EST_CLIENT_PROXY_HTTP_NOTUNNEL = 0,
+    EST_CLIENT_PROXY_HTTP_TUNNEL = 1,
+    EST_CLIENT_PROXY_SOCKS4 = 4,
+    EST_CLIENT_PROXY_SOCKS5 = 5,
+    EST_CLIENT_PROXY_SOCKS4A = 6,
+    EST_CLIENT_PROXY_SOCKS5_HOSTNAME = 7,
+} EST_CLIENT_PROXY_PROTO;
+    
+/* These values can be ORed together: */
+#define EST_CLIENT_PROXY_AUTH_NONE 0
+#define EST_CLIENT_PROXY_AUTH_BASIC 1
+#define EST_CLIENT_PROXY_AUTH_NTLM 8
 
 
 #define FOREACH_EST_ERROR(E) \
@@ -121,6 +137,9 @@ typedef enum {
     E(EST_ERR_SRP_USERID_BAD) \
     E(EST_ERR_SRP_PWD_BAD) \
     E(EST_ERR_CB_FAILED) \
+    E(EST_ERR_CLIENT_PROXY_MODE_NOT_SUPPORTED) \
+    E(EST_ERR_INVALID_CLIENT_PROXY_PROTOCOL)    \
+    E(EST_ERR_INVALID_CLIENT_PROXY_AUTH)    \
     E(EST_ERR_UNKNOWN)
 
 #define GENERATE_ENUM(ENUM) ENUM,
@@ -194,7 +213,7 @@ typedef enum {
 \n EST_ERR_CACERT_VERIFICATION  Validation of the CA certificate chain received from the EST server has failed.
 \n EST_ERR_INVALID_TOKEN  An invalid authorization token was received.
 \n EST_ERR_INVALID_RETRY_VALUE  An invalid or missing retry-after was received from the server.
-\n EST_ERR_BAD_X509  An invalid or corrupted X509 certificate was provided to libEST.
+\n EST_ERR_BAD_X509  An invalid or corrupted X509 certificate was provided to libEST.  
 \n EST_ERR_BAD_BASE64  An invalid or corrupted CSR Attribute Base64 encoded string was provided. 
 \n EST_ERR_BAD_ASN1_HEX  An invalid or corrupted CSR Attribute ASN1 Hex string was provided.
 \n EST_ERR_BAD_ASN1_HEX_TOO_SHORT  A CSR Attribute ASN1 Hex string is too short.
@@ -203,6 +222,9 @@ typedef enum {
 \n EST_ERR_SRP_USERID_BAD  The SRP user ID was not accepted.
 \n EST_ERR_SRP_PWD_BAD  The SRP password was not accepted.
 \n EST_ERR_CB_FAILED  The application layer call-back facility failed.
+\n EST_ERR_CLIENT_PROXY_MODE_NOT_SUPPORTED  LibEST was not built with libcurl support.  Libcurl is required for client proxy mode.
+\n EST_ERR_INVALID_CLIENT_PROXY_PROTOCOL Invalid proxy protocol specified when configuring client mode for HTTP/Socks proxy.
+\n EST_ERR_INVALID_CLIENT_PROXY_AUTH Invalid proxy authentication mode specified when configuring client mode for HTTP/Socks proxy.
 \n EST_ERR_LAST  Last error in the enum definition. Should never be used.
 */
 typedef enum {
@@ -260,6 +282,7 @@ typedef enum {
 #define MAX_TOKEN_ERROR (255)
 #define MAX_TOKEN_ERROR_DESC (255)
 #define MAX_AUTH_TOKEN_LEN (512) 
+#define MAX_HTTP_METHOD_LEN (5)
 
 /*
  * The following values define the minimum, maximum, and default
@@ -413,6 +436,13 @@ LIBEST_API EST_ERROR est_client_set_auth(EST_CTX *ctx, const char *uid, const ch
                               X509 *client_cert, EVP_PKEY *private_key);
 LIBEST_API EST_ERROR est_client_set_auth_cred_cb(EST_CTX *ctx, auth_credentials_cb);
 LIBEST_API EST_ERROR est_client_set_server(EST_CTX *ctx, const char *server, int port, char *path_segment);
+LIBEST_API EST_ERROR est_client_set_proxy(EST_CTX *ctx,
+                                          EST_CLIENT_PROXY_PROTO proxy_proto,
+                                          const char *proxy_server,
+                                          unsigned short int proxy_port,
+                                          unsigned int proxy_auth,
+                                          const char *username,
+                                          const char *password);    
 LIBEST_API EST_ERROR est_client_provision_cert(EST_CTX *ctx, char *cn, 
 	                            int *pkcs7_len,
 				    int *ca_cert_len,

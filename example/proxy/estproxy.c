@@ -501,7 +501,7 @@ int main (int argc, char **argv)
     }
     /*
      * This reads the file, which is expected to be PEM encoded.  If you're using 
-     * DER encoded certs, you would invoke d2i_X509_bio() instead.
+     * DER encoded certs, you would invoke d2i_X509_bio() instead. 
      */
     x = PEM_read_bio_X509(certin, NULL, NULL, NULL);
     if (x == NULL) {
@@ -522,7 +522,7 @@ int main (int argc, char **argv)
     /*
      * This reads in the private key file, which is expected to be a PEM
      * encoded private key.  If using DER encoding, you would invoke
-     * d2i_PrivateKey_bio() instead. 
+     * d2i_PrivateKey_bio() instead.
      */
     priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
     if (priv_key == NULL) {

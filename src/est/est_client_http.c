@@ -3,7 +3,7 @@
  *
  * November, 2012
  *
- * Copyright (c) 2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016, 2017 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -757,9 +757,9 @@ static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
                 if (value[0] == '\0') {
                     EST_LOG_WARN("Unsupported qop value: %s", value);
                 } else {
-                    safec_rc = strcmp_s(value, strnlen_s(value, RSIZE_MAX_STR), "auth", &diff);
+                    safec_rc = memcmp_s(value, sizeof("auth"), "auth", sizeof("auth"), &diff);
                     if (safec_rc != EOK) {
-                        EST_LOG_INFO("strcmp_s error 0x%xO\n", safec_rc);
+                        EST_LOG_INFO("memcmp_s error 0x%xO\n", safec_rc);
                     }
                     if (diff && (safec_rc == EOK)) {
                         EST_LOG_WARN("Unsupported qop value: %s", value);
@@ -1100,16 +1100,17 @@ static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
         /*
          * Content type
          */
-        strcmp_s(hdrs[i].name, sizeof(EST_HTTP_HDR_CT), EST_HTTP_HDR_CT,
-                 &cmp_result);
+        memcmp_s(hdrs[i].name, sizeof(EST_HTTP_HDR_CT), EST_HTTP_HDR_CT,
+            sizeof(EST_HTTP_HDR_CT), &cmp_result);
         if (!cmp_result) {
             content_type_present = 1;
             /*
              * Verify content is pkcs7 data
              */
-            strcmp_s(hdrs[i].value,
+            memcmp_s(hdrs[i].value,
                      strnlen_s(est_op_map[op].content_type, est_op_map[op].length),
-                     est_op_map[op].content_type, &cmp_result);
+                     est_op_map[op].content_type, strnlen_s(est_op_map[op].content_type, est_op_map[op].length),
+                      &cmp_result);
             if (cmp_result) {
                 EST_LOG_ERR("HTTP content type is %s", hdrs[i].value);
                 return 0;
@@ -1118,8 +1119,8 @@ static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
             /*
              * Content Length
              */
-            strcmp_s(hdrs[i].name, sizeof(EST_HTTP_HDR_CL), EST_HTTP_HDR_CL,
-                     &cmp_result);
+            memcmp_s(hdrs[i].name, sizeof(EST_HTTP_HDR_CL), EST_HTTP_HDR_CL,
+                sizeof(EST_HTTP_HDR_CL), &cmp_result);
             if (!cmp_result) {
                 content_length_present = 1;
                 cl = atoi(hdrs[i].value);

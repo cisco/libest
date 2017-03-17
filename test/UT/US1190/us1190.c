@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------
- * us1190.c - Unit Tests for User Story 1190 - TLS 1.0 support
+ * us1190.c - Unit Tests for User Story 1190/1115 - Disable TLS 1.0 support
  *
  * September, 2014
  *
@@ -47,8 +47,9 @@ int us1190_start_server ()
 
     /*
      * Start an EST server acting as the CA
+     * this server does not support TLS 1.0
      */
-    rv = st_start_tls10(atoi(US1190_TCP_SERVER_PORT),
+    rv = st_start(atoi(US1190_TCP_SERVER_PORT),
                   US1190_SERVER_CERT,
                   US1190_SERVER_KEY,
                   "estrealm",
@@ -76,7 +77,7 @@ static int us1190_init_suite (void)
 
     us1190_clean();
 
-    printf("\nStarting EST Proxy Get CACerts unit tests.\n");
+    printf("\nStarting no legacy TLS unit tests.\n");
 
     /*
      * Start an instance of the EST server with
@@ -171,7 +172,7 @@ static void us1190_test2 (void)
     LOG_FUNC_NM
     ;
 
-    us1190_test_sslversion(TLSv1_client_method(), 0);
+    us1190_test_sslversion(TLSv1_client_method(), 1);
 }
 
 /*
@@ -198,6 +199,20 @@ static void us1190_test4 (void)
     us1190_test_sslversion(TLSv1_2_client_method(), 0);
 }
 
+/*
+ * Assert that attempting to enable TLS 1.0
+ * in an EST context results in an error
+ */
+static void us1190_test5 (void)
+{
+    int rc;
+
+    rc = est_server_enable_tls10(NULL);
+
+    CU_ASSERT(rc == EST_ERR_BAD_MODE);
+
+}
+
 /* The main() function for setting up and running the tests.
  * Returns a CUE_SUCCESS on successful running, another
  * CUnit error code on failure.
@@ -208,7 +223,7 @@ int us1190_add_suite (void)
     CU_pSuite pSuite = NULL;
 
     /* add a suite to the registry */
-    pSuite = CU_add_suite("us1190_tls_legacy",
+    pSuite = CU_add_suite("us1190_1115_no_legacy_tls",
             us1190_init_suite,
             us1190_destroy_suite);
     if (NULL == pSuite) {
@@ -219,9 +234,10 @@ int us1190_add_suite (void)
     /* add the tests to the suite */
     /* NOTE - ORDER IS IMPORTANT - MUST TEST fread() AFTER fprintf() */
     if ((NULL == CU_add_test(pSuite, "SSL 3.0 fails", us1190_test1)) ||
-        (NULL == CU_add_test(pSuite, "TLS 1.0 works", us1190_test2)) ||
+        (NULL == CU_add_test(pSuite, "TLS 1.0 fails", us1190_test2)) ||
         (NULL == CU_add_test(pSuite, "TLS 1.1 works", us1190_test3)) ||
-        (NULL == CU_add_test(pSuite, "TLS 1.2 works", us1190_test4)))
+        (NULL == CU_add_test(pSuite, "TLS 1.2 works", us1190_test4)) ||
+        (NULL == CU_add_test(pSuite, "enable_tls10 fails", us1190_test5)))
     {
         CU_cleanup_registry();
         return CU_get_error();

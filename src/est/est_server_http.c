@@ -735,14 +735,14 @@ int mg_read (struct mg_connection *conn, void *buf, size_t len)
             if (n < 0) {
                 nread = n; // Propagate the error
                 break;
-            } else if (n == 0) {
-                break; // No more data to read
-            } else {
+            } else if (n > 0) {
                 buf = (char*)buf + n;
                 conn->consumed_content += n;
                 nread += n;
                 len -= n;
-            }
+            } else {
+                /* n == 0. retry */
+            }   
         }
     }
     return nread;
@@ -987,43 +987,43 @@ static void mg_parse_auth_hdr_digest (struct mg_connection *conn,
 	    break;
 	}
 
-        strcmp_s(name, 8, "username", &i);
+        memcmp_s(name, 8, "username", 8, &i);
         if (!i) {
 	    ah->user = STRNDUP(value, MAX_UIDPWD);
 	    continue;
 	} 
 
-        strcmp_s(name, 6, "cnonce", &i);
+        memcmp_s(name, 6, "cnonce", 6, &i);
 	if (!i) {
             ah->cnonce = STRNDUP(value, MAX_NONCE);
 	    continue;
 	} 
 
-	strcmp_s(name, 8, "response", &i);
+	memcmp_s(name, 8, "response", 8, &i);
 	if (!i) {
             ah->response = STRNDUP(value, MAX_RESPONSE);
 	    continue;
         } 
 
-	strcmp_s(name, 3, "uri", &i);
+	memcmp_s(name, 3, "uri", 3, &i);
 	if (!i) {
 	    ah->uri = STRNDUP(value, MAX_REALM);
 	    continue;
 	} 
 
-	strcmp_s(name, 3, "qop", &i);
+	memcmp_s(name, 3, "qop", 3, &i);
 	if (!i) {
             ah->qop = STRNDUP(value, MAX_QOP);
 	    continue;
 	} 
 
-	strcmp_s(name, 2, "nc", &i);
+	memcmp_s(name, 2, "nc", 2, &i);
 	if (!i) {
 	    ah->nc = STRNDUP(value, MAX_NC);
 	    continue;
         } 
 
-	strcmp_s(name, 5, "nonce", &i); 
+	memcmp_s(name, 5, "nonce", 5, &i);
 	if (!i) {
 	    ah->nonce = STRNDUP(value, MAX_NONCE);
 	}
@@ -1458,19 +1458,13 @@ static int set_ssl_option (struct mg_context *ctx)
      * The other options set here are to improve forward
      * secrecty and comply with the EST draft.
      */
-    if (ectx->enable_tls10) {
-	EST_LOG_INFO("Enabling TLS 1.0 support, not compliant with RFC 7030");
-        SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2 |
-                            SSL_OP_NO_SSLv3 |
-                            SSL_OP_SINGLE_ECDH_USE | 
-			    SSL_OP_NO_TICKET);
-    } else {
-        SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2 |
-                            SSL_OP_NO_SSLv3 |
-                            SSL_OP_NO_TLSv1 |
-                            SSL_OP_SINGLE_ECDH_USE | 
-			    SSL_OP_NO_TICKET);
-    }
+
+    SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2 |
+                        SSL_OP_NO_SSLv3 |
+                        SSL_OP_NO_TLSv1 |
+                        SSL_OP_SINGLE_ECDH_USE |
+                        SSL_OP_NO_TICKET);
+
 
     /* 
      * Set the ECDH single use parms.  Use the configured

@@ -34,8 +34,6 @@
 #define GETPID getpid
 #endif 
 
-#define MAX_HTTP_METHOD_LEN 5
-
 /*
  * Since we hijack the OpenSSL BUF_MEM with our
  * own data, this utility function allows us
@@ -465,10 +463,11 @@ static EST_ERROR est_proxy_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
      * Make sure the client has sent us a PKCS10 CSR request
      */
 
-    safec_rc = strcmp_s(ct, strnlen_s(ct, RSIZE_MAX_STR), "application/pkcs10", &diff);
+    safec_rc = memcmp_s(ct, sizeof("application/pkcs10"), "application/pkcs10",
+        sizeof("application/pkcs10"), &diff);
 
     if (safec_rc != EOK) {
-        EST_LOG_INFO("strcmp_s error 0x%xO\n", safec_rc);
+        EST_LOG_INFO("memcmp_s error 0x%xO\n", safec_rc);
     }
 
     if (diff) {
@@ -729,7 +728,7 @@ static int est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx,
      * Invoke client code to retrieve the CSR attributes.
      * Note: there is no need to authenticate the client (see sec 4.5)
      */
-    EST_LOG_INFO("Proxy: Attempting to retrieve CA certs from upstream server");
+    EST_LOG_INFO("Proxy: Attempting to retrieve CSR attrs from upstream server");
     rv = est_client_get_csrattrs(client_ctx, (unsigned char **)&csr_data, &csr_len);
     /*
      * csr_data points to the memory allocated to hold the csr attributes,

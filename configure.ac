@@ -1,5 +1,5 @@
 dnl Process this file with autoconf to produce a configure script.
-AC_INIT([libest],[2.0.0p],[libest-dev])
+AC_INIT([libest],[2.1.0p],[libest-dev])
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(src/est/est.c)
 AC_CONFIG_SRCDIR(example/client/estclient.c)
@@ -10,6 +10,7 @@ AC_CONFIG_MACRO_DIR([m4])
 
 AM_INIT_AUTOMAKE
 AM_MAINTAINER_MODE
+AM_INIT_AUTOMAKE([subdir-objects])
 
 AC_PROG_CC
 AM_PROG_CC_C_O
@@ -77,6 +78,31 @@ fi
 AC_CHECK_LIB([ssl], [SSL_CTX_new], [],
              [AC_MSG_FAILURE([can't find openssl ssl lib])])
 
+# Conditionally include use of libcurl for client proxy support
+
+AC_ARG_WITH([libcurl-dir],
+ [AS_HELP_STRING([--with-libcurl-dir],
+				 [enable support for client proxy using libcurl])],
+ [libcurldir="$withval"],
+ [with_libcurldir=no])
+
+  AS_IF(
+        [test "x$with_libcurldir" != xno],
+        [[CFLAGS="$CFLAGS -I$libcurldir/include"]
+         [LDFLAGS="$LDFLAGS -L$libcurldir/lib -lcurl"]
+         AC_CHECK_LIB(
+              [curl],
+              [curl_easy_init],
+			  [
+               AC_DEFINE([HAVE_LIBCURL],[1],[Define if you have libcurl])
+              ],
+              [AC_MSG_FAILURE([--with-libcurl was given, but test for libcurl failed])]
+             )
+        ]
+       )
+
+# Conditionally include use of uriparser for URI path segment support
+
 AC_ARG_WITH([uriparser-dir],
  [AS_HELP_STRING([--with-uriparser-dir],
 				 [enable support for path segments using uriparser])],
@@ -95,8 +121,6 @@ AC_ARG_WITH([uriparser-dir],
               [uriparser], 
               [uriParseUriA],
 			  [
-               AC_SUBST([URIPARSER_CFLAGS], "$uriparserdir/include")
-			   AC_SUBST([URIPARSER_LDFLAGS], "$uriparserdir/lib -luriparser")
                AC_DEFINE([HAVE_URIPARSER],[1],[Define if you hve uriparser]) 
               ],
               [AC_MSG_FAILURE([--with-uriparser was given, but test for uriparser failed])]

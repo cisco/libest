@@ -80,82 +80,6 @@ static void show_usage_and_exit (void)
     exit(255);
 }
 
-
-/*
- * This function generates an EC public/private key
- * pair that will be used with the certificate
- * we provision.
- */
-static EVP_PKEY * generate_private_key (void)
-{
-    EC_KEY *eckey;
-    EC_GROUP *group = NULL;
-    BIO *out;
-    unsigned char *tdata;
-    unsigned char *key_data;
-    char file_name[MAX_FILENAME_LEN] = "./new_key.pem";
-    int key_len;
-    BIO *keyin;
-    EVP_PKEY *new_priv_key;
-    int	asn1_flag = OPENSSL_EC_NAMED_CURVE;
-    point_conversion_form_t form = POINT_CONVERSION_UNCOMPRESSED;
-
-    /*
-     * Generate an EC key
-     */
-
-    group = EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1);
-    EC_GROUP_set_asn1_flag(group, asn1_flag);
-    EC_GROUP_set_point_conversion_form(group, form);
-    eckey = EC_KEY_new();
-    EC_KEY_set_group(eckey, group); 
-    if (!EC_KEY_generate_key(eckey)) {
-	printf("Failed to generate EC key\n");
-        exit(1);
-    }
-    out = BIO_new(BIO_s_mem());
-    PEM_write_bio_ECPKParameters(out, group);
-    PEM_write_bio_ECPrivateKey(out, eckey, NULL, NULL, 0, NULL, NULL);
-    key_len = BIO_get_mem_data(out, &tdata);
-    key_data = malloc(key_len+1);
-    memcpy(key_data, tdata, key_len);
-    EC_KEY_free(eckey);
-    BIO_free(out);
-
-
-    /*
-     * We'll write this out to a local file called new_key.pem.
-     * Your application should persist the key somewhere safe.
-     */
-    write_binary_file(file_name, key_data, key_len);
-    free(key_data);
-    
-    /*
-     * read it back in to an EVP_PKEY struct
-     */
-    keyin = BIO_new(BIO_s_file_internal());
-    if (BIO_read_filename(keyin, file_name) <= 0) {
-        printf("\nUnable to read newly generated client private key file %s\n", file_name);
-        exit(1);
-    }
-
-    /*
-     * This reads in the private key file, which is expected to be a PEM
-     * encoded private key.  If using DER encoding, you would invoke
-     * d2i_PrivateKey_bio() instead. 
-     */
-    new_priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
-    if (new_priv_key == NULL) {
-        printf("\nError while reading PEM encoded private key file %s\n", file_name);
-        ERR_print_errors_fp(stderr);
-        exit(1);
-    }
-    BIO_free(keyin);
-
-    return (new_priv_key);
-}
-
-
 /*
  * auth_credentials_token_cb() is the application layer callback function that will
  * return a token based authentication credential when called.  It's registered
@@ -279,6 +203,7 @@ int main (int argc, char **argv)
 {
     EST_ERROR rv;
     char c;
+    char *key_data;
     EVP_PKEY *key;
     char *trustanchor_file;
     EST_CTX *ectx;
@@ -381,7 +306,22 @@ int main (int argc, char **argv)
      * the enrollment.  We'll write this out to a local
      * file called new_key.pem.
      */
-    key = generate_private_key();
+    key_data = generate_private_RSA_key(2048, NULL/* no password_cb */);
+
+    write_binary_file("./new_key.pem", (unsigned char *)key_data, strlen(key_data));
+
+    /*
+     * Use the load_clear macro to load in an unencrypted key
+     */
+    key = load_clear_private_key_PEM(key_data);
+
+    if(!key) {
+        printf("\nUnable to load newly created key from PEM file\n");
+        exit(1);
+    }
+    memset(key_data, 0, strlen(key_data));
+    free(key_data);
+    key_data = NULL;
 
     ectx = setup_est_context();
     if (!ectx) {
