@@ -476,7 +476,7 @@ static int simple_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
             }
         }
 
-        snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d.pkcs7", out_dir, thread_id, i);
+        snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d", out_dir, thread_id, i);
         save_cert(file_name, new_client_cert, pkcs7_len);
         free(new_client_cert);
     }
@@ -656,7 +656,7 @@ static int regular_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
             }
         }
 
-        snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d.pkcs7", out_dir, thread_id, i);
+        snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d", out_dir, thread_id, i);
         save_cert(file_name, new_client_cert, pkcs7_len);
         free(new_client_cert);
     }
@@ -822,8 +822,8 @@ static void worker_thread (void *ptr)
                  * Generate the output file name, which contains the thread ID
                  * and iteration number.
                  */
-		snprintf(file_name, MAX_FILENAME_LEN, "%s/cacert-%d-%d.pkcs7", out_dir, tctx->thread_id, i);
-                save_cert(file_name, new_client_cert, pkcs7_len);
+		snprintf(file_name, MAX_FILENAME_LEN, "%s/cacert-%d-%d", out_dir, tctx->thread_id, i);
+                save_cert(file_name, pkcs7, pkcs7_len);
                 free(pkcs7);
 
 	    }
@@ -916,7 +916,7 @@ static void worker_thread (void *ptr)
 		 * Generate the output file name, which contains the thread ID
 		 * and iteration number.
 		 */
-		snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d.pkcs7", out_dir, tctx->thread_id, i);
+		snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d", out_dir, tctx->thread_id, i);
                 save_cert(file_name, new_client_cert, pkcs7_len);
                 free(new_client_cert);
 	    }
