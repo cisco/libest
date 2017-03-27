@@ -69,7 +69,7 @@ static int addr_to_str (struct sockaddr *addr, char *str, size_t str_size,
     }
     dw_str_size = str_size;
     if (addr_len != 0 &&
-            WSAAddressToStringA(addr, addr_len, NULL, str, &dw_str_size) == 0) {
+            WSAAddressToStringW(addr, addr_len, NULL, (LPWSTR)str, &dw_str_size) == 0) {
         ret = 0;
     }
 #else

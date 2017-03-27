@@ -20,15 +20,6 @@ model {
                             sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\ssleay32.lib")
                 }
             }
-            if(!System.getenv().DISABLE_SAFEC.equals("TRUE")) {                           
-                ciscosafec {
-                    headers.srcDir System.getenv().SAFEC_DIR + "\\include"
-                            binaries.withType(StaticLibraryBinary) {
-                        staticLibraryFile =
-                                file(System.getenv().SAFEC_DIR + "\\lib\\safeclib.lib")
-                    }
-                }
-             }
             if(file(System.getenv().URIPARSER_DIR +"\\lib\\uriparser.lib").exists()) {
                 uriparser {
                     headers.srcDir System.getenv().URIPARSER_DIR + "\\include"
@@ -37,18 +28,18 @@ model {
                                 file(System.getenv().URIPARSER_DIR + "\\lib\\uriparser.lib")
                     }
                 }
-            }   
+            }
             if(file(System.getenv().CURL_DIR +"\\bin\\libcurl.dll").exists()) {
                 libcurl {
                     headers.srcDir System.getenv().CURL_DIR + "\\include"
                             binaries.withType(SharedLibraryBinary) {
-                        	sharedLibraryFile =
+                            sharedLibraryFile =
                                 file(System.getenv().CURL_DIR + "\\bin\\libcurl.dll")
-                           	sharedLibraryLinkFile = 
-								file(System.getenv().CURL_DIR + "\\lib\\libcurl.lib")
+                            sharedLibraryLinkFile = 
+                                file(System.getenv().CURL_DIR + "\\lib\\libcurl.lib")
                     }
                 }
-            }   
+            } 
         }
     }    
 
@@ -79,19 +70,13 @@ model {
                 c {
                     source {
                         
-                        if(System.getenv().DISABLE_SAFEC.equals("TRUE"))
-                        {
-                            srcDir "safe_c_stub/src"
-                        }                           
+                        srcDir "safe_c_stub/src"
                         srcDir "src/est"
                         include "*.c"
                     }
                     exportedHeaders {
                         srcDir "src/est"
-                        if(System.getenv().DISABLE_SAFEC.equals("TRUE"))
-                        {
-                            srcDir "safe_c_stub/include"
-                        } 
+                        srcDir "safe_c_stub/include"
                         include "*.h"
                     }
 
@@ -114,10 +99,6 @@ model {
                     lib library: "libcurl", linkage: "shared"
                 }
 
-                if(!System.getenv().DISABLE_SAFEC.equals("TRUE"))
-                {
-                    lib library: "ciscosafec", linkage: "static"
-                }                    
                 lib library: "libcrypto", linkage: "shared"
                 lib library: "libssl", linkage: "shared" 
                
