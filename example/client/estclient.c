@@ -20,6 +20,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
+#include <openssl/pem.h>
 #ifdef WIN32
 #include <openssl/x509v3.h>
 #endif
@@ -42,6 +43,7 @@
 #define EST_UT_MAX_CMD_LEN 255
 #define MAX_SERVER_LEN 255
 #define MAX_FILENAME_LEN 255
+#define MAX_CN 64
 #define MAX_THREADS 10
 #define MAX_ITERATIONS 1000000
 #define RSA_KEYSIZE_4096 4096
@@ -61,12 +63,14 @@ static char est_http_uid[MAX_UID_LEN+1];
 static char est_http_pwd[MAX_PWD_LEN+1];
 static char est_srp_uid[MAX_UID_LEN];
 static char est_srp_pwd[MAX_PWD_LEN];
+static char subj_cn[MAX_CN];
 static char est_server[MAX_SERVER_LEN];
 static char est_auth_token[MAX_AUTH_TOKEN_LEN+1];
 static int est_port;
 static int verbose = 0;
 static int srp = 0;
 static int token_auth_mode = 0;
+static int pem_out = 0;
 static char csr_file[MAX_FILENAME_LEN];
 static char priv_key_file[MAX_FILENAME_LEN];
 static char client_key_file[MAX_FILENAME_LEN];
@@ -74,8 +78,7 @@ static char client_cert_file[MAX_FILENAME_LEN];
 static int num_threads = 1;
 static int read_timeout = EST_SSL_READ_TIMEOUT_DEF;
 static int iterations = 1;
-static unsigned char *new_pkey = NULL;
-static int new_pkey_len = 0;
+static char *new_pkey = NULL;
 static unsigned char *cacerts = NULL;
 static int cacerts_len = 0;
 static char out_dir[MAX_FILENAME_LEN];
@@ -89,6 +92,15 @@ static unsigned char *c_key = NULL;
 static int c_cert_len = 0;
 static int c_key_len = 0;
 static char *est_path_seg = NULL;
+static char priv_key_pwd[MAX_PWD_LEN];
+static pem_password_cb *priv_key_cb = NULL;
+
+static char *proxy_server = NULL;
+static int proxy_port;
+static EST_CLIENT_PROXY_PROTO proxy_proto;
+static int proxy_auth = EST_CLIENT_PROXY_AUTH_NONE;
+static char *proxy_username = NULL;
+static char *proxy_password = NULL;
 
 EVP_PKEY *client_priv_key;
 X509 *client_cert;
@@ -100,6 +112,11 @@ typedef struct {
     int	    thread_id;
 } THREAD_CTX;
 
+static int string_password_cb (char *buf, int size, int wflag, void *data)
+{
+    strncpy(buf,priv_key_pwd, size);
+    return(strnlen(buf, size));
+}
 
 /*
  * This is a simple callback used to override the default
@@ -151,38 +168,52 @@ static void show_usage_and_exit (void)
 	"  -u <string>       Specify user name for HTTP authentication.\n"
 	"  -h <string>       Specify password for HTTP authentication.\n"
 	"  -?                Print this help message and exit.\n"
+        "  --keypass_stdin   Specify en-/decryption of private key, password read from STDIN\n"
+        "  --keypass_arg     Specify en-/decryption of private key, password read from argument\n"
+        "  --common-name  <string>     Specify the common name to use in the Suject Name field of the new certificate.\n"
+        "                              127.0.0.1 will be used if this option is not specified\n"
+        "  --pem-output                Convert the new certificate to PEM format\n"
 	"  --srp                       Enable TLS-SRP cipher suites.  Use with --srp-user and --srp-password options.\n"
 	"  --srp-user     <string>     Specify the SRP user name.\n"
 	"  --srp-password <string>     Specify the SRP password.\n"
 	"  --auth-token   <string>     Specify the token to be used with HTTP token authentication.\n"
 	"  --path-seg     <string>     Specify the optional path segment to use in the URI.\n"
+	"  --proxy-server <string>     Proxy server to enable SOCK/HTTP proxy mode.\n"
+	"  --proxy-port   <port>       Proxy port number.  Must include proxy-server.\n"
+	"  --proxy-proto  <EST_CLIENT_PROXY_PROTO>  Proxy protocol.\n"
+	"  --proxy-auth   <BASIC|NTLM>  Proxy authentication method.\n"
+	"  --proxy-username <string>   username to pass to proxy server.\n"
+	"  --proxy-password <string>   password to pass to proxy server.\n"
         "\n");
     exit(255);
 }
 
-
-//FIXME: need to add the capability to generate DSA/ECDSA
-//       keys too
-static unsigned char * generate_private_key (int *key_len)
+/*
+ * Takes as input the name of the file to write the cert to on the
+ * local file system (full path name expected).
+ * The cert_data argument should contain the PKCS7 base64 encoded
+ * certificate, with the cert_len argument specifying the length
+ * of the cert.  This routine will either write the cert to the
+ * local file system "as is", or it will convert the cert to
+ * PEM format and write it as a PEM file.
+ */
+static void save_cert (char *file_name, unsigned char *cert_data, int cert_len)
 {
-    RSA *rsa = RSA_new();
-    BIGNUM *bn = BN_new();
-    BIO *out;
-    unsigned char *tdata;
-    unsigned char *key_data;
+    int pem_len;
+    unsigned char *pem;
+    char full_file_name[MAX_FILENAME_LEN];
 
-    BN_set_word(bn, 0x10001);
-
-    RSA_generate_key_ex(rsa, RSA_KEYSIZE_4096, bn, NULL);
-    out = BIO_new(BIO_s_mem());
-    PEM_write_bio_RSAPrivateKey(out,rsa,NULL,NULL,0,NULL,NULL);
-    *key_len = BIO_get_mem_data(out, &tdata);
-    key_data = malloc(*key_len+1);
-    memcpy(key_data, tdata, *key_len);
-    BIO_free(out);
-    RSA_free(rsa);
-    BN_free(bn);
-    return (key_data);
+    if (pem_out) {
+        pem_len = est_convert_p7b64_to_pem(cert_data, cert_len, &pem);
+        if (pem_len > 0) {
+            snprintf(full_file_name, MAX_FILENAME_LEN, "%s.%s", file_name, "pem");
+            write_binary_file(full_file_name, pem, pem_len);
+            free(pem);
+        }
+    } else {
+        snprintf(full_file_name, MAX_FILENAME_LEN, "%s.%s", file_name, "pkcs7");
+        write_binary_file(full_file_name, cert_data, cert_len);
+    }
 }
 
 /*
@@ -205,7 +236,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_token_cb (EST_HTTP_AUTH_HDR *auth_credent
     int token_len = 0;
 
     printf("\nHTTP Token authentication credential callback invoked from EST client library\n");
-
+    
     if (auth_credentials->mode == AUTH_TOKEN) {
         /*
          * If the test_token is set to anything, then we need to allocate
@@ -320,7 +351,7 @@ static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
     }
 
     BIO *bio_err;
-    bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
+    bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
     int approve = 0;
 
     /*
@@ -331,7 +362,7 @@ static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
            X509_verify_cert_error_string(openssl_cert_error));
 
     printf("Failing Cert:\n");
-    X509_print_fp(stdout,cur_cert);
+    X509_print_fp(stdout, cur_cert);
     /*
      * Next call prints out the signature which can be used as the fingerprint
      * This fingerprint can be checked against the anticipated value to determine
@@ -345,10 +376,10 @@ static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
 }
 
 
-/*! @brief read_csr() is a helper function that reads a PEM encoded
- *  CSR from a file and converts its contents to an OpenSSL X509_REQ*.
+/*  read_csr() is a helper function that reads a PEM encoded
+    CSR from a file and converts its contents to an OpenSSL X509_REQ.
 
-    @param csr_file The name of the file containing the PEM encoded CSR.
+    The csr_file argument is the name of the file containing the PEM encoded CSR.
 
     This function reads the given file and converts its PEM encoded contents to
     the OpenSSL X509_REQ structure.  This function will return NULL if the PEM/DER
@@ -357,9 +388,9 @@ static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
     memory in your application when it's no longer needed by calling X509_REQ_free().
     See also the more general est_read_x509_request function.
 
-    @return X509_REQ*
+    returns X509_REQ*
  */
-static X509_REQ *read_csr(char *csr_file)
+static X509_REQ *read_csr (char *csr_file)
 {
     BIO *csrin;
     X509_REQ *csr;
@@ -369,17 +400,17 @@ static X509_REQ *read_csr(char *csr_file)
      */
     csrin = BIO_new(BIO_s_file_internal());
     if (BIO_read_filename(csrin, csr_file) <= 0) {
-	printf("\nUnable to read CSR file %s\n", csr_file);
-	return(NULL);
+        printf("\nUnable to read CSR file %s\n", csr_file);
+        return (NULL);
     }
     /*
      * This reads in the csr file, which is expected to be PEM encoded
      */
     csr = PEM_read_bio_X509_REQ(csrin, NULL, NULL, NULL);
     if (csr == NULL) {
-	printf("\nError while reading PEM encoded CSR file %s\n", csr_file);
-	ERR_print_errors_fp(stderr);
-	return(NULL);
+        printf("\nError while reading PEM encoded CSR file %s\n", csr_file);
+        ERR_print_errors_fp(stderr);
+        return (NULL);
     }
     BIO_free(csrin);
 
@@ -397,28 +428,27 @@ static int simple_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
     if (force_pop) {
         rv =  est_client_force_pop(ectx);
         if (rv != EST_ERR_NONE) {
-  	    printf("\nFailed to enable force PoP");
+            printf("\nFailed to enable force PoP");
+            return(rv);
         }
     }
 
     if (csr_file[0]) {
-	csr = read_csr(csr_file);
-        if (csr == NULL){
+        csr = read_csr(csr_file);
+        if (csr == NULL) {
             rv = EST_ERR_PEM_READ;
+        } else  {
+            rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, NULL);
         }
-	else {
-	    rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, NULL);
-	}
-    }
-    else {
-        rv = est_client_enroll(ectx, "127.0.0.1", &pkcs7_len, priv_key);
+    } else  {
+        rv = est_client_enroll(ectx, subj_cn, &pkcs7_len, priv_key);
     }
     if (csr) {
-      X509_REQ_free(csr);
+        X509_REQ_free(csr);
     }
     if (verbose) {
         printf("\nenrollment rv = %d (%s) with pkcs7 length = %d\n",
-                        rv, EST_ERR_NUM_TO_STR(rv), pkcs7_len);
+               rv, EST_ERR_NUM_TO_STR(rv), pkcs7_len);
     }
     if (rv == EST_ERR_NONE) {
         /*
@@ -426,22 +456,28 @@ static int simple_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
          * now retrieve it from the library
          */
         new_client_cert = malloc(pkcs7_len);
-        if (new_client_cert == NULL){
-            if (verbose) printf("\nmalloc of destination buffer for enrollment cert failed\n");
+        if (new_client_cert == NULL) {
+            if (verbose) {
+                printf("\nmalloc of destination buffer for enrollment cert failed\n");
+            }
             return (EST_ERR_MALLOC);
         }
 
         rv = est_client_copy_enrolled_cert(ectx, new_client_cert);
-        if (verbose) printf("\nenrollment copy rv = %d\n", rv);
+        if (verbose) {
+            printf("\nenrollment copy rv = %d\n", rv);
+        }
         if (rv == EST_ERR_NONE) {
             /*
              * Enrollment copy worked, dump the pkcs7 cert to stdout
              */
-            if (verbose) dumpbin(new_client_cert, pkcs7_len);
+            if (verbose) {
+                dumpbin(new_client_cert, pkcs7_len);
+            }
         }
 
-        snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d.pkcs7", out_dir, thread_id, i);
-        write_binary_file(file_name, new_client_cert, pkcs7_len);
+        snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d", out_dir, thread_id, i);
+        save_cert(file_name, new_client_cert, pkcs7_len);
         free(new_client_cert);
     }
 
@@ -483,35 +519,6 @@ static int populate_x509_csr (X509_REQ *req, EVP_PKEY *pkey, char *cn)
     return (0);
 }
 
-static
-EVP_PKEY *read_private_key(char *key_file)
-{
-    BIO *keyin;
-    EVP_PKEY *priv_key;
-
-    /*
-     * Read in the private key
-     */
-    keyin = BIO_new(BIO_s_file_internal());
-    if (BIO_read_filename(keyin, key_file) <= 0) {
-	printf("\nUnable to read private key file %s\n", key_file);
-	return(NULL);
-    }
-    /*
-     * This reads in the private key file, which is expected to be a PEM
-     * encoded private key.  If using DER encoding, you would invoke
-     * d2i_PrivateKey_bio() instead.
-     */
-    priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
-    if (priv_key == NULL) {
-	printf("\nError while reading PEM encoded private key file %s\n", key_file);
-	ERR_print_errors_fp(stderr);
-	return(NULL);
-    }
-    BIO_free(keyin);
-
-    return (priv_key);
-}
 
 static int regular_csr_attempt (EST_CTX *ectx, int thread_id, int i)
 {
@@ -529,8 +536,8 @@ static int regular_csr_attempt (EST_CTX *ectx, int thread_id, int i)
     } else {
         snprintf(file_name, MAX_FILENAME_LEN, "%s/csr-%d-%d.base64", out_dir, thread_id, i);
         write_binary_file(file_name, attr_data, attr_len);
-     }
-     return (rv);
+    }
+    return (rv);
 }
 
 static int regular_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
@@ -545,14 +552,14 @@ static int regular_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
     X509_REQ *csr;
 
     /*
-     * We need to get the CSR attributes first, which allows CiscoEST
+     * We need to get the CSR attributes first, which allows libest
      * to know if the challengePassword needs to be included in the
      * CSR.
      */
     rv = est_client_get_csrattrs(ectx, &attr_data, &attr_len);
     if (rv != EST_ERR_NONE) {
-	printf("\nWarning: CSR attributes were not available");
-	return (rv);
+        printf("\nWarning: CSR attributes were not available");
+        return (rv);
     }
 
     /* Generate a CSR */
@@ -570,7 +577,7 @@ static int regular_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
     }
 
 
-    rv = est_decode_attributes_helper((char *)attr_data, attr_len, &der_ptr, &der_len);
+    rv = est_decode_attributes_helper((char*)attr_data, attr_len, &der_ptr, &der_len);
     if (rv != EST_ERR_NONE) {
         printf("\nFailed to decode attributes");
         return (rv);
@@ -580,39 +587,38 @@ static int regular_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
         rv = est_get_attributes_helper(&der_ptr, &der_len, &nid);
 
         if (rv == EST_ERR_NONE) {
-	  /*
-	   * This switch can be enhanced to include all NID values
-	   * of interest by the client/server.  In addition the last
-	   * parameter can be enhanced to provide the character string
-	   * type information that is included with the NID.
-	   *
-	   * Presently only character string types are supported, but at
-	   * some point OID or groups of strings/OIDs may need to be
-	   * supported.
-	   *
-	   * Note that challenge password should not be included here
-	   * as it is handled by CiscoEST client code.
-	   */
-            switch (nid)
-	        {
-	        case NID_commonName:
-		    /* add the attribute to the request */
-		    rv = est_add_attributes_helper(csr, nid, "test\n", 0);
-		    break;
-	        case NID_pkcs9_emailAddress:
-		    /* add the attribute to the request */
-		    rv = est_add_attributes_helper(csr, nid, "bubba@notmyemail.com\0", 0);
-		    break;
-		case NID_undef:
-		    printf("\nNID is undefined; skipping it\n");
-		    break;
-		default:
-		    rv = est_add_attributes_helper(csr, nid, "", 0);
-		    break;
-                }
-	    if (rv != EST_ERR_NONE) {
-	        printf("\n Error adding NID=%d", nid);
-	    }
+            /*
+             * This switch can be enhanced to include all NID values
+             * of interest by the client/server.  In addition the last
+             * parameter can be enhanced to provide the character string
+             * type information that is included with the NID.
+             *
+             * Presently only character string types are supported, but at
+             * some point OID or groups of strings/OIDs may need to be
+             * supported.
+             *
+             * Note that challenge password should not be included here
+             * as it is handled by libest client code.
+             */
+            switch (nid) {
+            case NID_commonName:
+                /* add the attribute to the request */
+                rv = est_add_attributes_helper(csr, nid, "test\n", 0);
+                break;
+            case NID_pkcs9_emailAddress:
+                /* add the attribute to the request */
+                rv = est_add_attributes_helper(csr, nid, "bubba@notmyemail.com\0", 0);
+                break;
+            case NID_undef:
+                printf("\nNID is undefined; skipping it\n");
+                break;
+            default:
+                rv = est_add_attributes_helper(csr, nid, "", 0);
+                break;
+            }
+            if (rv != EST_ERR_NONE) {
+                printf("\n Error adding NID=%d", nid);
+            }
         }
     }
 
@@ -620,30 +626,38 @@ static int regular_enroll_attempt (EST_CTX *ectx, int  thread_id, int i)
 
     rv = est_client_enroll_csr(ectx, csr, &pkcs7_len, priv_key);
 
-    if (verbose) printf("\nenrollment rv = %d (%s) with pkcs7 length = %d\n",
-                        rv, EST_ERR_NUM_TO_STR(rv), pkcs7_len);
+    if (verbose) {
+        printf("\nenrollment rv = %d (%s) with pkcs7 length = %d\n",
+               rv, EST_ERR_NUM_TO_STR(rv), pkcs7_len);
+    }
     if (rv == EST_ERR_NONE) {
         /*
          * client library has obtained the new client certificate.
          * now retrieve it from the library
          */
         new_client_cert = malloc(pkcs7_len);
-        if (new_client_cert == NULL){
-            if (verbose) printf("\nmalloc of destination buffer for enrollment cert failed\n");
+        if (new_client_cert == NULL) {
+            if (verbose) {
+                printf("\nmalloc of destination buffer for enrollment cert failed\n");
+            }
             return (EST_ERR_MALLOC);
         }
 
         rv = est_client_copy_enrolled_cert(ectx, new_client_cert);
-        if (verbose) printf("\nenrollment copy rv = %d\n", rv);
+        if (verbose) {
+            printf("\nenrollment copy rv = %d\n", rv);
+        }
         if (rv == EST_ERR_NONE) {
             /*
              * Enrollment copy worked, dump the pkcs7 cert to stdout
              */
-            if (verbose) dumpbin(new_client_cert, pkcs7_len);
+            if (verbose) {
+                dumpbin(new_client_cert, pkcs7_len);
+            }
         }
 
-        snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d.pkcs7", out_dir, thread_id, i);
-        write_binary_file(file_name, new_client_cert, pkcs7_len);
+        snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d", out_dir, thread_id, i);
+        save_cert(file_name, new_client_cert, pkcs7_len);
         free(new_client_cert);
     }
 
@@ -655,9 +669,13 @@ static void retry_enroll_delay (int retry_delay, time_t retry_time)
 {
 
     if (retry_delay != 0) {
-        if (verbose) printf("\nwaiting for retry period specified by server\n");
-        if (verbose) printf("\nduration can be set on estserver with -m <retry-period> (min is 60 seconds)\n");
-            SLEEP(retry_delay);
+        if (verbose) {
+            printf("\nwaiting for retry period specified by server\n");
+        }
+        if (verbose) {
+            printf("\nduration can be set on estserver with -m <retry-period> (min is 60 seconds)\n");
+        }
+        SLEEP(retry_delay);
     } else {
         /*
          * received a time_t value instead.  Calculate the amount of time to wait.
@@ -667,27 +685,35 @@ static void retry_enroll_delay (int retry_delay, time_t retry_time)
          * If both values returned (retry_delay and retry_time) are both zero, this is
          * incorrect.  Output an message and exit.
          */
-         if (retry_time != 0) {
+        if (retry_time != 0) {
 
-             time_t current_time;
-             double secs_to_wait;
+            time_t current_time;
+            double secs_to_wait;
 
-             time(&current_time);
-             secs_to_wait = difftime(retry_time, current_time);
+            time(&current_time);
+            secs_to_wait = difftime(retry_time, current_time);
 
-             if (secs_to_wait <= 0) {
-                 if (verbose) printf("\nSpecified delay time is in the past. Proceed on to retry \n");
-             } else if (secs_to_wait <= 60*2) {
-                 if (verbose) printf("\nSpecified delay time is 2 minutes or less. Wait the specified time before retry \n");
-                 SLEEP(secs_to_wait);
-             } else {
-                 if (verbose) printf("\nSpecified delay time is more than 2 minutes in the future.  printing out the delay time and terminating\n");
-                 printf(" Delay time received from the server is: %s \n", ctime(&retry_time));
-                 return;
-             }
+            if (secs_to_wait <= 0) {
+                if (verbose) {
+                    printf("\nSpecified delay time is in the past. Proceed on to retry \n");
+                }
+            } else if (secs_to_wait <= 60 * 2) {
+                if (verbose) {
+                    printf("\nSpecified delay time is 2 minutes or less. Wait the specified time before retry \n");
+                }
+                SLEEP(secs_to_wait);
+            } else {
+                if (verbose) {
+                    printf("\nSpecified delay time is more than 2 minutes in the future.  printing out the delay time and terminating\n");
+                }
+                printf(" Delay time received from the server is: %s \n", ctime(&retry_time));
+                return;
+            }
         } else {
-             if (verbose) printf("\nERROR: both retry after values returned are zero\n");
-             return;
+            if (verbose) {
+                printf("\nERROR: both retry after values returned are zero\n");
+            }
+            return;
         }
     }
 }
@@ -755,6 +781,24 @@ static void worker_thread (void *ptr)
 	    exit(1);
 	}
 
+        if (proxy_server) {
+
+            printf("\nSending request through proxy using the following proxy settings:\n");
+            printf("proxy server = %s\n", proxy_server);
+            printf("proxy port = %d\n", proxy_port);
+            printf("proxy protocol = %d\n", proxy_proto);
+            printf("proxy auth = %d\n", proxy_auth);
+            printf("proxy username = %s\n", proxy_username);
+            printf("proxy password = %s\n", proxy_password);
+            
+            rv = est_client_set_proxy(ectx, proxy_proto, proxy_server, proxy_port,
+                                      proxy_auth,proxy_username, proxy_password);
+            if (rv != EST_ERR_NONE) {
+                printf("\nUnable to set proxy server.  Aborting!!!\n");
+                exit(1);
+            }
+        }   
+       
 	if (getcert) {
 	    operation = "Get CA Cert";
 
@@ -778,9 +822,8 @@ static void worker_thread (void *ptr)
                  * Generate the output file name, which contains the thread ID
                  * and iteration number.
                  */
-		snprintf(file_name, MAX_FILENAME_LEN, "%s/cacert-%d-%d.pkcs7", out_dir, tctx->thread_id, i);
-		write_binary_file(file_name, pkcs7, pkcs7_len);
-
+		snprintf(file_name, MAX_FILENAME_LEN, "%s/cacert-%d-%d", out_dir, tctx->thread_id, i);
+                save_cert(file_name, pkcs7, pkcs7_len);
                 free(pkcs7);
 
 	    }
@@ -873,8 +916,8 @@ static void worker_thread (void *ptr)
 		 * Generate the output file name, which contains the thread ID
 		 * and iteration number.
 		 */
-		snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d.pkcs7", out_dir, tctx->thread_id, i);
-		write_binary_file(file_name, new_client_cert, pkcs7_len);
+		snprintf(file_name, MAX_FILENAME_LEN, "%s/cert-%d-%d", out_dir, tctx->thread_id, i);
+                save_cert(file_name, new_client_cert, pkcs7_len);
                 free(new_client_cert);
 	    }
 	}
@@ -925,7 +968,7 @@ static unsigned long ssl_id_callback (void)
 
 int main (int argc, char **argv)
 {
-    char c;
+    signed char c;
 #ifndef DISABLE_PTHREADS
     pthread_attr_t attr;
     pthread_t threads[MAX_THREADS];
@@ -935,7 +978,6 @@ int main (int argc, char **argv)
    THREAD_CTX *tctx;
     int set_fips_return = 0;
     char file_name[MAX_FILENAME_LEN];
-    BIO *keyin;
     BIO *certin;
     static struct option long_options[] = {
         {"trustanchor", 1, 0, 0},
@@ -943,7 +985,17 @@ int main (int argc, char **argv)
         {"srp-user", 1, 0, 0},
         {"srp-password", 1, 0, 0},
         {"auth-token", 1, 0, 0},
+        {"common-name",  1, 0,    0 },
+        {"pem-output",   0, 0,    0 },
         {"path-seg", 1, 0, 0},
+        {"keypass_stdin", 1, 0, 0 },
+        {"keypass_arg", 1, 0, 0 },
+        {"proxy-server", 1, 0, 0 },
+        {"proxy-port", 1, 0, 0 },
+        {"proxy-proto", 1, 0, 0 },
+        {"proxy-auth", 1, 0, 0 },
+        {"proxy-username", 1, 0, 0 },
+        {"proxy-password", 1, 0, 0 },
         {NULL, 0, NULL, 0}
     };
     int option_index = 0;
@@ -952,6 +1004,11 @@ int main (int argc, char **argv)
 
     memset(est_http_uid, 0, MAX_UID_LEN+1);
     memset(est_http_pwd, 0, MAX_PWD_LEN+1);
+
+    /*
+     * Set the default common name to put into the Subject field
+     */
+    strncpy(subj_cn, "127.0.0.1", MAX_CN);
 
     memset(csr_file, 0, 1);
     memset(priv_key_file, 0, 1);
@@ -992,6 +1049,58 @@ int main (int argc, char **argv)
                     est_path_seg = calloc(EST_MAX_PATH_SEGMENT_LEN+1, sizeof(char));
 		    strncpy(est_path_seg, optarg, EST_MAX_PATH_SEGMENT_LEN);
 		}
+		if (!strncmp(long_options[option_index].name,"proxy-server", strlen("proxy-server"))) {
+                    proxy_server = calloc(MAX_SERVER_LEN+1, sizeof(char));
+		    strncpy(proxy_server, optarg, MAX_SERVER_LEN);
+		}
+		if (!strncmp(long_options[option_index].name,"proxy-port", strlen("proxy-port"))) {
+                    proxy_port = atoi(optarg);
+		}
+                if (!strncmp(long_options[option_index].name,"proxy-proto", strlen("proxy-proto"))) {
+                    if (!strncmp(optarg,"SOCKS4", strlen("SOCKS4"))) {
+                        proxy_proto = EST_CLIENT_PROXY_SOCKS4;
+                    } else if (!strncmp(optarg,"SOCKS4A", strlen("SOCKS4A"))) {
+                        proxy_proto = EST_CLIENT_PROXY_SOCKS4A;
+                    } else if (!strncmp(optarg,"SOCKS5", strlen("SOCKS5"))) {
+                        proxy_proto = EST_CLIENT_PROXY_SOCKS5;
+                    } else if (!strncmp(optarg,"SOCKS_HOSTNAME", strlen("SOCKS_HOSTNAME"))) {
+                        proxy_proto = EST_CLIENT_PROXY_SOCKS5_HOSTNAME;
+                    } else if (!strncmp(optarg,"HTTP_NOTUNNEL", strlen("HTTP_NOTUNNEL"))) {
+                        proxy_proto = EST_CLIENT_PROXY_HTTP_NOTUNNEL;
+                    } else if (!strncmp(optarg,"HTTP_TUNNEL", strlen("HTTP_TUNNEL"))) {
+                        proxy_proto = EST_CLIENT_PROXY_HTTP_TUNNEL;
+                    }
+		}
+		if (!strncmp(long_options[option_index].name,"proxy-auth", strlen("proxy-auth"))) {
+                    if (!strncmp(optarg,"BASIC", strlen("BASIC"))) {
+                        proxy_auth |= EST_CLIENT_PROXY_AUTH_BASIC;
+                    } else if (!strncmp(optarg,"NTLM", strlen("NTLM"))) {
+                        proxy_auth |= EST_CLIENT_PROXY_AUTH_NTLM;
+                    }
+		}
+		if (!strncmp(long_options[option_index].name,"proxy-username", strlen("proxy-username"))) {
+                    proxy_username = calloc(MAX_UID_LEN+1, sizeof(char));
+		    strncpy(proxy_username, optarg, MAX_UID_LEN);
+		}
+		if (!strncmp(long_options[option_index].name,"proxy-password", strlen("proxy-password"))) {
+                    proxy_password = calloc(MAX_PWD_LEN+1, sizeof(char));
+		    strncpy(proxy_password, optarg, MAX_PWD_LEN);
+		}
+                
+
+        if (!strncmp(long_options[option_index].name,"keypass_stdin", strlen("keypass_stdin"))) {
+            priv_key_cb = PEM_def_callback;
+        }
+        if (!strncmp(long_options[option_index].name,"keypass_arg", strlen("keypass_arg"))) {
+            strncpy(priv_key_pwd, optarg, MAX_PWD_LEN);
+            priv_key_cb = string_password_cb;
+        }
+        if (!strncmp(long_options[option_index].name, "common-name", strlen("common-name"))) {
+            strncpy(subj_cn, optarg, MAX_CN);
+        }
+        if (!strncmp(long_options[option_index].name, "pem-output", strlen("pem-output"))) {
+            pem_out = 1;
+        }
                 break;
             case 'v':
                 verbose = 1;
@@ -1080,53 +1189,62 @@ int main (int argc, char **argv)
         }
     }
     if (optind < argc) {
-        printf ("non-option ARGV-elements: ");
-        while (optind < argc)
-            printf ("%s ", argv[optind++]);
-        printf ("\n");
+        printf("non-option ARGV-elements: ");
+        while (optind < argc) {
+            printf("%s ", argv[optind++]);
+        }
+        printf("\n");
     }
     argc -= optind;
     argv += optind;
 
     if (est_http_uid[0] && !est_http_pwd[0]) {
-	printf ("Error: The password for HTTP authentication must be specified when the HTTP user name is set.\n");
-	exit(1);
+        printf("Error: The password for HTTP authentication must be specified when the HTTP user name is set.\n");
+        exit(1);
     }
 
     if (csr_file[0] && getcsr) {
- 	printf("\nError: The -a option (CSR attributes) does not make sense with a pre-defined CSR\n");
-	exit(1);
+        printf("\nError: The -a option (CSR attributes) does not make sense with a pre-defined CSR\n");
+        exit(1);
     }
     if (csr_file[0] && priv_key_file[0]) {
-	printf("\nError: The -x option (private key for CSR) does not make sense with a pre-defined CSR\n");
-	exit(1);
+        printf("\nError: The -x option (private key for CSR) does not make sense with a pre-defined CSR\n");
+        exit(1);
     }
     if (csr_file[0] && force_pop) {
-	printf("\nError: The -z option (PoP) does not make sense with a pre-defined CSR\n");
-	exit(1);
+        printf("\nError: The -z option (PoP) does not make sense with a pre-defined CSR\n");
+        exit(1);
     }
     if (reenroll & csr_file[0]) {
-	printf("\nError: The -y option (predefined CSRs) does not make sense for re-enrollment\n");
-	exit(1);
+        printf("\nError: The -y option (predefined CSRs) does not make sense for re-enrollment\n");
+        exit(1);
     }
 
     if (verbose) {
         print_version();
-	printf("\nUsing EST server %s:%d", est_server, est_port);
-	if (csr_file        [0]) printf("\nUsing CSR file %s"                 , csr_file);
-	if (priv_key_file   [0]) printf("\nUsing identity private key file %s", priv_key_file);
-	if (client_cert_file[0]) printf("\nUsing identity client cert file %s", client_cert_file);
-	if (client_key_file [0]) printf("\nUsing identity private key file %s", client_key_file);
+        printf("\nUsing EST server %s:%d", est_server, est_port);
+        if (csr_file        [0]) {
+            printf("\nUsing CSR file %s", csr_file);
+        }
+        if (priv_key_file   [0]) {
+            printf("\nUsing identity private key file %s", priv_key_file);
+        }
+        if (client_cert_file[0]) {
+            printf("\nUsing identity client cert file %s", client_cert_file);
+        }
+        if (client_key_file [0]) {
+            printf("\nUsing identity private key file %s", client_key_file);
+        }
     }
 
     if (enroll && reenroll) {
-	printf("\nThe enroll and reenroll operations can not be used together\n");
-	exit(1);
+        printf("\nThe enroll and reenroll operations can not be used together\n");
+        exit(1);
     }
 
     if (!out_dir[0]) {
-	printf("\nOutput directory must be specified with -o option\n");
-	exit(1);
+        printf("\nOutput directory must be specified with -o option\n");
+        exit(1);
     }
 
     if (trustanchor) {
@@ -1150,6 +1268,8 @@ int main (int argc, char **argv)
             exit(1);
         }
     }
+
+    est_apps_startup();
 
     /*
      * Read in the current client certificate
@@ -1187,26 +1307,13 @@ int main (int argc, char **argv)
      * Read in the client's private key
      */
     if (client_key_file[0]) {
-        keyin = BIO_new(BIO_s_file_internal());
-        if (BIO_read_filename(keyin, client_key_file) <= 0) {
-            printf("\nUnable to read client private key file %s\n", client_key_file);
-            exit(1);
-        }
-        /*
-         * This reads in the private key file, which is expected to be a PEM
-         * encoded private key.  If using DER encoding, you would invoke
-         * d2i_PrivateKey_bio() instead.
-         */
-        client_priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
+        client_priv_key = read_private_key(client_key_file, priv_key_cb);
         if (client_priv_key == NULL) {
             printf("\nError while reading PEM encoded private key file %s\n", client_key_file);
             ERR_print_errors_fp(stderr);
             exit(1);
         }
-        BIO_free(keyin);
     }
-
-    est_apps_startup();
 
 #if 0
     CRYPTO_malloc_debug_init();
@@ -1219,34 +1326,42 @@ int main (int argc, char **argv)
 #endif
 
     if (verbose) {
-	est_init_logger(EST_LOG_LVL_INFO, &test_logger_stdout);
-	est_enable_backtrace(1);
+        est_init_logger(EST_LOG_LVL_INFO, &test_logger_stdout);
+        est_enable_backtrace(1);
     } else {
-	est_init_logger(EST_LOG_LVL_ERR, &test_logger_stdout);
+        est_init_logger(EST_LOG_LVL_ERR, &test_logger_stdout);
     }
 
-    if (!priv_key_file[0]) {
+    if (!priv_key_file[0] && enroll && !csr_file[0]) {
+	printf("\nA private key is required for enrolling.  Creating a new RSA key pair since you didn't provide a key using the -x option.");
         /*
-	 * Create a private key that will be used for all
-	 * the enrollments.  Normally, there would be one
-	 * key per cert.  But we do this to improve
-	 * performance when simulating multiple clients
-	 */
-        new_pkey = generate_private_key(&new_pkey_len);
-	snprintf(file_name, MAX_FILENAME_LEN, "%s/key-x-x.pem", out_dir);
-	write_binary_file(file_name, new_pkey, new_pkey_len);
-	free(new_pkey);
+         * Create a private key that will be used for all
+         * the enrollments.  Normally, there would be one
+         * key per cert.  But we do this to improve
+         * performance when simulating multiple clients
+         */
+        new_pkey = generate_private_RSA_key(RSA_KEYSIZE_4096, priv_key_cb);
+        if(new_pkey == NULL) {
+            exit(1);
+        }
+        snprintf(file_name, MAX_FILENAME_LEN, "%s/key-x-x.pem", out_dir);
+        write_binary_file(file_name, (unsigned char *)new_pkey, strlen((const char *)new_pkey));
+        memset(new_pkey, 0, strlen(new_pkey));
+        free(new_pkey);
+        new_pkey = NULL;
 
-	/*
-	 * prepare to read it back in to an EVP_PKEY struct
-	 */
-	strncpy(priv_key_file, file_name, MAX_FILENAME_LEN);
+        /*
+         * prepare to read it back in to an EVP_PKEY struct
+         */
+        strncpy(priv_key_file, file_name, MAX_FILENAME_LEN);
     }
 
     /* Read in the private key file */
-    priv_key = read_private_key(priv_key_file);
-    if (priv_key == NULL) {
-        exit(1);
+    if (enroll && !csr_file[0]) {
+        priv_key = read_private_key(priv_key_file, priv_key_cb);
+        if (priv_key == NULL) {
+            exit(1);
+        }
     }
 
 #ifndef DISABLE_PTHREADS
@@ -1307,13 +1422,17 @@ int main (int argc, char **argv)
 #endif
 
     free(cacerts);
-    if (c_cert_len) free(c_cert);
-    if (c_key_len) free(c_key);
+    if (c_cert_len) {
+        free(c_cert);
+    }
+    if (c_key_len) {
+        free(c_key);
+    }
 
     est_apps_shutdown();
 #if 0
     BIO *bio_err;
-    bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
+    bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
     CRYPTO_mem_leaks(bio_err);
     BIO_free(bio_err);
 #endif

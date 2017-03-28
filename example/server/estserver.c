@@ -27,6 +27,8 @@
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
 #include <openssl/crypto.h>
+#include <openssl/pem.h>
+#include <openssl/md5.h>
 #include <est.h>
 #include "ossl_srv.h"
 #include "../util/utils.h"
@@ -53,6 +55,7 @@
 #endif
 
 #define MAX_FILENAME_LEN 255
+#define MAX_REALM_LEN    32
 
 /*
  * The OpenSSL CA needs this BIO to send errors too
@@ -151,6 +154,14 @@ static DH *get_dh1024dsa ()
     return (dh);
 }
 
+static char priv_key_pwd[MAX_PWD_LEN];
+static int string_password_cb (char *buf, int size, int wflag, void *data)
+{
+    strncpy(buf,priv_key_pwd, size);
+    return(strnlen(buf, size));
+}
+
+
 static void print_version (FILE *fp)
 {
     fprintf(fp, "Using %s\n", SSLeay_version(SSLEAY_VERSION));
@@ -162,7 +173,7 @@ static void show_usage_and_exit (void)
             "  -v           Verbose operation\n"
             "  -c <file>    PEM file to use for server cert\n"
             "  -k <file>    PEM file to use for server key\n"
-            "  -r <value>   HTTP realm to present to clients\n"
+            "  -r <value>   HTTP realm to present to clients. Max is 32 characters.\n"
             "  -l           Enable CRL checks\n"
             "  -t           Enable check for binding client PoP to the TLS UID\n"
             "  -m <seconds> Simulate manual CA enrollment\n"
@@ -176,8 +187,10 @@ static void show_usage_and_exit (void)
 #endif
         "  -f           Runs EST Server in FIPS MODE = ON\n"
         "  -6           Enable IPv6\n"
-            "  -w           Dump the CSR to '/tmp/csr.p10' allowing for manual attribute capture on server\n"
+        "  -w           Dump the CSR to '/tmp/csr.p10' allowing for manual attribute capture on server\n"
         "  -?           Print this help message and exit\n"
+        "  --keypass_stdin Specify en-/decryption of private key, password read from STDIN\n"
+        "  --keypass_arg   Specify en-/decryption of private key, password read from argument\n"
         "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
         "  --enforce-csr  Enable CSR attributes enforcement. The client must provide all the attributes in the CSR.\n"
         "  --token <value> Use HTTP Bearer Token auth.\n"
@@ -522,7 +535,6 @@ static int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
         printf("\nAdding key to lookup table:\n");
         dumpbin((char*)n->data, n->length);
     }
-
     DONE:
     if (out)
         BIO_free_all(out);
@@ -740,9 +752,8 @@ unsigned char * process_csrattrs_request (int *csr_len, char *path_seg,
     return (csr_data);
 }
 
-static char digest_user[3][32] = { "estuser", "estrealm",
-        "36807fa200741bb0e8fb04fcf08e2de6" //This is the HA1 precaculated value
-        };
+static char digest_user[3][34] = { "estuser", "estrealm", ""};
+
 /*
  * This callback is invoked by libEST when performing
  * HTTP authentication of the EST client.  libEST will
@@ -943,18 +954,27 @@ int main (int argc, char **argv)
 {
     char c;
     int i;
+
     X509 *x;
     EVP_PKEY * priv_key;
-    BIO *certin, *keyin;
+    BIO *certin;
     DH *dh;
     EST_ERROR rv;
     int sleep_delay = 0;
     int retry_period = 300;
     char vfile[255];
     int option_index = 0;
-    static struct option long_options[] = { { "srp", 1, NULL, 0 }, {
-            "enforce-csr", 0, NULL, 0 }, { "token", 1, 0, 0 }, { NULL, 0, NULL,
-            0 } };
+    pem_password_cb *priv_key_cb = NULL;
+
+    static struct option long_options[] = {
+        {"srp", 1, NULL, 0},
+        {"enforce-csr", 0, NULL, 0},
+        {"token", 1, 0, 0},
+        {"keypass", 1, 0, 0},
+        {"keypass_stdin", 1, 0, 0 },
+        {"keypass_arg", 1, 0, 0 },
+        {NULL, 0, NULL, 0}
+    };
 
 #ifdef WIN32
     InitializeCriticalSection(&enrollment_critical_section);
@@ -992,6 +1012,13 @@ int main (int argc, char **argv)
                 http_token_auth = 1;
                 memset(valid_token_value, 0, MAX_AUTH_TOKEN_LEN + 1);
                 strncpy(&(valid_token_value[0]), optarg, MAX_AUTH_TOKEN_LEN);
+            }
+            if (!strncmp(long_options[option_index].name,"keypass_stdin", strlen("keypass_stdin"))) {
+                priv_key_cb = PEM_def_callback;
+            }
+            if (!strncmp(long_options[option_index].name,"keypass_arg", strlen("keypass_arg"))) {
+                strncpy(priv_key_pwd, optarg, MAX_PWD_LEN);
+                priv_key_cb = string_password_cb;
             }
             break;
         case 'm':
@@ -1040,7 +1067,12 @@ int main (int argc, char **argv)
             strncpy(keyfile, optarg, EST_MAX_FILE_LEN);
             break;
         case 'r':
-            strncpy(realm, optarg, MAX_REALM);
+            if (strnlen(optarg, MAX_REALM_LEN+1) > MAX_REALM_LEN) {
+                printf("\nRealm value is too large.  Max is 32 characters\n");
+                exit(1);
+            }
+            
+            strncpy(realm, optarg, MAX_REALM_LEN);
             break;
         case 'f':
             /* turn FIPS on if user requested it
@@ -1126,24 +1158,14 @@ int main (int argc, char **argv)
     /*
      * Read in the server's private key
      */
-    keyin = BIO_new(BIO_s_file_internal());
-    if (BIO_read_filename(keyin, keyfile) <= 0) {
-        printf("\nUnable to read server private key file %s\n", keyfile);
-        exit(1);
-    }
-    /*
-     * This reads in the private key file, which is expected to be a PEM
-     * encoded private key.  If using DER encoding, you would invoke
-     * d2i_PrivateKey_bio() instead.
-     */
-    priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
+
+    priv_key = read_private_key(keyfile, priv_key_cb);
     if (priv_key == NULL) {
-        printf("\nError while reading PEM encoded private key file %s\n",
+        printf("\nError while reading PEM encoded server private key file %s\n",
             keyfile);
         ERR_print_errors_fp(stderr);
         exit(1);
     }
-    BIO_free(keyin);
 
     bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
     if (!bio_err) {
@@ -1234,18 +1256,44 @@ int main (int argc, char **argv)
             printf(
                 "\nDisabling HTTP authentication when TLS client auth succeeds\n");
         if (est_set_http_auth_required(ectx, HTTP_AUTH_NOT_REQUIRED)) {
-            printf("\nUnable disable required HTTP auth.  Aborting!!!\n");
+            printf("\nUnable to disable required HTTP auth.  Aborting!!!\n");
             exit(1);
         }
     }
 
     if (http_digest_auth) {
+        
+        MD5_CTX c;
+        int len;
+        static unsigned char ha1_input_buf[32*3+2];
+        unsigned char md[17];
+        int i;
+        
         rv = est_server_set_auth_mode(ectx, AUTH_DIGEST);
         if (rv != EST_ERR_NONE) {
             printf(
                 "\nUnable to enable HTTP digest authentication.  Aborting!!!\n");
             exit(1);
         }
+
+        /*
+         * Cache away the realm value and build the HA1
+         */
+        strncpy(digest_user[1], realm, MAX_REALM_LEN);
+
+        len = sprintf((char *)ha1_input_buf, "%s:%s:%s", "estuser", realm, "estpwd");
+        MD5_Init(&c);
+        MD5_Update(&c, ha1_input_buf, len);
+        MD5_Final((unsigned char *)md, &c);
+
+        printf("\nDigest HA1 value = ");
+        memset(digest_user[2], 0, 32);
+        for(i = 0; i < 16; i++){
+            
+            sprintf(&(digest_user[2][i*2]),"%.2x", (unsigned char) md[i]);
+            printf("%c%c", digest_user[2][i*2], digest_user[2][i*2+1]);
+        }
+        printf("\n");
     }
 
     if (http_basic_auth) {

@@ -24,6 +24,8 @@
 #endif 
 #include <est.h>
 
+#define EST_PRIVATE_KEY_ENC EVP_aes_128_cbc()
+
 /*
  * Reads a file into an unsigned char array.
  * The array should not be allocated prior to calling this
@@ -342,4 +344,33 @@ int grep(char *filename, char *string) {
 	return grep2(filename, string, ".*");
 }
 
+/*
+ * Helper function to load a private key from a file
+ */
+EVP_PKEY *read_protected_private_key(const char *key_file, pem_password_cb *cb)
+{
+    BIO *keyin;
+    EVP_PKEY *priv_key;
+
+    /*
+     * Read in the private key
+     */
+    keyin = BIO_new(BIO_s_file_internal());
+    if (BIO_read_filename(keyin, key_file) <= 0) {
+    printf("\nUnable to read private key file %s\n", key_file);
+    return(NULL);
+    }
+    /*
+     * This reads in the private key file, which is expected to be a PEM
+     * encoded private key.  If using DER encoding, you would invoke
+     * d2i_PrivateKey_bio() instead.
+     */
+    priv_key = PEM_read_bio_PrivateKey(keyin, NULL, cb, NULL);
+    if (priv_key == NULL) {
+    printf("\nError while parsing PEM encoded private key from file %s\n", key_file);
+    }
+    BIO_free(keyin);
+
+    return (priv_key);
+}
 

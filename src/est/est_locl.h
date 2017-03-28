@@ -3,7 +3,7 @@
  *
  * November, 2012
  *
- * Copyright (c) 2012-2014, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2012-2014, 2016, 2017 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -11,6 +11,7 @@
 #ifndef HEADER_EST_LOCL_H
 #define HEADER_EST_LOCL_H
 #include <openssl/srp.h>
+#include "est_client_proxy.h"
 
 /* Windows only option: Export local API functions for testing */
 #ifdef WIN32
@@ -41,7 +42,7 @@
 /* one segment for the possible CA path seg and one for the operation path */
 #define EST_URI_MAX_LEN     (EST_URI_PATH_PREFIX_MAX_LEN+EST_MAX_PATH_SEGMENT_LEN+EST_MAX_PATH_SEGMENT_LEN)
 #define EST_BODY_MAX_LEN    16384
-#define EST_CA_MAX	    1000000
+#define EST_CA_MAX	    2000000
 #define EST_TLS_UID_LEN     17
 #define EST_RAW_CSR_LEN_MAX 8192
 
@@ -105,7 +106,7 @@
 #define EST_CSRATTRS_POP            "MAsGCSqGSIb3DQEJBw=="
 #define EST_CSRATTRS_POP_LEN         20
 
-#define EST_HTTP_HDR_EST_CLIENT     "libEST client 1.0"
+#define EST_HTTP_HDR_EST_CLIENT     "LibEST client 1.0"
 
 #define EST_HTTP_REQ_DATA_MAX       4096
 #define EST_HTTP_REQ_TERMINATOR_LEN 5
@@ -247,7 +248,19 @@ struct est_ctx {
     const EVP_MD *signing_digest;
     int  retry_after_delay;
     time_t retry_after_date;
-    
+
+    /* Client mode proxy configuration */
+    int use_proxy;
+    EST_CLIENT_PROXY_PROTO proxy_proto;
+    char proxy_server[EST_MAX_SERVERNAME_LEN + 1];
+    unsigned short int proxy_port;
+    unsigned int proxy_auth;
+    char proxy_username[MAX_UIDPWD+1];
+    char proxy_password[MAX_UIDPWD+1];
+
+    tcw_sock_t tcw_sock;
+    int tcw_sock_connected;
+
     int est_client_initialized;    
     /*
      * The following are used for server and/or proxy mode
@@ -277,7 +290,6 @@ struct est_ctx {
     int (*est_srp_username_cb)(SSL *s, int *ad, void *arg);
 
     int last_http_status;
-    int enable_tls10; /* Used to allow TLS 1.0 on the server-side */
     int enforce_csrattrs; /* Used to force the client to provide the CSR attrs in the CSR */
 };
 

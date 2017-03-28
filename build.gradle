@@ -19,7 +19,7 @@ model {
                             file(System.getenv().SSL_DIR + "\\bin\\ssleay32.dll")
                             sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\ssleay32.lib")
                 }
-            }                    
+            }
             if(file(System.getenv().URIPARSER_DIR +"\\lib\\uriparser.lib").exists()) {
                 uriparser {
                     headers.srcDir System.getenv().URIPARSER_DIR + "\\include"
@@ -28,7 +28,18 @@ model {
                                 file(System.getenv().URIPARSER_DIR + "\\lib\\uriparser.lib")
                     }
                 }
-            }   
+            }
+            if(file(System.getenv().CURL_DIR +"\\bin\\libcurl.dll").exists()) {
+                libcurl {
+                    headers.srcDir System.getenv().CURL_DIR + "\\include"
+                            binaries.withType(SharedLibraryBinary) {
+                            sharedLibraryFile =
+                                file(System.getenv().CURL_DIR + "\\bin\\libcurl.dll")
+                            sharedLibraryLinkFile = 
+                                file(System.getenv().CURL_DIR + "\\lib\\libcurl.lib")
+                    }
+                }
+            } 
         }
     }    
 
@@ -82,7 +93,12 @@ model {
                 {
                     lib library: "uriparser", linkage: "static"
                 }
-                  
+
+                if(file(System.getenv().CURL_DIR +"\\bin\\libcurl.dll").exists())
+                {
+                    lib library: "libcurl", linkage: "shared"
+                }
+
                 lib library: "libcrypto", linkage: "shared"
                 lib library: "libssl", linkage: "shared" 
                
@@ -106,12 +122,16 @@ model {
                 {
                     cCompiler.define "HAVE_URIPARSER", "1"
                 }                
+                if(file(System.getenv().CURL_DIR +"\\bin\\libcurl.dll").exists())
+                {
+                    cCompiler.define "HAVE_LIBCURL", "1"
+                }                
                 cCompiler.define "WIN32"
                 cCompiler.define "HAVE_STDINT"
                 cCompiler.define "LIBEST_EXPORTS", "1"
                 cCompiler.define "DISABLE_BACKTRACE"
                 cCompiler.define "__STDC_WANT_SECURE_LIB__" , "0"
-                cCompiler.define "PACKAGE_STRING", "\"libest 2.0.0p\""               
+                cCompiler.define "PACKAGE_STRING", "\"libest 2.1.0\""               
                 cCompiler.define "DISABLE_PTHREADS", "1"
                 cCompiler.args "/GS", "/GL", "/analyze-", "/W3", "/Gy", "/Zc:wchar_t", "/Zi", "/Gm-", "/fp:precise", "/errorReport:prompt", "/WX-", "/Zc:forScope", "/Gd", "/Oy-","/Oi","/MD", "/EHsc", "/nologo", "/FS"
                 linker.args "/DYNAMICBASE","/SAFESEH", "/LTCG", "/NXCOMPAT"

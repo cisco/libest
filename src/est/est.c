@@ -9,7 +9,7 @@
  *
  * November, 2012
  *
- * Copyright (c) 2012-2014, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2012-2014, 2016, 2017 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -261,7 +261,7 @@ EST_ERROR est_init_logger (EST_LOG_LEVEL lvl, void (*loggerfunc)(char *, va_list
 
 /*! @brief est_enable_backtrace() allows the application to toggle
     whether the stack trace is displayed for WARNING and ERROR
-    log messages coming from libEST.
+    log messages coming from libEST.   
  
     @param enable Set to zero to disable stack traces, non-zero to
                   enable stack traces through the logging facility.
@@ -674,9 +674,9 @@ EST_ERROR est_load_trusted_certs (EST_CTX *ctx, unsigned char *certs, int certs_
 
     This function is used to link application specific data to the
     EST_CTX structure.  This can be used by an application to bind
-    application specific data to an EST operation.  libEST does
+    application specific data to an EST operation.  libEST does 
     not use the application specific data.  The *ex_data pointer is
-    passed back to the application when libEST invokes the
+    passed back to the application when libEST invokes the 
     enroll, re-enroll, CSR attributes, and HTTP auth callbacks.
 
     libEST will not free the memory referenced by the *ex_data

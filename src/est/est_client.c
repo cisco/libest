@@ -9,11 +9,11 @@
  *
  * April, 2013
  *
- * Copyright (c) 2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016, 2017 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
- 
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -1575,6 +1575,11 @@ int est_client_send_enroll_request (EST_CTX *ctx, SSL *ssl, BUF_MEM *bptr,
                                  &enroll_buf, &enroll_buf_len);
         switch (rv) {
         case EST_ERR_NONE:
+            if (enroll_buf_len == 0) {
+                EST_LOG_ERR("Enroll buf is zero bytes in length");
+                rv = EST_ERR_ZERO_LENGTH_BUF;
+                break;
+            }
             memcpy_s(pkcs7, EST_MAX_CLIENT_CERT_LEN, enroll_buf, enroll_buf_len);
             *pkcs7_len = enroll_buf_len;
             break;
@@ -2222,6 +2227,10 @@ static EST_ERROR est_client_verifyhost (char *hostname, X509 *server_cert)
                 /* compare alternative IP address if the data chunk is the same size
                    our server IP address is */
 
+                /*
+                 * For PSB compliance, use SafeC library memcmp_s
+                 */ 
+		
                  if (addr_is_v4) {
                     safec_rc = memcmp_s(altptr, altlen, &addr_v4, altlen, &diff);
                     if (safec_rc != EOK) {
@@ -2399,14 +2408,15 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
     SSL_CTX         *s_ctx;
     EST_ERROR       rv = EST_ERR_NONE;
 #ifndef WIN32
-	int             sock;
+    int             sock;
 #else
-	SOCKET			sock = INVALID_SOCKET;
+    SOCKET          sock = INVALID_SOCKET;
 #endif
     int             rc; 
-    struct          addrinfo hints, *ai, *aiptr;
-    char            portstr[12];
     int             oval = 1;
+    int             ssl_connect_ret = -1;
+    tcw_err_t       tcw_err;
+    tcw_opts_t      tcw_opts = { 0 };
     
     if (!ctx) {
         return EST_ERR_NO_CTX;
@@ -2414,69 +2424,64 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
 
     s_ctx = ctx->ssl_ctx;
 
-    /* 
-     * Unfortunately the OpenSSL BIO socket interface doesn't
-     * support IPv6.  This precludes us from using BIO_do_connect().
-     * We'll need to open a raw socket ourselves and pass that to OpenSSL.
-     */
-    snprintf(portstr, sizeof(portstr), "%u", ctx->est_port_num);
-    memzero_s(&hints, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_ADDRCONFIG;  
-    if ((rc = getaddrinfo(ctx->est_server, portstr, &hints, &aiptr))) {
-        EST_LOG_ERR("Unable to lookup hostname %s. %s", 
-		ctx->est_server, gai_strerror(rc));
-        return (EST_ERR_IP_GETADDR);
-    }
     /*
-     * Iterate through all the addresses found that match the
-     * hostname.  Attempt to connect to them.
+     * Establish the connection through a proxy (if applicable)
      */
-    for (ai = aiptr; ai != NULL; ai = ai->ai_next)		{
-	/*
-	 * Open a socket with this remote address
-	 */
-	if ((sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol)) < 0 ) {
-	    /* 
-	     * If we can't connect, try the next address
-	     */
-	    continue;
-	}
-	/*
-	 * Enable TCP keep-alive
-	 */
-	rc = setsockopt(sock, SOL_SOCKET,SO_KEEPALIVE, (char *)&oval, sizeof(oval));
-	if (rc < 0) {
-	    close(sock);
-	    continue;
-	}
-	/*
-	 * Connect to the remote host
-	 */
-	if (connect(sock, ai->ai_addr, ai->ai_addrlen) < 0 ) {
-	    close(sock);
-	    continue;
-	}
-	/* 
-	 * Connection has been established. No need to try
-	 * any more addresses.
-	 */
-	break;
-    }
-    freeaddrinfo(aiptr);
-    if (!ai) {
-	EST_LOG_ERR("Unable to connect to EST server at address %s", ctx->est_server);
-	return (EST_ERR_IP_CONNECT);
+    if (ctx->use_proxy) {
+
+        tcw_opts.proxy_proto = ctx->proxy_proto;
+        
+        tcw_opts.proxy_host = ctx->proxy_server;
+        tcw_opts.proxy_port = ctx->proxy_port;
+        
+        if (ctx->proxy_username[0] && ctx->proxy_password[0] &&
+                ctx->proxy_auth != EST_CLIENT_PROXY_AUTH_NONE) {
+            tcw_opts.proxy_username = ctx->proxy_username;
+            tcw_opts.proxy_password = ctx->proxy_password;
+            
+            tcw_opts.proxy_auth = 0;  /* initialize */
+            if (ctx->proxy_auth & EST_CLIENT_PROXY_AUTH_BASIC) {
+                tcw_opts.proxy_auth |= EST_CLIENT_PROXY_AUTH_BASIC;
+            }
+            if (ctx->proxy_auth & EST_CLIENT_PROXY_AUTH_NTLM) {
+                tcw_opts.proxy_auth |= EST_CLIENT_PROXY_AUTH_NTLM;
+            }
+            
+        }
+    } else {
+        tcw_opts.proxy_proto = EST_CLIENT_PROXY_NONE;
     }
 
+    tcw_err = tcw_connect(&ctx->tcw_sock, &tcw_opts,
+                          ctx->est_server, ctx->est_port_num, &sock);
+    if (tcw_err == TCW_ERR_RESOLV) {
+        EST_LOG_ERR("Unable to lookup hostname %s.", ctx->est_server);
+        return (EST_ERR_IP_GETADDR);
+    }
+    if (tcw_err != TCW_OK) {
+        EST_LOG_ERR("Unable to connect to EST server at %s", ctx->est_server);
+        return (EST_ERR_IP_CONNECT);
+    }
+
+    /*
+     * Enable TCP keep-alive
+     */
+    rc = setsockopt(sock, SOL_SOCKET,SO_KEEPALIVE, (char *)&oval, sizeof(oval));
+    if (rc < 0) {
+        tcw_close(&ctx->tcw_sock);
+        sock = SOCK_INVALID;
+        EST_LOG_ERR("Unable to connect to EST server at address %s", ctx->est_server);
+        return (EST_ERR_IP_CONNECT);
+    }
     /*
      * Pass the socket to the BIO interface, which OpenSSL uses
      * to create the TLS session.
      */
-    tcp = BIO_new_socket(sock, BIO_CLOSE);
+    tcp = BIO_new_socket(sock, BIO_NOCLOSE);
     if (tcp == NULL) {
         EST_LOG_ERR("Error creating IP socket");
+        tcw_close(&ctx->tcw_sock);
+        sock = SOCK_INVALID;        
         ossl_dump_ssl_errors();
         return (EST_ERR_IP_CONNECT);
     }        
@@ -2485,6 +2490,8 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
         EST_LOG_ERR("Error creating TLS context");
         ossl_dump_ssl_errors();
         BIO_free_all(tcp);    
+        tcw_close(&ctx->tcw_sock);
+        sock = SOCK_INVALID;
         return (EST_ERR_SSL_NEW);
     }
 
@@ -2492,17 +2499,28 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
      * Need to set the EST ctx into the exdata of the SSL session context so
      * that it can be retrieved on a per session basis.
      */
-    SSL_set_ex_data(*ssl, e_ctx_ssl_exdata_index, ctx);    
+    SSL_set_ex_data(*ssl, e_ctx_ssl_exdata_index, ctx);
+
+    /*
+     * Set the EST server name in the SSL context so that it'll be sent in the
+     * in the server name extension in the client hello.
+     */
+    SSL_set_tlsext_host_name(*ssl, ctx->est_server);
 
     SSL_set_bio(*ssl, tcp, tcp);
     if (ctx->sess) {
 	SSL_set_session(*ssl, ctx->sess);
     }
-    if (SSL_connect(*ssl) <= 0) {
-        EST_LOG_ERR("Error connecting TLS context");
-	ossl_dump_ssl_errors();   
+    if ((ssl_connect_ret = SSL_connect(*ssl)) <= 0) {
+        EST_LOG_ERR("Error connecting TLS context. %d", SSL_get_error(*ssl, ssl_connect_ret));
+        ossl_dump_ssl_errors();
+        tcw_close(&ctx->tcw_sock);
+        sock = SOCK_INVALID;
         rv = EST_ERR_SSL_CONNECT;
+    } else {
+        ctx->tcw_sock_connected = 1;
     }
+
     /*
      * Now that we've established a TLS session with the EST server,
      * we need to verify that the FQDN in the server cert matches
@@ -2556,6 +2574,11 @@ void est_client_disconnect (EST_CTX *ctx, SSL **ssl)
     SSL_shutdown(*ssl);
     SSL_free(*ssl);
     *ssl = NULL;
+
+    if (ctx->tcw_sock_connected) {
+        tcw_close(&ctx->tcw_sock);
+        ctx->tcw_sock_connected = 0;
+    }
 }
 
 
@@ -4126,6 +4149,133 @@ EST_ERROR est_client_set_server (EST_CTX *ctx, const char *server, int port,
     return EST_ERR_NONE;
 }
 
+
+/*! @brief est_client_set_proxy() is called by the application layer to
+    specify the proxy to the EST server. It must be called after
+    est_client_init() and prior to issuing any EST commands.
+
+    @param ctx Pointer to EST context for a client session
+    @param proxy_proto Proxy protocol
+    @param proxy_server Name of the proxy server to connect to.  The ASCII string
+    representing the name of the server is limited to 254 characters (EST_MAX_SERVERNAME_LEN)
+    @param port TCP port on the proxy server to connect
+    @param proxy_auth Proxy authentication method
+    @param username Username to use to authenticate with the proxy
+    @param password Password to use to authenticate with the proxy
+
+    @return EST_ERROR
+    EST_ERR_NONE - Success.
+    EST_ERR_NO_CTX - NULL value passed for EST context
+    EST_ERR_INVALID_SERVER_NAME - NULL value passed for EST server name, or
+    server name string too long
+    EST_ERR_INVALID_PORT_NUM - port num to proxy server is invalid
+    EST_ERR_CLIENT_NOT_INITIALIZED - Called before est_client_init()
+    EST_ERR_INVALID_PARAMETERS - NULL value passed for either username or password
+    OR username or password is too long
+    EST_ERR_CLIENT_PROXY_MODE_NOT_SUPPORTED - client proxy mode is only supported when
+    built with libcurl support
+    EST_ERR_INVALID_CLIENT_PROXY_PROTOCOL - An invalid proxy protocol has been specified 
+    
+    est_client_set_proxy error checks its input parameters and then stores
+    the proxy information into the EST context.
+
+    NOTE: HTTP proxy tunnelling is not supported by libEST in server mode.
+    If configuring libEST in client mode to communicate with libEST in
+    server mode, then EST_CLIENT_PROXY_HTTP_NOTUNNEL must be specified
+    for the proxy protocol.
+ */
+EST_ERROR est_client_set_proxy (EST_CTX *ctx, EST_CLIENT_PROXY_PROTO proxy_proto,
+                                const char *proxy_server, unsigned short int proxy_port,
+                                unsigned int proxy_auth, const char *username,
+                                const char *password)
+{
+#ifdef HAVE_LIBCURL
+    if (!ctx) {
+        return EST_ERR_NO_CTX;
+    }
+
+    if (!ctx->est_client_initialized) {
+        return EST_ERR_CLIENT_NOT_INITIALIZED;
+    }
+
+    if (proxy_server == NULL || proxy_server[0] == '\0') {
+        return EST_ERR_INVALID_SERVER_NAME;
+    }
+
+    if (EST_MAX_SERVERNAME_LEN < strnlen_s(proxy_server, EST_MAX_SERVERNAME_LEN+2)) {
+        return EST_ERR_INVALID_SERVER_NAME;
+    }
+
+    ctx->proxy_server[0] = '\0';
+    if (EOK != strncpy_s(ctx->proxy_server, sizeof(ctx->proxy_server),
+                         proxy_server, sizeof(ctx->proxy_server))) {
+        return EST_ERR_INVALID_SERVER_NAME;
+    }
+
+    if (proxy_port <= 0 || proxy_port > 65535) {
+        return EST_ERR_INVALID_PORT_NUM;
+    }
+    ctx->proxy_port = proxy_port;
+    
+    if (proxy_proto < EST_CLIENT_PROXY_HTTP_NOTUNNEL ||
+        proxy_proto > EST_CLIENT_PROXY_SOCKS5_HOSTNAME) {
+        return EST_ERR_INVALID_CLIENT_PROXY_PROTOCOL;
+    }
+    ctx->proxy_proto = proxy_proto;
+
+    if (proxy_auth != EST_CLIENT_PROXY_AUTH_NONE &&
+        (0 != (proxy_auth & ~(EST_CLIENT_PROXY_AUTH_BASIC|EST_CLIENT_PROXY_AUTH_NTLM)))) {
+        return EST_ERR_INVALID_CLIENT_PROXY_AUTH;
+    }
+    ctx->proxy_auth = proxy_auth;
+
+    if (username && password && proxy_auth != EST_CLIENT_PROXY_AUTH_NONE) {
+        
+        if (MAX_UIDPWD < strnlen_s(username, MAX_UIDPWD+2)) {
+            return EST_ERR_INVALID_PARAMETERS;
+        }
+
+        if (username[0] == '\0') {
+            return EST_ERR_INVALID_PARAMETERS;
+        }
+
+        ctx->proxy_username[0] = '\0';
+        if (EOK != strncpy_s(ctx->proxy_username, sizeof(ctx->proxy_username),
+                             username, sizeof(ctx->proxy_username))) {
+            return EST_ERR_INVALID_PARAMETERS;
+        }
+
+        if (MAX_UIDPWD < strnlen_s(password, MAX_UIDPWD+2)) {
+            return EST_ERR_INVALID_PARAMETERS;
+        }
+
+        if (password[0] == '\0') {
+            return EST_ERR_INVALID_PARAMETERS;
+        }
+
+        ctx->proxy_password[0] = '\0';
+        if (EOK != strncpy_s(ctx->proxy_password, sizeof(ctx->proxy_password), password,
+                             sizeof(ctx->proxy_password))) {
+            return EST_ERR_INVALID_PARAMETERS;
+        }
+
+        ctx->proxy_auth = proxy_auth;
+    }
+
+    ctx->use_proxy = 1;
+    
+    return EST_ERR_NONE;
+#else
+    /*
+     * If the EST library was not built with support for libcurl then client
+     * proxy mode is not supported.
+     */
+    EST_LOG_ERR("Client proxy mode requires libest to be built with libcurl.");
+    return EST_ERR_CLIENT_PROXY_MODE_NOT_SUPPORTED;
+#endif    
+}
+
+
 /*! @brief est_client_set_sign_digest() is called by the application layer to
      specify the hash algorithm used to sign the PKCS10 CSR during the
      enroll operation. It must be called after
@@ -4140,7 +4290,7 @@ EST_ERROR est_client_set_server (EST_CTX *ctx, const char *server, int port,
     EST_ERR_NO_CTX - NULL value passed for EST context
     EST_ERR_INVALID_DIGEST - An unsupported NID was provided.
 
-    libEST supports SHA1, SHA224, SHA256, SHA384, and SHA512 digests.
+    libEST supports SHA1, SHA224, SHA256, SHA384, and SHA512 digests.  
     SHA256 is the default digest to use for signing.  There's no need
     to invoke this function unless another digest is desired. The
     supported NID values are:

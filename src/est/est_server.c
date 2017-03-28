@@ -195,7 +195,7 @@ static int est_server_handle_cacerts (EST_CTX *ctx, void *http_ctx,
 
     This is a helper function that an application can use to calculate
     the HTTP Digest value when performing HTTP Digest Authentication
-    of an EST client.  libEST does not maintain a user database.
+    of an EST client.  libEST does not maintain a user database. 
     This is left up to the application, with the intent of integrating  
     an external user database (e.g. Radius/AAA).
     
@@ -1849,7 +1849,7 @@ EST_ERROR est_set_ca_enroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10, i
 
         int func(unsigned char*, int, unsigned char**, int*, char*, X509*)
 
-    This function is called by libEST when a certificate
+    This function is called by libEST when a certificate 
     needs to be renewed by the CA server.  The application will need
     to forward the request to the signing authority and return
     the response.  The response should be a PKCS7 signed certificate.
@@ -1883,7 +1883,7 @@ EST_ERROR est_set_ca_reenroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10,
 
         unsigned char *(*cb)(int*csr_len, char *path_seg, void *ex_data)
 
-    This function is called by libEST when a CSR attributes
+    This function is called by libEST when a CSR attributes 
     request is received.  The attributes are provided by the CA
     server and returned as a char array.
  
@@ -1919,7 +1919,7 @@ EST_ERROR est_set_csr_cb (EST_CTX *ctx, unsigned char *(*cb)(int*csr_len, char *
 
         unsigned char *(*cb)(int *csr_len, char *path_seg, void *ex_data)
 
-    This function is called by libEST when a CAcerts request
+    This function is called by libEST when a CAcerts request 
     is received.  The CA certs chain is provided by the application 
     layer and returned as a char array.
  
@@ -2344,16 +2344,9 @@ EST_ERROR est_server_init_csrattrs (EST_CTX *ctx, char *csrattrs, int csrattrs_l
     return (EST_ERR_NONE);
 }
 
-/*! @brief est_server_enable_tls10() is used by an application to 
-    enable TLS 1.0 support in the EST server.  This violates
-    RFC 7030, which requires TLS 1.1 or newer.  However, setting this
-    allows EST server to communicate with non-compliant EST clients
-    that don't support TLS 1.1 or newer.  TLS 1.0 support is
-    disabled by default and should only be enabled in rare
-    circumstances.  This function may be used when operating 
-    EST in proxy mode, in which case TLS 1.0 will be allowed on 
-    the server-side leg of the proxy.  The client-side leg of
-    the proxy will not use TLS 1.0.
+/*! @brief est_server_enable_tls10() is a deprecated function. TLS 1.0
+    is a violation of RFC7030 and it is no longer supported by the EST library.
+    This function will log an error message and return EST_ERR_BAD_MODE.
     
     @param ctx Pointer to the EST context
 
@@ -2363,12 +2356,9 @@ EST_ERROR est_server_init_csrattrs (EST_CTX *ctx, char *csrattrs, int csrattrs_l
  */
 EST_ERROR est_server_enable_tls10 (EST_CTX *ctx)
 {
-    if (!ctx) {
-	EST_LOG_ERR("Null context");
-        return (EST_ERR_NO_CTX);
-    }
-    ctx->enable_tls10 = 1;
-    return (EST_ERR_NONE);
+	EST_LOG_ERR("TLS 1.0 is a violation of RFC7030 and therefore not supported");
+        return (EST_ERR_BAD_MODE);
+
 }
 
 /*! @brief est_server_enforce_csrattrs() is used by an application to 

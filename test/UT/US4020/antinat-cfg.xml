@@ -1,0 +1,36 @@
+<?xml version='1.0'?>
+<antinatconfig>
+
+<!-- Any interface -->
+<interface value='0.0.0.0'/>
+
+<!-- Port to listen on -->
+<port value='40208'/>
+
+<!-- Time in seconds to listen for outside incoming connections when
+          applications request a BIND operation before timeout -->
+<maxbindwait value='5'/>
+
+<!-- demonstration user account -->
+<user user='badestuser' password='badestpwd'/>
+
+<!-- What logs should we keep? -->
+<log>
+<addrdaylog value='/tmp/antinat_log_day_addr.log'/>
+<userdaylog value='/tmp/antinat_log_day_user.log'/>
+<connlog value='/tmp/antinat_log_connection.log'/>
+</log>
+
+<!-- What security methods do we offer clients? -->
+<authchoice>
+<select mechanism='anonymous'/>
+<select mechanism='cleartext'/>
+</authchoice>
+
+<!-- Which connections should we accept or reject? -->
+<filter>
+<accept/>
+</filter>
+
+</antinatconfig>
+

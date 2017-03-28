@@ -949,14 +949,14 @@ est_proxy_set_auth_mode(epctx, AUTH_TOKEN);
 
 void st_proxy_set_srv_valid_token (char *value)
 {
-memset(server_valid_token, MAX_AUTH_TOKEN_LEN + 1, 0);
-strncpy(&(server_valid_token[0]), value, MAX_AUTH_TOKEN_LEN);
+    memset(server_valid_token, 0, MAX_AUTH_TOKEN_LEN + 1);
+    strncpy(&(server_valid_token[0]), value, MAX_AUTH_TOKEN_LEN);
 }
 
 void st_proxy_set_clnt_token_cred (char *value)
 {
-memset(client_token_cred, MAX_AUTH_TOKEN_LEN + 1, 0);
-strncpy(&(client_token_cred[0]), value, MAX_AUTH_TOKEN_LEN);
+    memset(client_token_cred, 0, MAX_AUTH_TOKEN_LEN + 1);
+    strncpy(&(client_token_cred[0]), value, MAX_AUTH_TOKEN_LEN);
 }
 
 void st_proxy_set_server_read_timeout (int timeout)

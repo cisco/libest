@@ -91,6 +91,10 @@ model {
                 cCompiler.args "-g", "-O0", "-Wall"
             }
             else if(toolChain in VisualCpp) {
+                if(file(System.getenv().CURL_DIR +"\\bin\\libcurl.dll").exists())
+                {
+                    cCompiler.define "HAVE_LIBCURL", "1"
+                }
                 cCompiler.define "HAVE_CUNIT"
                 cCompiler.define "WIN32"
                 cCompiler.define "__STDC_WANT_SECURE_LIB__" , "0"
