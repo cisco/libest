@@ -202,6 +202,7 @@ static tcw_err_t tcw_direct_connect (tcw_sock_t *sock, tcw_opts_t *opts,
         /* ret and SOCK_ERR already set */
     }
 done:
+    freeaddrinfo(addrs);
     return ret;
 }
 
