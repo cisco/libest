@@ -111,13 +111,13 @@ int est_handle_cacerts (EST_CTX *ctx, unsigned char *ca_certs, int ca_certs_len,
     snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
              EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
     hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
+    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdrlen, "%s: %s%s", EST_HTTP_HDR_CT,
              EST_HTTP_CT_PKCS7, EST_HTTP_HDR_EOL);
     hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CE,
+    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdrlen, "%s: %s%s", EST_HTTP_HDR_CE,
              EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL);
     hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
+    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdrlen, "%s: %d%s%s", EST_HTTP_HDR_CL,
              ca_certs_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
     if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
         return (EST_ERR_HTTP_WRITE);
@@ -1193,13 +1193,13 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
         snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
                  EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
         hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
+        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdrlen, "%s: %s%s", EST_HTTP_HDR_CT,
                  EST_HTTP_CT_PKCS7_CO, EST_HTTP_HDR_EOL);
         hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CE,
+        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdrlen, "%s: %s%s", EST_HTTP_HDR_CE,
                  EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL);
         hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
+        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdrlen, "%s: %d%s%s", EST_HTTP_HDR_CL,
                  cert_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
         if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
             free(cert);
