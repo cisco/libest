@@ -631,6 +631,7 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
             EST_LOG_WARN("Certificate failed verification (%s)", current_cert->name);
             failed = 1;
         }
+        X509_STORE_CTX_cleanup(store_ctx);
     }
 
     /*
