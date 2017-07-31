@@ -1884,13 +1884,13 @@ EST_ERROR est_send_csrattr_data (EST_CTX *ctx, char *csr_data, int csr_len, void
         snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
                  EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
         hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
+        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdr_len, "%s: %s%s", EST_HTTP_HDR_CT,
                  EST_HTTP_CT_CSRATTRS, EST_HTTP_HDR_EOL);
         hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CE,
+        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdr_len, "%s: %s%s", EST_HTTP_HDR_CE,
                  EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL);
         hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
+        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdr_len, "%s: %d%s%s", EST_HTTP_HDR_CL,
                  csr_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
         if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
             free(csr_data);
