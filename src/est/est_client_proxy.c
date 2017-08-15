@@ -25,6 +25,7 @@
 #   include <netdb.h>
 #   include <unistd.h>
 #   include <arpa/inet.h>
+#   include <netinet/in.h>
 #endif /* WIN32 */
 #include <errno.h>
 #include <string.h>
