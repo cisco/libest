@@ -87,7 +87,6 @@ LIBS = -L../../src/est/.libs -L$(URIPARSER_DIR)/lib -L$(OPENSSL_DIR)/lib -L$(CUR
 default:	runtest
 
 .c.o:
-	echo $(CC_VERS)
 	$(CC) $(INCLUDES) $(CCFLAGS) -c $< -o $@
 
 runtest: $(OBJ)
