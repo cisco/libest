@@ -12,6 +12,15 @@ To use the unit test, descend into the the UT directory and issue
 the 'make' command.  If your host meets the dependencies, the target
 'runtest' should be built.  Running this from the command line
 should run all the unit tests.  The OpenSSL libraries and libest
-should be in your shared library path (LD_LIBRARY_PATH) prior to 
+should be in your shared library path (LD_LIBRARY_PATH) prior to
 running the unit tests.
 
+Some tests require that 'localhost.cisco.com' be resolvable.  You
+can accommodate this by placing this line in your system's hosts
+file:
+
+127.0.0.1       localhost.cisco.com
+
+This file is located in /etc/hosts on *nix-like systems, in
+C:\Windows\System32\Drivers\etc\hosts on Windows, and in
+/private/etc/hosts on Mac OS X 10.6 to 10.12.
