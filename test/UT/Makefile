@@ -60,10 +60,21 @@ INCLUDES = -I../../src/est -I../.. -I../util -I$(OPENSSL_DIR)/include -I$(CURL_D
 CCFLAGS = -Wall -g -DHAVE_CUNIT -DNO_SSL_DL $(CURL_CC_DEFINE)
 
 # compiler
+CC_VERS = $(shell cc --version | grep -o 'clang\|gcc' )
+ifeq "$(CC_VERS)" "clang"
+CC = cc
+else
 CC = gcc
+endif
 
 # linker flags
-LDFLAGS += -lcunit -ldl -lpthread -lssl -lcrypto -lest -lcurl $(URIPARSER_LDFLAGS)
+OS = $(shell uname -s)
+ifeq "$(OS)" "FreeBSD"
+DL =
+else
+DL = -ldl
+endif
+LDFLAGS += -lcunit $(DL) -lpthread -lssl -lcrypto -lest -lcurl $(URIPARSER_LDFLAGS)
 
 # library paths
 LIBS = -L../../src/est/.libs -L$(URIPARSER_DIR)/lib -L$(OPENSSL_DIR)/lib -L$(CURL_DIR)/lib -L$(CUNIT_DIR)/lib $(LDFLAGS)
@@ -76,6 +87,7 @@ LIBS = -L../../src/est/.libs -L$(URIPARSER_DIR)/lib -L$(OPENSSL_DIR)/lib -L$(CUR
 default:	runtest
 
 .c.o:
+	echo $(CC_VERS)
 	$(CC) $(INCLUDES) $(CCFLAGS) -c $< -o $@
 
 runtest: $(OBJ)
