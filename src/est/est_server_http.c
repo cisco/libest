@@ -1462,8 +1462,7 @@ static int set_ssl_option (struct mg_context *ctx)
     SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2 |
                         SSL_OP_NO_SSLv3 |
                         SSL_OP_NO_TLSv1 |
-                        SSL_OP_SINGLE_ECDH_USE |
-                        SSL_OP_NO_TICKET);
+                        SSL_OP_SINGLE_ECDH_USE);
 
 
     /* 
