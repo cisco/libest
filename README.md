@@ -6,7 +6,7 @@ This project is a library that implements RFC 7030 (Enrollment over Secure Trans
 /simplereenroll
 
 Also of interest, a EST test server running this library has been setup at
-http://testrfc7030.cisco.com/ and can be used for interop testing the EST 
+http://testrfc7030.com/ and can be used for interop testing the EST 
 protocol.
 
 Please direct questions/comments to est-interest@external.cisco.com
