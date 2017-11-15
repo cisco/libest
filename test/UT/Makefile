@@ -28,7 +28,6 @@ SRC =  	runtest.c \
 	US4020/us4020.c \
 	US4778/us4778.c \
 	US4784/us4784.c \
-	../util/cdets.c \
 	../util/curl_utils.c \
 	../util/test_utils.c \
 	../util/st_server.c \
