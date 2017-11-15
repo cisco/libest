@@ -88,8 +88,8 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
-bin_PROGRAMS = estclient$(EXEEXT)
-subdir = example/client
+bin_PROGRAMS = estclient_brski$(EXEEXT)
+subdir = example/client-brski
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/libtool.m4 \
 	$(top_srcdir)/m4/ltoptions.m4 $(top_srcdir)/m4/ltsugar.m4 \
@@ -104,16 +104,18 @@ CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
 am__dirstamp = $(am__leading_dot)dirstamp
-am_estclient_OBJECTS = estclient.$(OBJEXT) ../util/utils.$(OBJEXT)
-estclient_OBJECTS = $(am_estclient_OBJECTS)
-estclient_LDADD = $(LDADD)
+am_estclient_brski_OBJECTS = estclient-brski.$(OBJEXT) \
+	../util/utils.$(OBJEXT) ../util/jsmn.$(OBJEXT)
+estclient_brski_OBJECTS = $(am_estclient_brski_OBJECTS)
+estclient_brski_LDADD = $(LDADD)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
-estclient_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
-	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
-	$(estclient_LDFLAGS) $(LDFLAGS) -o $@
+estclient_brski_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
+	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
+	$(AM_CFLAGS) $(CFLAGS) $(estclient_brski_LDFLAGS) $(LDFLAGS) \
+	-o $@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -148,8 +150,8 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(estclient_SOURCES)
-DIST_SOURCES = $(estclient_SOURCES)
+SOURCES = $(estclient_brski_SOURCES)
+DIST_SOURCES = $(estclient_brski_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -300,15 +302,13 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-estclient_includedir = $(includedir)/est
-estclient_SOURCES = estclient.c ../util/utils.c 
+estclient_brski_includedir = $(includedir)/est
+estclient_brski_SOURCES = estclient-brski.c ../util/utils.c ../util/jsmn.c
 AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -I$(SSL_CFLAGS) -g 
 @FREEBSD_FALSE@DL = -ldl
 @FREEBSD_TRUE@DL = 
-@DISABLE_PTHREAD_FALSE@PTHREAD = -lpthread
-@DISABLE_PTHREAD_TRUE@PTHREAD = 
-@ENABLE_CLIENT_ONLY_FALSE@estclient_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto
-@ENABLE_CLIENT_ONLY_TRUE@estclient_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest_client -lssl -lcrypto
+@ENABLE_CLIENT_ONLY_FALSE@estclient_brski_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto
+@ENABLE_CLIENT_ONLY_TRUE@estclient_brski_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest_client -lssl -lcrypto
 all: all-am
 
 .SUFFIXES:
@@ -322,9 +322,9 @@ $(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__confi
 	      exit 1;; \
 	  esac; \
 	done; \
-	echo ' cd $(top_srcdir) && $(AUTOMAKE) --gnu example/client/Makefile'; \
+	echo ' cd $(top_srcdir) && $(AUTOMAKE) --gnu example/client-brski/Makefile'; \
 	$(am__cd) $(top_srcdir) && \
-	  $(AUTOMAKE) --gnu example/client/Makefile
+	  $(AUTOMAKE) --gnu example/client-brski/Makefile
 Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 	@case '$?' in \
 	  *config.status*) \
@@ -399,10 +399,12 @@ clean-binPROGRAMS:
 	@: > ../util/$(DEPDIR)/$(am__dirstamp)
 ../util/utils.$(OBJEXT): ../util/$(am__dirstamp) \
 	../util/$(DEPDIR)/$(am__dirstamp)
+../util/jsmn.$(OBJEXT): ../util/$(am__dirstamp) \
+	../util/$(DEPDIR)/$(am__dirstamp)
 
-estclient$(EXEEXT): $(estclient_OBJECTS) $(estclient_DEPENDENCIES) $(EXTRA_estclient_DEPENDENCIES) 
-	@rm -f estclient$(EXEEXT)
-	$(AM_V_CCLD)$(estclient_LINK) $(estclient_OBJECTS) $(estclient_LDADD) $(LIBS)
+estclient_brski$(EXEEXT): $(estclient_brski_OBJECTS) $(estclient_brski_DEPENDENCIES) $(EXTRA_estclient_brski_DEPENDENCIES) 
+	@rm -f estclient_brski$(EXEEXT)
+	$(AM_V_CCLD)$(estclient_brski_LINK) $(estclient_brski_OBJECTS) $(estclient_brski_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -411,8 +413,9 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@../util/$(DEPDIR)/jsmn.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@../util/$(DEPDIR)/utils.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/estclient.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/estclient-brski.Po@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\

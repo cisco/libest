@@ -8,7 +8,7 @@
  *
  * November, 2012
  *
- * Copyright (c) 2012-2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2012-2013, 2016, 2017 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -33,6 +33,7 @@
 #include "ossl_srv.h"
 #include "../util/utils.h"
 #include "../util/simple_server.h"
+#include "../util/jsmn.h"
 
 /*
  * Abstract OpenSSL threading platfrom callbacks
@@ -82,6 +83,9 @@ static int disable_forced_http_auth = 0;
 static int set_fips_return = 0;
 static unsigned long set_fips_error = 0;
 static int test_app_data = 0xDEADBEEF;
+static int brski_mode = 0;
+static int  brski_ca_certs_len;
+static unsigned char   *brski_ca_certs;
 
 char certfile[EST_MAX_FILE_LEN];
 char keyfile[EST_MAX_FILE_LEN];
@@ -194,6 +198,7 @@ static void show_usage_and_exit (void)
         "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
         "  --enforce-csr  Enable CSR attributes enforcement. The client must provide all the attributes in the CSR.\n"
         "  --token <value> Use HTTP Bearer Token auth.\n"
+        "  --enable-brski Enable BRSKI bootstrapping support.\n"
             "\n");
     exit(255);
 }
@@ -726,7 +731,7 @@ int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
 //The following is a default CSR attributes response that also
 //contains challengePassword
 #define TEST_CSR "MCYGBysGAQEBARYGCSqGSIb3DQEJAQYFK4EEACIGCWCGSAFlAwQCAg=="
-unsigned char * process_csrattrs_request (int *csr_len, char *path_seg,
+unsigned char * process_csrattrs_request (int *csr_len, char *path_seg, X509 *peer_cert,
                                           void *app_data)
 {
     unsigned char *csr_data;
@@ -752,13 +757,543 @@ unsigned char * process_csrattrs_request (int *csr_len, char *path_seg,
     return (csr_data);
 }
 
+static int jsoneq(const char *json, jsmntok_t *tok, const char *s) {
+	if (tok->type == JSMN_STRING && (int) strlen(s) == tok->end - tok->start &&
+			strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
+		return 0;
+	}
+	return -1;
+}
+
+
+static int dump(const char *js, jsmntok_t *t, size_t count, int indent) {
+        int i, j, k;
+        if (count == 0) {
+                return 0;
+        }
+        if (t->type == JSMN_PRIMITIVE) {
+                printf("%.*s", t->end - t->start, js+t->start);
+                return 1;
+        } else if (t->type == JSMN_STRING) {
+                printf("'%.*s'", t->end - t->start, js+t->start);
+                return 1;
+        } else if (t->type == JSMN_OBJECT) {
+                printf("\n");
+                j = 0;
+                for (i = 0; i < t->size; i++) {
+                        for (k = 0; k < indent; k++) printf("  ");
+                        j += dump(js, t+1+j, count-j, indent+1);
+                        printf(": ");
+                        j += dump(js, t+1+j, count-j, indent+1);
+                        printf("\n");
+                }
+                return j+1;
+        } else if (t->type == JSMN_ARRAY) {
+                j = 0;
+                printf("\n");
+                for (i = 0; i < t->size; i++) {
+                        for (k = 0; k < indent-1; k++) printf("  ");
+                        printf("   - ");
+                        j += dump(js, t+1+j, count-j, indent+1);
+                        printf("\n");
+                }
+                return j+1;
+        }
+        return 0;
+}
+
+
+/*   { */
+/*      "ietf-voucher:voucher": { */
+/*        "nonce": "62a2e7693d82fcda2624de58fb6722e5", */
+/*        "assertion": "logging" */
+/*        "pinned-domain-cert": "<base64 encoded certificate>" */
+/*        "serial-number": "JADA123456789" */
+/*      } */
+/*    } */
+#define BRSKI_DEVICE_SERIAL_NUM "F7BE0D"
+#define VOUCHER "{\n\r\"ietf-voucher:voucher\":{\n\r\"nonce\":\"%s\",\n\r\"assertion\":\"logging\",\n\r\"pinned-domain-cert\":\"%s\",\n\r\"serial-number\":\"%s\"}\n\r}"
+
+/*
+ * Callback function used by EST stack to process a BRSK 
+ * voucher request.  The parameters are:
+ *
+ *   voucher_req Contains the voucher request from the client
+ *   voucher_req_len Length of the voucher request
+ *   voucher     Pointer to a buffer pointer that will contain
+ *               the voucher to be returned
+ *   voucher_len Pointer to an integer that will be set to the length
+ *               of the returned voucher.
+ *   peer_cert - client certificate, if available, in internal X509
+ *               structure format
+ */
+
+EST_BRSKI_CALLBACK_RC
+process_brski_voucher_request (char *voucher_req, int voucher_req_len,
+                               char **voucher, int *voucher_len, X509 *peer_cert)
+{
+    char *voucher_buf = NULL;
+    jsmn_parser p;
+    jsmntok_t *tok;
+    size_t tokcount = 100;
+    int parser_resp;
+    int i;
+    int nonce_found = 0;
+    int incoming_server_cert_found = 0;
+    char incoming_nonce[EST_BRSKI_VOUCHER_REQ_NONCE_SIZE+1];
+    char incoming_server_cert[EST_BRSKI_MAX_CACERT_LEN+1];
+    char *ser_num_str = NULL;
+    
+    memset(incoming_nonce, 0, EST_BRSKI_VOUCHER_REQ_NONCE_SIZE+1);
+    memset(incoming_server_cert, 0, EST_BRSKI_MAX_CACERT_LEN+1);
+
+    printf("BRSKI voucher request received\n");
+    printf(" voucher_req = %s\n voucher_req_len = %d\n",
+           voucher_req, voucher_req_len);
+
+    /*
+     * Parse the voucher request and obtain the nonce
+     */
+    jsmn_init(&p);
+    tok = calloc(tokcount, sizeof(*tok));
+    if (tok == NULL) {
+        printf("calloc(): errno=%d\n", errno);
+        return 3;
+    }
+    parser_resp = jsmn_parse(&p, (char *)voucher_req, (size_t)voucher_req_len,
+                             tok, tokcount);
+    if (parser_resp < 0) {
+        printf("Voucher request  parse failed. parse error = %d\n", parser_resp);
+    } else {
+        dump((char *)voucher_req, tok, p.toknext, 0);
+        printf("Voucher request parsed\n");
+    }
+    for (i = 1; i < parser_resp; i++) {
+        if (jsoneq(voucher_req, &tok[i], "nonce") == 0) {
+            sprintf(incoming_nonce, "%.*s", tok[i+1].end-tok[i+1].start,
+                    voucher_req + tok[i+1].start);            
+            printf("Found nonce %s\n", incoming_nonce);
+            nonce_found = 1;
+            break;
+        }
+    }
+    if (!nonce_found) {
+        printf("Nonce missing from voucher request\n");
+        return (EST_BRSKI_CB_FAILURE);
+    }
+    
+    /*
+     * Now look for the Registrar's cert
+     */
+    for (i = 1; i < parser_resp; i++) {
+        if (jsoneq(voucher_req, &tok[i], "pinned-domain-cert") == 0) {
+            sprintf(incoming_server_cert, "%.*s", tok[i+1].end-tok[i+1].start,
+                    voucher_req + tok[i+1].start);            
+            printf("Found pinned domain cert %s\n", incoming_server_cert);
+            incoming_server_cert_found = 1;
+            break;
+        }
+    }
+    if (!incoming_server_cert_found) {
+        printf("Pinned domain cert missing from voucher request\n");
+        return (EST_BRSKI_CB_FAILURE);
+    }
+
+    /*
+     * Obtain the serial number of the pledge device from its ID cert
+     */
+    ser_num_str = est_find_ser_num_in_subj(peer_cert);
+    if (ser_num_str == NULL) {
+        char *subj;
+
+        printf("Pledge MFG cert does not contain a serial number.");
+
+        subj = X509_NAME_oneline(X509_get_subject_name(peer_cert), NULL, 0);
+        printf("Client MFG cert subject: %s", subj);
+        OPENSSL_free(subj);
+        
+        return (EST_ERR_CLIENT_BRSKI_SERIAL_NUM_MISSING);        
+    }
+    
+    voucher_buf = calloc(EST_BRSKI_MAX_VOUCHER_LEN, sizeof(char));
+    if (voucher_buf) {
+        *voucher_len = snprintf(voucher_buf, EST_BRSKI_MAX_VOUCHER_LEN, VOUCHER,
+                                incoming_nonce, brski_ca_certs, ser_num_str);
+        *voucher = voucher_buf;
+        printf("Voucher to be returned = %s\n", *voucher);
+    } else {
+        *voucher = NULL;
+        *voucher_len = 0;
+        return (EST_BRSKI_CB_FAILURE);
+    }
+    
+    return EST_BRSKI_CB_SUCCESS;
+}
+
+/*
+ * Callback function used by EST stack to process a BRSK 
+ * voucher status indication.  The parameters are:
+ *
+ *   voucher_status Pointer buffer containing the voucher status
+ *   voucher_status_len Integer containing the length of the voucher_status buffer
+ *   peer_cert certificate of the client used in the TLS connection.
+ *
+ */
+static
+EST_BRSKI_CALLBACK_RC
+process_brski_voucher_status (char *voucher_status, int voucher_status_len, X509 *peer_cert)
+{
+    jsmn_parser p;
+    jsmntok_t *tok;
+    size_t tokcount = 100;
+    int parser_resp;
+    int i;
+    int status_found = 0;
+    char incoming_status[5+1];
+    int reason_found = 0;
+    char incoming_reason[EST_BRSKI_MAX_REASON_LEN];
+    
+    memset(incoming_status, 0, 5+1);
+
+    printf("BRSKI voucher status received\n");
+    printf(" voucher_status = %s\n voucher_status_len = %d\n",
+           voucher_status, voucher_status_len);
+    
+    /*
+     * Parse the voucher response and obtain the status and reason
+     */
+    jsmn_init(&p);
+    tok = calloc(tokcount, sizeof(*tok));
+    if (tok == NULL) {
+        printf("calloc(): errno=%d\n", errno);
+        return 3;
+    }
+    parser_resp = jsmn_parse(&p, (char *)voucher_status, (size_t)voucher_status_len,
+                             tok, tokcount);
+    if (parser_resp < 0) {
+        printf("Voucher response parse failed. parse error = %d\n", parser_resp);
+    } else {
+        dump((char *)voucher_status, tok, p.toknext, 0);
+        printf("Voucher status parsed\n");
+    }
+    
+    for (i = 1; i < parser_resp; i++) {
+        if (jsoneq(voucher_status, &tok[i], "Status") == 0) {
+            sprintf(incoming_status, "%.*s", tok[i+1].end-tok[i+1].start,
+                    voucher_status + tok[i+1].start);            
+            printf("Found status %s\n", incoming_status);
+            status_found = 1;
+            break;
+        }
+    }
+    if (!status_found) {
+        printf("Status value missing from voucher status\n");
+        return (EST_BRSKI_CB_FAILURE);
+    }
+
+    for (i = 1; i < parser_resp; i++) {
+        if (jsoneq(voucher_status, &tok[i], "Reason") == 0) {
+            sprintf(incoming_reason, "%.*s", tok[i+1].end-tok[i+1].start,
+                    voucher_status + tok[i+1].start);            
+            printf("Found reason %s\n", incoming_reason);
+            reason_found = 1;
+            break;
+        }
+    }
+    if (!reason_found) {
+        printf("Reason value missing from voucher status\n");
+        return (EST_BRSKI_CB_FAILURE);
+    }
+    
+    return EST_BRSKI_CB_SUCCESS;
+}
+
+
+/*
+ * Callback function used by EST stack to process a BRSK 
+ * enrollment status.  The parameters are:
+ *
+ *   enroll_status Pointer buffer containing the voucher status
+ *   enroll_status_len Integer containing the length of the voucher_status buffer
+ *   peer_cert certificate of the client used in the TLS connection.
+ */
+EST_BRSKI_CALLBACK_RC
+process_brski_enroll_status (char *enroll_status, int enroll_status_len, X509 *peer_cert)
+{
+    jsmn_parser p;
+    jsmntok_t *tok;
+    size_t tokcount = 100;
+    int parser_resp;
+    int i;
+    int status_found = 0;
+    char incoming_status[5+1];
+    int reason_found = 0;
+    char incoming_reason[EST_BRSKI_MAX_REASON_LEN];
+    
+    memset(incoming_status, 0, 5+1);
+
+    printf("BRSKI enroll status received\n");
+    printf(" enroll_status = %s\n enroll_status_len = %d\n",
+           enroll_status, enroll_status_len);
+
+    /*
+     * Parse the voucher response and obtain the status and reason
+     */
+    jsmn_init(&p);
+    tok = calloc(tokcount, sizeof(*tok));
+    if (tok == NULL) {
+        printf("calloc(): errno=%d\n", errno);
+        return 3;
+    }
+    parser_resp = jsmn_parse(&p, (char *)enroll_status, (size_t)enroll_status_len,
+                             tok, tokcount);
+    if (parser_resp < 0) {
+        printf("Enroll response parse failed. parse error = %d\n", parser_resp);
+    } else {
+        dump((char *)enroll_status, tok, p.toknext, 0);
+        printf("Enroll status parsed\n");
+    }
+    
+    for (i = 1; i < parser_resp; i++) {
+        if (jsoneq(enroll_status, &tok[i], "Status") == 0) {
+            sprintf(incoming_status, "%.*s", tok[i+1].end-tok[i+1].start,
+                    enroll_status + tok[i+1].start);            
+            printf("Found status %s\n", incoming_status);
+            status_found = 1;
+            break;
+        }
+    }
+    if (!status_found) {
+        printf("Status value missing from enroll status\n");
+        return (EST_BRSKI_CB_FAILURE);
+    }
+
+    for (i = 1; i < parser_resp; i++) {
+        if (jsoneq(enroll_status, &tok[i], "Reason") == 0) {
+            sprintf(incoming_reason, "%.*s", tok[i+1].end-tok[i+1].start,
+                    enroll_status + tok[i+1].start);            
+            printf("Found reason: %s\n", incoming_reason);
+            reason_found = 1;
+            break;
+        }
+    }
+    if (!reason_found) {
+        printf("Reason value missing from enroll status\n");
+        return (EST_BRSKI_CB_FAILURE);
+    }
+
+    return EST_BRSKI_CB_SUCCESS;    
+}
+
+
+/*
+ * This function is used to read the CERTS in a BIO and build a
+ * stack of X509* pointers.  This is used during the PEM to
+ * PKCS7 conversion process.
+ */
+static int est_add_certs_from_BIO (STACK_OF(X509) *stack, BIO *in)
+{
+    int count = 0;
+    int ret = -1;
+
+    STACK_OF(X509_INFO) * sk = NULL;
+    X509_INFO *xi;
+
+
+    /* This loads from a file, a stack of x509/crl/pkey sets */
+    sk = PEM_X509_INFO_read_bio(in, NULL, NULL, NULL);
+    if (sk == NULL) {
+        printf("Unable to read certs from PEM encoded data");
+        return (ret);
+    }
+
+    /* scan over it and pull out the CRL's */
+    while (sk_X509_INFO_num(sk)) {
+        xi = sk_X509_INFO_shift(sk);
+        if (xi->x509 != NULL) {
+            sk_X509_push(stack, xi->x509);
+            xi->x509 = NULL;
+            count++;
+        }
+        X509_INFO_free(xi);
+    }
+
+    ret = count;
+
+    /* never need to OPENSSL_free x */
+    if (sk != NULL) {
+        sk_X509_INFO_free(sk);
+    }
+    return (ret);
+}
+
+
+/*
+ * Converts from PEM to pkcs7 encoded certs.  Optionally
+ * applies base64 encoding to the output.  This is used
+ * when creating the cached cacerts response.  The returned
+ * BIO contains the PKCS7 encoded certs.  The response
+ * can optionally be base64 encoded by passing in a
+ * non-zero value for the do_base_64 argument.  The caller
+ * of this function should invoke BIO_free_all() on the
+ * return value to avoid memory leaks.  Note, BIO_free() 
+ * will not be sufficient.
+ */
+static
+BIO * est_get_certs_pkcs7 (BIO *in, int do_base_64)
+{
+    STACK_OF(X509) * cert_stack = NULL;
+    PKCS7_SIGNED *p7s = NULL;
+    PKCS7 *p7 = NULL;
+    BIO *out = NULL;
+    BIO *b64;
+    int buflen = 0;
+
+    /*
+     * Create a PKCS7 object 
+     */
+    if ((p7 = PKCS7_new()) == NULL) {
+        printf("pkcs7_new failed");
+	goto cleanup;
+    }
+    /*
+     * Create the PKCS7 signed object
+     */
+    if ((p7s = PKCS7_SIGNED_new()) == NULL) {
+        printf("pkcs7_signed_new failed");
+	goto cleanup;
+    }
+    /*
+     * Set the version
+     */
+    if (!ASN1_INTEGER_set(p7s->version, 1)) {
+        printf("ASN1_integer_set failed");
+	goto cleanup;
+    }
+
+    /*
+     * Create a stack of X509 certs
+     */
+    if ((cert_stack = sk_X509_new_null()) == NULL) {
+        printf("stack malloc failed");
+	goto cleanup;
+    }
+
+    /*
+     * Populate the cert stack
+     */
+    if (est_add_certs_from_BIO(cert_stack, in) < 0) {
+        printf("Unable to load certificates");
+	ossl_dump_ssl_errors();
+	goto cleanup;
+    }
+
+    /*
+     * Create the BIO which will receive the output
+     */
+    out = BIO_new(BIO_s_mem());
+    if (!out) {
+        printf("BIO_new failed");
+	goto cleanup;
+    }
+
+    /*
+     * Add the base64 encoder if needed
+     */
+    if (do_base_64) {
+	b64 = BIO_new(BIO_f_base64());
+        if (b64 == NULL) {
+            printf("BIO_new failed while attempting to create base64 BIO");
+            ossl_dump_ssl_errors();
+            goto cleanup;
+        }    
+	out = BIO_push(b64, out);
+    }
+
+    p7->type = OBJ_nid2obj(NID_pkcs7_signed);
+    p7->d.sign = p7s;
+    p7s->contents->type = OBJ_nid2obj(NID_pkcs7_data);
+    p7s->cert = cert_stack;
+
+    /*
+     * Convert from PEM to PKCS7
+     */
+    buflen = i2d_PKCS7_bio(out, p7);
+    if (!buflen) {
+        printf("PEM_write_bio_PKCS7 failed");
+	ossl_dump_ssl_errors();
+	BIO_free_all(out);
+        out = NULL;
+	goto cleanup;
+    }
+    (void)BIO_flush(out);
+
+cleanup:
+    /* 
+     * Only need to cleanup p7.  This frees up the p7s and
+     * cert_stack allocations for us since these are linked
+     * to the p7.
+     */
+    if (p7) {
+        PKCS7_free(p7);
+    }
+
+    return out;
+}
+
+static
+EST_ERROR est_load_ca_certs (unsigned char *raw, int size)
+{
+    BIO *cacerts = NULL;
+    BIO *in;
+    unsigned char *retval;
+
+    in = BIO_new_mem_buf(raw, size);
+    if (in == NULL) {
+        printf("Unable to open the raw cert buffer");
+        return (EST_ERR_LOAD_CACERTS);
+    }
+
+    /*
+     * convert the CA certs to PKCS7 encoded char array
+     * This is used by an EST server to respond to the
+     * cacerts request.
+     */
+    cacerts = est_get_certs_pkcs7(in, 1);
+    if (!cacerts) {
+        printf("est_get_certs_pkcs7 failed");
+        BIO_free(in);
+        return (EST_ERR_LOAD_CACERTS);
+    }
+
+    brski_ca_certs_len = (int) BIO_get_mem_data(cacerts, (char**)&retval);
+    if (brski_ca_certs_len <= 0) {
+        printf("Failed to copy PKCS7 data");
+        BIO_free_all(cacerts);
+        BIO_free(in);
+        return (EST_ERR_LOAD_CACERTS);
+    }
+
+    brski_ca_certs = malloc(brski_ca_certs_len);
+    if (!brski_ca_certs) {
+        printf("malloc failed");
+        BIO_free_all(cacerts);
+        BIO_free(in);
+        return (EST_ERR_LOAD_CACERTS);
+    }
+    memcpy(brski_ca_certs, retval, brski_ca_certs_len);
+    BIO_free_all(cacerts);
+    BIO_free(in);
+    return (EST_ERR_NONE);
+}
+
 static char digest_user[3][34] = { "estuser", "estrealm", ""};
 
 /*
- * This callback is invoked by libEST when performing
- * HTTP authentication of the EST client.  libEST will
+ * This callback is invoked by CiscoEST when performing
+ * HTTP authentication of the EST client.  CiscoEST will
  * parse the auth credentials from the HTTP header.  We
- * must validate the user ourselves since libEST does
+ * must validate the user ourselves since CiscoEST does
  * not maintain a user database.  This allows us to hook
  * into a Radius server, or some other external user
  * database.
@@ -786,7 +1321,7 @@ int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
          * or some external database to authenticate a
          * userID/password.  But for this example code,
          * we just hard-code a local user for testing
-         * the libEST API.
+         * the CiscoEST API.
          */
         if (!strcmp(ah->user, "estuser") && !strcmp(ah->pwd, "estpwd")) {
             /* The user is valid */
@@ -970,6 +1505,7 @@ int main (int argc, char **argv)
         {"srp", 1, NULL, 0},
         {"enforce-csr", 0, NULL, 0},
         {"token", 1, 0, 0},
+        {"enable-brski", 0, 0, 0},
         {"keypass", 1, 0, 0},
         {"keypass_stdin", 1, 0, 0 },
         {"keypass_arg", 1, 0, 0 },
@@ -1019,6 +1555,10 @@ int main (int argc, char **argv)
             if (!strncmp(long_options[option_index].name,"keypass_arg", strlen("keypass_arg"))) {
                 strncpy(priv_key_pwd, optarg, MAX_PWD_LEN);
                 priv_key_cb = string_password_cb;
+            }
+            if (!strncmp(long_options[option_index].name, "enable-brski",
+                strlen("enable-brski"))) {
+                brski_mode = 1;
             }
             break;
         case 'm':
@@ -1245,12 +1785,46 @@ int main (int argc, char **argv)
         printf("\nUnable to set EST CSR Attributes callback.  Aborting!!!\n");
         exit(1);
     }
+    if (brski_mode) {
+        /*
+         * register the brski call backs.
+         */
+        if (est_set_brski_voucher_req_cb(ectx, &process_brski_voucher_request)) {
+            printf(
+                "\nUnable to set EST BRSKI voucher request callback.  Aborting!!!\n");
+            exit(1);
+        }
+        if (est_set_brski_voucher_status_cb(ectx, &process_brski_voucher_status)) {
+            printf(
+                "\nUnable to set EST BRSKI voucher request callback.  Aborting!!!\n");
+            exit(1);
+        }
+        if (est_set_brski_enroll_status_cb(ectx, &process_brski_enroll_status)) {
+            printf(
+                "\nUnable to set EST BRSKI voucher request callback.  Aborting!!!\n");
+            exit(1);
+        }
+
+        /*
+         * For EST /cacerts, the CA certs response can be processed two ways,
+         * they can be provided to the EST library and the library repsonds
+         * directly, or the application layer can provide a call back and
+         * it provides the response buffer containing the CA certs.  The estserver
+         * test app does it the first way, so the EST library responds directly.
+         * With BRSKI, this response of the CA certs is contained in the voucher, so
+         * the application layer needs to be responsible for preparing the response.
+         * The following code is replicated from the EST library.
+         */
+        if (est_load_ca_certs(cacerts_raw, cacerts_len)) {
+            printf("Failed to load CA certificates response buffer");
+        }
+    }    
     if (!http_auth_disable) {
         if (est_set_http_auth_cb(ectx, &process_http_auth)) {
             printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");
             exit(1);
         }
-    }
+    }            
     if (disable_forced_http_auth) {
         if (verbose)
             printf(

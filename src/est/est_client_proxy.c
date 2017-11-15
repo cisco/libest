@@ -69,7 +69,7 @@ static int addr_to_str (struct sockaddr *addr, char *str, size_t str_size,
     }
     dw_str_size = str_size;
     if (addr_len != 0 &&
-            WSAAddressToStringW(addr, addr_len, NULL, (LPWSTR)str, &dw_str_size) == 0) {
+            WSAAddressToStringA(addr, addr_len, NULL, str, &dw_str_size) == 0) {
         ret = 0;
     }
 #else
@@ -100,16 +100,31 @@ static int addr_to_str (struct sockaddr *addr, char *str, size_t str_size,
     return ret;
 }
 
+static int fd_is_valid(int fd)
+{
+    return (fcntl(fd, F_GETFD) != -1 || errno != EBADF);
+}
+
 static tcw_err_t tcw_direct_close (tcw_sock_t *sock)
 {
     tcw_err_t ret = TCW_OK;
 
-    if (CLOSE_SOCKET(sock->sock_fd) != 0) {
-        EST_LOG_ERR("close failed: %d", GET_SOCK_ERR());
-        ret = TCW_ERR_CLOSE;
-        /* SOCK_ERR already set */
-        goto done;
+    /*
+     * Make sure that the socket is still valid.  If it is, then go ahead and
+     * attempt to close it.  This is not fool proof.  The server may close
+     * their side between when checking to see if it's valid and actually
+     * performing the close, but this at least reduces the output of the error
+     * log message.
+     */
+    if (fd_is_valid(sock->sock_fd)) {
+        if (CLOSE_SOCKET(sock->sock_fd) != 0) {
+            EST_LOG_ERR("close failed: %d", GET_SOCK_ERR());
+            ret = TCW_ERR_CLOSE;
+            /* SOCK_ERR already set */
+            goto done;
+        }
     }
+    
     sock->sock_fd = SOCK_INVALID;
 
 done:
