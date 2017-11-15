@@ -66,7 +66,7 @@ static char test5_outfile[FILENAME_MAX] = "US901\\test5.crt";
 
 static void us901_clean(void) {
     char cmd[200];
-    sprintf(cmd, "rm %s", test5_outfile);
+    sprintf(cmd, "rm -f %s", test5_outfile);
     system(cmd);
 }
 
@@ -119,17 +119,15 @@ static int us901_start_server(char server_type) {
         st_enable_http_digest_auth();
         break;
     case 'C':
-        system(
-                "openssl ca -config CA/estExampleCA.cnf -gencrl -out CA/estCA/crl.pem");
+        system("openssl ca -config CA/estExampleCA.cnf -gencrl -out CA/estCA/crl.pem");
         SLEEP(1);
         system(
                 "cat CA/trustedcerts.crt CA/estCA/crl.pem > US901/trustedcertsandcrl.crt");
         SLEEP(1);
-        rv = st_start(US901_SERVER_PORT,
+        rv = st_start_crl(US901_SERVER_PORT,
         US901_SERVER_CERTKEY,
         US901_SERVER_CERTKEY, "estrealm", "CA/estCA/cacert.crt",
                 "US901/trustedcertsandcrl.crt", "CA/estExampleCA.cnf", 0, 0, 0);
-        st_enable_crl();
         st_disable_http_auth();
         break;
     case 'N':
@@ -519,7 +517,7 @@ static void us901_test12(void) {
     long rv;
     int st_rv;
 
-    st_rv = us901_start_server('R');
+    st_rv = us901_start_server('C');
     if (st_rv) {
         return;
     }

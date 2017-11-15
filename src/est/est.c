@@ -42,8 +42,10 @@
 #endif  /* DISABLE_BACKTRACE*/
 #endif /* WIN32*/
 
+#ifndef ENABLE_CLIENT_ONLY
 static char hex_chpw[] = {0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 
 			  0xF7, 0x0D, 0x01, 0x09, 0x07};
+#endif
 
 const char *EST_ERR_STRINGS[] = {
     "EST_ERR_NONE",
@@ -412,7 +414,7 @@ EVP_PKEY *est_load_key (unsigned char *key, int key_len, int format)
 }
 
 
-
+#ifndef ENABLE_CLIENT_ONLY
 /*
  * This function is used to read the CERTS in a BIO and build a
  * stack of X509* pointers.  This is used during the PEM to
@@ -574,9 +576,6 @@ cleanup:
  * in and loads the certificates on to the context as pkcs7 certs.  This is
  * stored on the EST context and used to respond to the /cacerts request,
  * which requires PKCS7 encoding.
- *
- * This function also loads the x509 store on the context used to
- * verify the peer.
  */
 EST_ERROR est_load_ca_certs (EST_CTX *ctx, unsigned char *raw, int size)
 {
@@ -629,6 +628,7 @@ EST_ERROR est_load_ca_certs (EST_CTX *ctx, unsigned char *raw, int size)
     BIO_free(in);
     return (EST_ERR_NONE);
 }
+#endif
 
 /*
  * Takes a char array containing the PEM encoded CA certificates,
@@ -764,6 +764,18 @@ EST_ERROR est_destroy (EST_CTX *ctx)
         free(ctx->uri_path_segment);
     }
 
+    if(ctx->brski_retrieved_cacert) {
+        free(ctx->brski_retrieved_cacert);
+    }
+
+    if(ctx->brski_retrieved_voucher) {
+        free(ctx->brski_retrieved_voucher);
+    }
+    
+    if (ctx->client_cert_ser_num) {
+        free(ctx->client_cert_ser_num);
+    }
+    
     if (ctx->dh_tmp) {
 	DH_free(ctx->dh_tmp);
     }
@@ -784,10 +796,12 @@ EST_ERROR est_destroy (EST_CTX *ctx)
         SSL_CTX_free(ctx->ssl_ctx);
     }
 
+#ifndef ENABLE_CLIENT_ONLY
     if (ctx->est_mode == EST_PROXY) {
         proxy_cleanup(ctx);
     }
-
+#endif
+    
     /*
      * And finally free the EST context itself
      */
@@ -897,7 +911,6 @@ int est_base64_decode (const char *src, char *dst, int dst_size)
     BIO_free_all(b64in);
     return (len);
 }
-
 
 /*
  * This routine is used to encode base64 data.
@@ -1049,7 +1062,8 @@ char * est_get_tls_uid (SSL *ssl, int is_client)
 /*
  * This is a utility function to convert a hex value
  * to a string. This is used with the HTTP digest
- * authentication logic.
+ * authentication logic and converting a nonce value to
+ * a string.
  */
 void est_hex_to_str (char *dst, unsigned char *src, int len)
 {
@@ -1159,6 +1173,7 @@ EST_ERROR est_asn1_sanity_test (const unsigned char *string, long out_len,
     return (EST_ERR_NONE);
 }
 
+#ifndef ENABLE_CLIENT_ONLY
 /*
  * est_is_challengePassword_present - take a base64 
  * encoded ASN.1 string and scan through it to see 
@@ -1178,7 +1193,7 @@ EST_ERROR est_is_challengePassword_present (const char *base64_ptr, int b64_len,
     }
     return (est_asn1_parse_attributes(base64_ptr, b64_len, presence));
 }
-
+#endif
 
 /*
  * est_asn1_parse_attributes - base64 decode and sanity test
@@ -1223,6 +1238,7 @@ EST_ERROR est_asn1_parse_attributes (const char *p, int len, int *pop_present)
 }
 
 
+#ifndef ENABLE_CLIENT_ONLY
 /* 
  * est_add_challengePassword - caller has verified that challengePassword 
  * is configured and not included, so add it to the attributes here.
@@ -1337,6 +1353,7 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
     }
     return (EST_ERR_NONE);
 }
+#endif
 
 /*! @brief est_add_attributes_helper() Add a NID and its character string to
     an X509_REQ as an attribute.
@@ -1598,6 +1615,14 @@ EST_OPERATION est_parse_operation (char *op_path)
         operation = EST_OP_SIMPLE_ENROLL;
     } else if (!est_strcasecmp_s(op_path, EST_SIMPLE_REENROLL)) {
         operation = EST_OP_SIMPLE_REENROLL;
+#if ENABLE_BRSKI
+    } else if (!est_strcasecmp_s(op_path, EST_BRSKI_GET_VOUCHER)) {
+        operation = EST_OP_BRSKI_REQ_VOUCHER;
+    } else if (!est_strcasecmp_s(op_path, EST_BRSKI_VOUCHER_STATUS)) {
+        operation = EST_OP_BRSKI_VOUCHER_STATUS;
+    } else if (!est_strcasecmp_s(op_path, EST_BRSKI_ENROLL_STATUS)) {
+        operation = EST_OP_BRSKI_ENROLL_STATUS;
+#endif
     } else {
         operation = EST_OP_MAX;
     }
@@ -1793,6 +1818,14 @@ EST_ERROR est_parse_uri (char *uri, EST_OPERATION *operation,
         *operation = EST_OP_SIMPLE_REENROLL;
     } else if (strncmp(uri, EST_CSR_ATTRS_URI, EST_URI_MAX_LEN) == 0) {
         *operation = EST_OP_CSRATTRS;
+#if ENABLE_BRSKI
+    } else if (strncmp(uri, EST_BRSKI_GET_VOUCHER_URI, EST_URI_MAX_LEN) == 0) {
+        *operation = EST_OP_BRSKI_REQ_VOUCHER;
+    } else if (strncmp(uri, EST_BRSKI_VOUCHER_STATUS_URI, EST_URI_MAX_LEN) == 0) {
+        *operation = EST_OP_BRSKI_VOUCHER_STATUS;
+    } else if (strncmp(uri, EST_BRSKI_ENROLL_STATUS_URI, EST_URI_MAX_LEN) == 0) {
+        *operation = EST_OP_BRSKI_ENROLL_STATUS;
+#endif        
     } else {
         *operation = EST_OP_MAX;
         rc = EST_ERR_HTTP_INVALID_PATH_SEGMENT;
@@ -1822,8 +1855,8 @@ EST_ERROR est_store_path_segment (EST_CTX *ctx, char *path_segment,
         return EST_ERR_MALLOC;
     }
     
-    if (EOK != strncpy_s(ctx->uri_path_segment, path_segment_len+1,
-                         path_segment, path_segment_len)) {
+    if (EOK != strcpy_s(ctx->uri_path_segment, path_segment_len+1,
+                         path_segment)) {
         return EST_ERR_HTTP_INVALID_PATH_SEGMENT;
     }
     ctx->uri_path_segment[path_segment_len] = '\0';
@@ -1840,12 +1873,110 @@ int est_strcasecmp_s (char *s1, char *s2)
     safec_rc = strcasecmp_s(s1, strnlen_s(s1, RSIZE_MAX_STR), s2, &diff);
 
     if (safec_rc != EOK) {
-    	/*
-    	 * Log that we encountered a SafeC error
-     	 */
-     	EST_LOG_INFO("strcasecmp_s error 0x%xO\n", safec_rc);
+        /*
+         * Log that we encountered a SafeC error
+         */
+        EST_LOG_INFO("strcasecmp_s error 0x%xO\n", safec_rc);
     } 
 
     return diff;
+}
+
+size_t est_strcspn(const char * str1,const char * str2) 
+{
+    rsize_t count;
+    errno_t safec_rc; 
+
+    if ((str1 != NULL) && (str1[0] == '\0')) {
+        return 0; 
+    }
+
+    safec_rc = strcspn_s(str1, strnlen_s(str1, RSIZE_MAX_STR),
+            str2, RSIZE_MAX_STR, &count);
+    if (safec_rc != EOK) {
+        EST_LOG_INFO("strcspn_s error 0x%xO\n", safec_rc);
+        return 0;
+    }
+
+    return count;
+}
+
+
+size_t est_strspn(const char * str1,const char  * str2) 
+{
+    rsize_t count;
+    errno_t safec_rc; 
+
+    if ((str1 != NULL) && (str1[0] == '\0')) {
+        return 0; 
+    }
+
+    safec_rc = strspn_s(str1, strnlen_s(str1, RSIZE_MAX_STR), 
+            str2, RSIZE_MAX_STR, &count);
+    if (safec_rc != EOK) {
+        EST_LOG_INFO("strspn_s error 0x%xO\n", safec_rc);
+        return 0; 
+    }
+
+    return count; 
+
+}
+
+
+// Skip the characters until one of the delimiters characters found.
+// 0-terminate resulting word. Skip the delimiter and following whitespaces.
+// Advance pointer to buffer to the next word. Return found 0-terminated word.
+// Delimiters can be quoted with quotechar.
+char *skip_quoted (char **buf, const char *delimiters,
+                   const char *whitespace, char quotechar)
+{
+    char *p, *begin_word, *end_word, *end_whitespace;
+
+    begin_word = *buf;
+
+    end_word = begin_word + est_strcspn(begin_word,delimiters);
+
+    // Check for quotechar
+    if (end_word > begin_word) {
+        p = end_word - 1;
+        while (*p == quotechar) {
+            // If there is anything beyond end_word, copy it
+            if (*end_word == '\0') {
+                *p = '\0';
+                break;
+            } else {
+
+                rsize_t end_off = (rsize_t) est_strcspn(end_word + 1, delimiters);
+                memmove_s(p, end_off + 1, end_word, end_off + 1);
+                p += end_off; // p must correspond to end_word - 1
+                end_word += end_off + 1;
+            }
+        }
+        for (p++; p < end_word; p++) {
+            *p = '\0';
+        }
+    }
+
+    if (*end_word == '\0') {
+        *buf = end_word;
+    } else {
+
+        end_whitespace = end_word + 1 + est_strspn(end_word + 1, whitespace);
+
+        for (p = end_word; p < end_whitespace; p++) {
+            *p = '\0';
+        }
+
+        *buf = end_whitespace;
+    }
+
+    return begin_word;
+}
+
+// Simplified version of skip_quoted without quote char
+// and whitespace == delimiters
+char *skip (char **buf, const char *delimiters)
+{
+    return skip_quoted(buf, delimiters, delimiters, 0);
 }
 

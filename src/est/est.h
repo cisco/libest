@@ -140,6 +140,14 @@ typedef enum {
     E(EST_ERR_CLIENT_PROXY_MODE_NOT_SUPPORTED) \
     E(EST_ERR_INVALID_CLIENT_PROXY_PROTOCOL)    \
     E(EST_ERR_INVALID_CLIENT_PROXY_AUTH)    \
+    E(EST_ERR_CLIENT_BRSKI_MODE_NOT_SUPPORTED) \
+    E(EST_ERR_CLIENT_BRSKI_NO_VOUCHER) \
+    E(EST_ERR_CLIENT_BRSKI_NONCE_MISSING) \
+    E(EST_ERR_CLIENT_BRSKI_NONCE_MISMATCH) \
+    E(EST_ERR_CLIENT_BRSKI_NONCE_TOO_LARGE) \
+    E(EST_ERR_CLIENT_BRSKI_SERIAL_NUM_MISSING) \
+    E(EST_ERR_CLIENT_BRSKI_SERIAL_NUM_MISMATCH) \
+    E(EST_ERR_CLIENT_BRSKI_SERIAL_NUM_TOO_LARGE) \
     E(EST_ERR_UNKNOWN)
 
 #define GENERATE_ENUM(ENUM) ENUM,
@@ -225,6 +233,15 @@ typedef enum {
 \n EST_ERR_CLIENT_PROXY_MODE_NOT_SUPPORTED  LibEST was not built with libcurl support.  Libcurl is required for client proxy mode.
 \n EST_ERR_INVALID_CLIENT_PROXY_PROTOCOL Invalid proxy protocol specified when configuring client mode for HTTP/Socks proxy.
 \n EST_ERR_INVALID_CLIENT_PROXY_AUTH Invalid proxy authentication mode specified when configuring client mode for HTTP/Socks proxy.
+\n EST_ERR_CLIENT_BRSKI_MODE_NOT_SUPPORTED  LibEST was not built with BRSKI mode enabled.
+\n EST_ERR_CLIENT_BRSKI_NO_VOUCHER BRSKI mode: no voucher to pass up to application.
+\n EST_ERR_CLIENT_BRSKI_NONCE_MISSING BRSKI mode: Nonce missing from voucher.
+\n EST_ERR_CLIENT_BRSKI_NONCE_MISMATCH BRSKI mode: returned nonce does not match nonce sent.
+\n EST_ERR_CLIENT_BRSKI_NONCE_TOO_LARGE BRSKI mode: returned nonce larger than maximum length.
+\n EST_ERR_CLIENT_BRSKI_SERIAL_NUM_MISSING BRSKI mode: Serial Number missing from client cert.
+\n EST_ERR_CLIENT_BRSKI_SERIAL_NUM_MISMATCH BRSKI mode: Serial Number in voucher does not match with mfg serial number.
+\n EST_ERR_CLIENT_BRSKI_SERIAL_NUM_TOO_LARGE BRSKI mode: Serial Number in voucher is larger than maximum length.
+
 \n EST_ERR_LAST  Last error in the enum definition. Should never be used.
 */
 typedef enum {
@@ -284,6 +301,21 @@ typedef enum {
 #define MAX_AUTH_TOKEN_LEN (512) 
 #define MAX_HTTP_METHOD_LEN (5)
 
+#define EST_BRSKI_MAX_SER_NUM_LEN (64)    
+#define EST_BRSKI_MAX_VOUCHER_REQ_LEN (16384)
+#define EST_BRSKI_MAX_VOUCHER_LEN (16384)
+#define EST_BRSKI_MAX_CACERT_LEN (8192)
+#define EST_BRSKI_VOUCHER_REQ_NONCE_SIZE (32)
+#define EST_BRSKI_MAX_SUBJ_KEY_ID_LEN (24)
+#define EST_BRSKI_MAX_REASON_LEN (255)    
+#define EST_BRSKI_MAX_STATUS_LEN (128+EST_BRSKI_MAX_REASON_LEN) /* both voucher and enroll */
+#define BRSKI_VERSION "1"
+
+typedef enum {
+    EST_BRSKI_STATUS_SUCCESS = 1,
+    EST_BRSKI_STATUS_FAIL,
+} EST_BRSKI_STATUS_VALUE;
+    
 /*
  * The following values define the minimum, maximum, and default
  * values for the timeout value for the SSL read operations.
@@ -377,6 +409,66 @@ typedef struct est_ctx EST_CTX;
  */
 typedef EST_HTTP_AUTH_CRED_RC (*auth_credentials_cb)(EST_HTTP_AUTH_HDR *auth_credentials);
 
+/*
+ * Defines the valid return codes that the application layer's BRSKI callback
+ * function can provide.
+ */
+typedef enum {
+    EST_BRSKI_CB_SUCCESS = 1,
+    EST_BRSKI_CB_RETRY,
+    EST_BRSKI_CB_INVALID_PARAMETER,
+    EST_BRSKI_CB_FAILURE,
+} EST_BRSKI_CALLBACK_RC;    
+    
+/*! @typedef brski_voucher_req_cb
+ *  @brief This typedef defines the prototype of the callback function that is
+ *         to reside in the application code.  The application can register
+ *         this function callback using the est_set_brski_voucher_req_cb() API
+ *         function.  This callback is called by the EST server library when
+ *         it receives a BRSKI voucher request from an EST client.  This
+ *         callback function takes as input a pointer to received voucher
+ *         request and an integer set to the length of the voucher request.
+ *         This request will be in a JSON formatted request and will
+ *         not be base64 encoded.  The callback function will return a pointer
+ *         to the obtained voucher and an integer set to the length of the
+ *         voucher being returned.  libEST will forward this voucher back to 
+ *         EST client and will free up the passed buffer.
+ */
+typedef EST_BRSKI_CALLBACK_RC (*brski_voucher_req_cb)(char *voucher_req, int voucher_req_len,
+                                                      char **voucher, int *voucher_len,
+                                                      X509 *peer_cert);
+
+
+/*! @typedef brski_voucher_status_cb
+ *  @brief This typedef defines the prototype of the callback function that is
+ *         to reside in the application code.  The application can register
+ *         this function callback using the est_set_brski_voucher_status_cb()
+ *         API function.  This callback is called by the EST server library
+ *         when it receives a BRSKI voucher status indication from an EST
+ *         client.  This callback function takes as input a pointer to
+ *         received voucher status.  It also takes in the length of the
+ *         voucher status buffer and the certificate used by the client
+ *         during TLS handshake.
+ */
+typedef EST_BRSKI_CALLBACK_RC (*brski_voucher_status_cb)(char *voucher_status,
+                                                         int voucher_status_len,
+                                                         X509 *peer_cert);    
+
+
+/*! @typedef brski_enroll_status_cb
+ *  @brief This typedef defines the prototype of the callback function that is
+ *         to reside in the application code.  The application can register
+ *         this function callback using the est_set_brski_enroll_status_cb()
+ *         API function.  This callback is called by the EST server library
+ *         when it has receives a BRSKI enrollment status indication from an
+ *         EST client.  This callback function takes as input a pointer to
+ *         received enrollment status.  This status will be in JSON format and
+ *         will not be base64 encoded.  It also takes in the length of the
+ *         enrollment status buffer and the certificate used by the client
+ *         during TLS handshake.
+ */
+typedef EST_BRSKI_CALLBACK_RC (*brski_enroll_status_cb)(char *cert_status, int cert_status_len,
+                                                        X509 *peer_cert);    
 
 /*
  * Begin the public API prototypes
@@ -466,6 +558,25 @@ LIBEST_API EST_ERROR est_client_enable_srp(EST_CTX *ctx, int strength, char *uid
 LIBEST_API int est_client_get_last_http_status(EST_CTX *ctx);
 
 /*
+ * The following defines the BRSKI extension to libEST client mode
+ */
+LIBEST_API EST_ERROR est_client_set_brski_mode(EST_CTX *ctx);    
+LIBEST_API EST_ERROR est_client_brski_get_voucher(EST_CTX *ctx, int *cacert_len, int sign_voucher);
+LIBEST_API EST_ERROR est_client_brski_copy_cacert(EST_CTX *ctx, unsigned char *cacert);
+LIBEST_API EST_ERROR est_client_brski_send_voucher_status(EST_CTX *ctx,
+                                                          EST_BRSKI_STATUS_VALUE status,
+                                                          char *reason);
+LIBEST_API EST_ERROR est_client_brski_send_enroll_status(EST_CTX *ctx,
+                                                         EST_BRSKI_STATUS_VALUE status,
+                                                         char *reason,
+                                                         unsigned char *subject_key_id);
+
+/*
+ * The following defines the BRSKI extension to libEST server mode
+ */
+LIBEST_API EST_ERROR est_server_set_brski_retry_period (EST_CTX *ctx, int seconds);
+    
+/*
  * The following callback entry points must be set by the application
  * when acting as an EST server or proxy.
  */
@@ -477,11 +588,18 @@ LIBEST_API EST_ERROR est_set_ca_reenroll_cb(EST_CTX *ctx, int (*cb)(unsigned cha
                                                          unsigned char **pkcs7, int *pkcs7_len, 
                                                          char *user_id, X509 *peer_cert,
                                                          char *path_seg, void *ex_data));
-LIBEST_API EST_ERROR est_set_csr_cb(EST_CTX * ctx, unsigned char *(*cb)(int*csr_len, char *path_seg, void *ex_data));
+LIBEST_API EST_ERROR est_set_csr_cb(EST_CTX * ctx, unsigned char *(*cb)(int*csr_len, char *path_seg,  X509 *peer_cert, void *ex_data));
 LIBEST_API EST_ERROR est_set_cacerts_cb(EST_CTX * ctx, unsigned char *(*cb)(int*csr_len, char *path_seg, void *ex_data));
 LIBEST_API EST_ERROR est_set_http_auth_cb(EST_CTX * ctx,
                                           int (*cb)(EST_CTX*, EST_HTTP_AUTH_HDR*,
                                                     X509*, char *, void*));
+
+/*
+ * The following define the BRSKI extension to libEST server mode
+ */    
+LIBEST_API EST_ERROR est_set_brski_voucher_req_cb(EST_CTX *ctx, brski_voucher_req_cb cb);
+LIBEST_API EST_ERROR est_set_brski_voucher_status_cb(EST_CTX *ctx, brski_voucher_status_cb cb);
+LIBEST_API EST_ERROR est_set_brski_enroll_status_cb(EST_CTX *ctx, brski_enroll_status_cb cb);
 
     
 LIBEST_API EST_ERROR est_set_http_auth_required(EST_CTX * ctx, EST_HTTP_AUTH_REQUIRED required);
@@ -498,6 +616,7 @@ LIBEST_API X509_REQ *est_read_x509_request(unsigned char *csr, int csr_len,
 	                         EST_CERT_FORMAT csr_format);
 LIBEST_API EVP_PKEY *est_load_key(unsigned char *key, int key_len, int format);
 LIBEST_API int est_convert_p7b64_to_pem(unsigned char *certs_p7, int certs_len, unsigned char **pem);
+LIBEST_API char *est_find_ser_num_in_subj(X509 *cert);
 
 /*
  * These are helper macros that an application can use

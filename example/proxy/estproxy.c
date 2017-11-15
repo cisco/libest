@@ -533,9 +533,11 @@ int main (int argc, char **argv)
     }
     BIO_free(keyin);
 
-    est_init_logger(EST_LOG_LVL_INFO, NULL);
     if (verbose) {
+        est_init_logger(EST_LOG_LVL_INFO, NULL);
         est_enable_backtrace(1);
+    } else {
+        est_init_logger(EST_LOG_LVL_ERR, NULL);
     }
     ectx = est_proxy_init(trustcerts, trustcerts_len, cacerts_raw, cacerts_len,
             EST_CERT_FORMAT_PEM, realm, x, priv_key, "estuser", "estpwd");

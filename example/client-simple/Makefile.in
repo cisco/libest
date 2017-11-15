@@ -307,7 +307,8 @@ estclient_simple_SOURCES = estclient-simple.c ../util/utils.c
 AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -I$(SSL_CFLAGS) -g 
 @FREEBSD_FALSE@DL = -ldl
 @FREEBSD_TRUE@DL = 
-estclient_simple_LDFLAGS = -L../../src/est/.libs $(DL) -lest -lssl -lcrypto
+@ENABLE_CLIENT_ONLY_FALSE@estclient_simple_LDFLAGS = -L../../src/est/.libs $(DL) -lest -lssl -lcrypto
+@ENABLE_CLIENT_ONLY_TRUE@estclient_simple_LDFLAGS = -L../../src/est/.libs $(DL) -lest_client -lssl -lcrypto
 all: all-am
 
 .SUFFIXES:

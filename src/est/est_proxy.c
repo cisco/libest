@@ -9,7 +9,7 @@
  *
  * May, 2013
  *
- * Copyright (c) 2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016, 2017 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -754,8 +754,7 @@ static int est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx,
 		    if (!csr_data) {
 			return (EST_ERR_MALLOC);
 		    }
-		    strncpy_s(csr_data, EST_CSRATTRS_POP_LEN + 1, 
-			      EST_CSRATTRS_POP, EST_CSRATTRS_POP_LEN);
+		    strcpy_s(csr_data, EST_CSRATTRS_POP_LEN + 1, EST_CSRATTRS_POP);
 		    csr_data[EST_CSRATTRS_POP_LEN] = 0;
 		    csr_len = EST_CSRATTRS_POP_LEN;
 		    return (est_send_csrattr_data(ctx, csr_data, csr_len, http_ctx));
@@ -1270,7 +1269,7 @@ EST_CTX * est_proxy_init (unsigned char *ca_chain, int ca_chain_len,
     ctx->ca_chain_raw[ca_chain_len] = '\0';
     ctx->ca_chain_raw_len = ca_chain_len;
     
-    strncpy_s(ctx->realm, MAX_REALM, http_realm, MAX_REALM);
+    strcpy_s(ctx->realm, MAX_REALM, http_realm);
     ctx->server_cert = tls_id_cert;
     ctx->server_priv_key = tls_id_key;
     ctx->auth_mode = AUTH_BASIC;
@@ -1418,8 +1417,7 @@ EST_ERROR est_proxy_set_server (EST_CTX *ctx, const char *server, int port)
         return EST_ERR_INVALID_PORT_NUM;
     }
     
-    strncpy_s(ctx->est_server, EST_MAX_SERVERNAME_LEN, server, 
-              EST_MAX_SERVERNAME_LEN);
+    strcpy_s(ctx->est_server, EST_MAX_SERVERNAME_LEN, server);
     ctx->est_port_num = port;
     
     return EST_ERR_NONE;

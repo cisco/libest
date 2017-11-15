@@ -82,6 +82,7 @@
 #define EST_HTTP_STAT_404_TXT	    "Not Found" 
 #define EST_HTTP_STAT_423_TXT	    "Locked"
 
+#define EST_HTTP_MAX_REASON_PHRASE  256
 #define EST_HTTP_HDR_MAX            1024 
 #define EST_HTTP_HDR_200            "HTTP/1.1 200 OK"
 #define EST_HTTP_HDR_STAT_200       "Status: 200 OK"
@@ -106,7 +107,7 @@
 #define EST_CSRATTRS_POP            "MAsGCSqGSIb3DQEJBw=="
 #define EST_CSRATTRS_POP_LEN         20
 
-#define EST_HTTP_HDR_EST_CLIENT     "LibEST client 1.0"
+#define EST_HTTP_HDR_EST_CLIENT     "Cisco EST client 2.0 with BRSKI"
 
 #define EST_HTTP_REQ_DATA_MAX       4096
 #define EST_HTTP_REQ_TERMINATOR_LEN 5
@@ -143,6 +144,30 @@
 #define EST_CACERTS_URI         "/.well-known/est/cacerts"
 #define EST_KEYGEN_URI          "/.well-known/est/serverkeygen"
 
+/*
+ * BRSKI Support
+ */
+#define EST_BRSKI_GET_VOUCHER    "requestvoucher"
+#define EST_BRSKI_VOUCHER_STATUS "voucher_status"
+#define EST_BRSKI_ENROLL_STATUS  "enrollstatus"
+#define EST_BRSKI_GET_VOUCHER_URI EST_PATH_PREFIX"/"EST_BRSKI_GET_VOUCHER
+#define EST_BRSKI_VOUCHER_STATUS_URI EST_PATH_PREFIX"/"EST_BRSKI_VOUCHER_STATUS
+#define EST_BRSKI_ENROLL_STATUS_URI EST_PATH_PREFIX"/"EST_BRSKI_ENROLL_STATUS
+
+#define EST_BRSKI_CT_VREQ_SIGNED "application/voucherrequest"
+#define EST_BRSKI_CT_VREQ "application/unsignedvoucherrequest"
+#define EST_BRSKI_CT_VRSP "application/voucher+cms"
+#define EST_BRSKI_CT_STATUS "application/json"
+
+#define BRSKI_ENABLED 1
+#define EST_BRSKI_CLIENT_RETRY_MAX      60
+
+/* The server retry-after values below are in seconds */
+#define EST_BRSKI_RETRY_PERIOD_DEF	30 
+#define EST_BRSKI_RETRY_PERIOD_MIN	1 
+#define EST_BRSKI_RETRY_PERIOD_MAX	70
+
+
 #define EST_BEARER_TOKEN_STR    "Bearer "
 
 typedef enum {
@@ -165,14 +190,19 @@ typedef enum {
     EST_OP_SIMPLE_REENROLL,
     EST_OP_CACERTS,
     EST_OP_CSRATTRS,
+#if ENABLE_BRSKI
+    EST_OP_BRSKI_REQ_VOUCHER,
+    EST_OP_BRSKI_VOUCHER_STATUS,
+    EST_OP_BRSKI_ENROLL_STATUS,
+#endif    
     EST_OP_MAX
 } EST_OPERATION;
 
 typedef struct {
     EST_OPERATION op;
-    char            *uri;
-    char            *content_type;
-    int             length;
+    char          *uri;
+    char          *content_type;
+    int           length;
 } EST_OP_DEF;
 
 #define INITIAL_PROXY_CLIENT_CTXS 8
@@ -224,10 +254,17 @@ struct est_ctx {
                                   char *path_seg, void *ex_data);
     unsigned char *(*est_get_cacerts_cb)(int *cacerts_len, char *path_seg,
                                          void *ex_data);
-    unsigned char *(*est_get_csr_cb)(int *csr_len, char *path_seg, void *ex_data);
+    unsigned char *(*est_get_csr_cb)(int *csr_len, char *path_seg, X509 *peer_cert, void *ex_data);
     int (*est_http_auth_cb)(struct est_ctx *ctx, EST_HTTP_AUTH_HDR *ah, 
 	                    X509 *peer_cert, char *path_seg, void *ex_data);
 
+    /*
+     * BRSKI based call backs
+     */
+    brski_voucher_req_cb est_brski_voucher_req_cb;
+    brski_voucher_status_cb est_brski_voucher_status_cb;    
+    brski_enroll_status_cb est_brski_enroll_status_cb;
+    
     /*
      * Client mode configuration options
      */
@@ -235,6 +272,7 @@ struct est_ctx {
     int est_port_num;
     char *uri_path_segment;
     X509 *client_cert;
+    char *client_cert_ser_num;
     EVP_PKEY   *client_key;
     EST_HTTP_AUTH_CRED_RC (*auth_credentials_cb)(EST_HTTP_AUTH_HDR *auth_credentials);
     EST_HTTP_AUTH_MODE auth_mode;
@@ -261,7 +299,22 @@ struct est_ctx {
     tcw_sock_t tcw_sock;
     int tcw_sock_connected;
 
-    int est_client_initialized;    
+    int est_client_initialized;
+    
+    /*
+     * BRSKI mode
+     */
+    /* client */
+    int              brski_mode;
+    unsigned char   *brski_retrieved_voucher;
+    int              brski_retrieved_voucher_len;
+    unsigned char   *brski_retrieved_cacert;
+    int              brski_retrieved_cacert_len;
+
+    /* server */
+    int brski_retry_period;  /* Number of seconds client should wait
+                                to attempt voucher request */    
+    
     /*
      * The following are used for server and/or proxy mode
      */
@@ -417,8 +470,13 @@ EST_ERROR est_send_csrattr_data(EST_CTX *ctx, char *csr_data, int csr_len, void 
 void cleanse_auth_credentials(EST_HTTP_AUTH_HDR *auth_cred);
 EST_ERROR est_parse_uri (char *uri, EST_OPERATION *operation,
                          char **path_seg);
-EST_ERROR est_store_path_segment (EST_CTX *ctx, char *path_segment,
+LIBEST_TEST_API EST_ERROR est_store_path_segment (EST_CTX *ctx, char *path_segment,
                                   int path_segment_len);
 EST_OPERATION est_parse_operation (char *op_path);
 int est_strcasecmp_s (char *s1, char *s2);
+
+char *skip(char **buf, const char *delimiters);
+char *skip_quoted(char **buf, const char *delimiters, const char *whitespace,
+                  char quotechar);
+size_t est_strcspn(const char * str1,const char * str2);
 #endif

@@ -184,6 +184,7 @@ static int us895_destroy_suite (void)
 
 static unsigned char * handle_short_csrattrs_request (int *csr_len,
                                                       char *path_seg,
+                                                      X509 *peer_cert,
                                                       void *app_data)
 {
     unsigned char *csr_data;
@@ -197,6 +198,7 @@ static unsigned char * handle_short_csrattrs_request (int *csr_len,
 
 static unsigned char * handle_corrupt_csrattrs_request (int *csr_len,
                                                         char *path_seg,
+                                                        X509 *peer_cert,
                                                         void *app_data)
 {
     unsigned char *csr_data;
@@ -210,6 +212,7 @@ static unsigned char * handle_corrupt_csrattrs_request (int *csr_len,
 
 static unsigned char * handle_long_csrattrs_request (int *csr_len,
                                                      char *path_seg,
+                                                     X509 *peer_cert,
                                                      void *app_data)
 {
     unsigned char *csr_data;
@@ -223,6 +226,7 @@ static unsigned char * handle_long_csrattrs_request (int *csr_len,
 
 static unsigned char * handle_correct_csrattrs_request (int *csr_len,
                                                         char * path_seg,
+                                                        X509 *peer_cert,
                                                         void *app_data)
 {
     unsigned char *csr_data;
@@ -236,6 +240,7 @@ static unsigned char * handle_correct_csrattrs_request (int *csr_len,
 
 static unsigned char * handle_nopop_csrattrs_request (int *csr_len,
                                                       char *path_seg,
+                                                      X509 *peer_cert,
                                                       void *app_data)
 {
     unsigned char *csr_data;
@@ -249,6 +254,7 @@ static unsigned char * handle_nopop_csrattrs_request (int *csr_len,
 
 static unsigned char * handle_empty_csrattrs_request (int *csr_len,
                                                       char *path_seg,
+                                                      X509 *peer_cert,
                                                       void *app_data)
 {
     unsigned char *csr_data;

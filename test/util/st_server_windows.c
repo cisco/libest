@@ -4,7 +4,7 @@
  *
  * March, 2016
  *
- * Copyright (c) 2016 by cisco Systems, Inc.
+ * Copyright (c) 2016, 2017 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -432,7 +432,8 @@ static int process_pkcs10_enrollment(unsigned char * pkcs10, int p10_len,
 //This CSR attributes contains the challengePassword OID and others
 #define TEST_CSR "MCYGBysGAQEBARYGCSqGSIb3DQEJBwYFK4EEACIGCWCGSAFlAwQCAg==\0"
 
-static unsigned char * process_csrattrs_request(int *csr_len, char *path_seg, void *app_data)
+static unsigned char * process_csrattrs_request(int *csr_len, char *path_seg,
+                                                X509 *peer_cert, void *app_data)
 {
     unsigned char *csr_data;
 
@@ -1010,7 +1011,8 @@ static int st_start_internal(
         int enable_srp,
         char *srp_vfile,
         int enable_tls10,
-        int disable_cacerts_response)
+        int disable_cacerts_response,
+        int enable_crl)
 {
     X509 *x;
     EVP_PKEY *priv_key;
@@ -1123,6 +1125,10 @@ static int st_start_internal(
 
     if (enable_tls10) {
         est_server_enable_tls10(ectx);
+    }
+
+    if (enable_crl) {
+        est_enable_crl(ectx);
     }
 
     if (est_set_ca_enroll_cb(ectx, &process_pkcs10_enrollment)) {
@@ -1262,7 +1268,50 @@ int st_start_tls10(int listen_port,
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
         trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
-        enable_pop, ec_nid, 0, NULL, 1, 0);
+        enable_pop, ec_nid, 0, NULL, 1, 0, 0);
+
+    return (rv);
+}
+
+/*
+ * Call this to start a simple EST server with CRL check enabled,
+ * This server will not be thread safe.  It can only handle a single
+ * EST request on the listening socket at any given time.
+ * This server will run until st_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:       PEM encoded certificate used for server's identity
+ *  keyfile:        Private key associated with the certfile
+ *  realm:          HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  ossl_conf_file: Configuration file that specifies the OpenSSL
+ *                  CA to use.
+ *  simulate_manual_enroll: Pass in a non-zero value to have the EST
+ *                  simulate manual approval at the CA level.  This
+ *                  is used to test the retry-after logic.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_start_crl(int listen_port,
+                 char *certfile,
+                 char *keyfile,
+                 char *realm,
+                 char *ca_chain_file,
+                 char *trusted_certs_file,
+                 char *ossl_conf_file,
+                 int simulate_manual_enroll,
+                 int enable_pop,
+                 int ec_nid)
+{
+    int rv;
+
+    rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+        trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
+        enable_pop, ec_nid, 0, NULL, 0, 0, 1);
 
     return (rv);
 }
@@ -1305,7 +1354,7 @@ int st_start(int listen_port,
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
         trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
-        enable_pop, ec_nid, 0, NULL, 0, 0);
+        enable_pop, ec_nid, 0, NULL, 0, 0, 0);
 
     return (rv);
 }
@@ -1348,7 +1397,7 @@ int st_start_nocacerts(int listen_port,
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
         trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
-        enable_pop, ec_nid, 0, NULL, 0, 1);
+        enable_pop, ec_nid, 0, NULL, 0, 1, 0);
     return (rv);
 
 }
@@ -1387,7 +1436,7 @@ int st_start_srp(int listen_port,
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
         trusted_certs_file, ossl_conf_file, 0, enable_pop,
-        0, 1, vfile, 0, 0);
+        0, 1, vfile, 0, 0, 0);
 
     return (rv);
 }
@@ -1427,7 +1476,7 @@ int st_start_srp_tls10(int listen_port,
     /* Note here that the last parm turns on tls1.0 */
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
         trusted_certs_file, ossl_conf_file, 0, enable_pop, 0,
-        1, vfile, 1, 0);
+        1, vfile, 1, 0, 0);
     return (rv);
 }
 

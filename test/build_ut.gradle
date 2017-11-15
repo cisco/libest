@@ -19,6 +19,15 @@ model {
                             sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\ssleay32.lib")
                 }
             }            
+            if(!System.getenv().DISABLE_SAFEC.equals("TRUE")) {                           
+                ciscosafec {
+                    headers.srcDir System.getenv().SAFEC_DIR + "\\include"
+                            binaries.withType(StaticLibraryBinary) {
+                        staticLibraryFile =
+                                file(System.getenv().SAFEC_DIR + "\\lib\\safeclib.lib")
+                    }
+                }
+            }
             cunit {
                 headers.srcDir System.getenv().CUNIT_DIR + "\\include"
                         binaries.withType(StaticLibraryBinary) {
@@ -56,7 +65,10 @@ model {
                         srcDir "UT"
                         include "**/*.c"
                         srcDir "util"
-                        srcDir "safe_c_stub/src"
+                        if(System.getenv().DISABLE_SAFEC.equals("TRUE"))
+                        {
+                            srcDir "safe_c_stub/src"
+                        }     
                         exclude "st_proxy.c"
                         exclude "st_server.c"
                         exclude "US1060/us1060.c"
@@ -64,7 +76,10 @@ model {
                         exclude "US903/perftest.c"
                     }
                     exportedHeaders {
-                        srcDir "safe_c_stub/include"
+                        if(System.getenv().DISABLE_SAFEC.equals("TRUE"))
+                        {
+                            srcDir "safe_c_stub/include"
+                        }                     
                         srcDir "util"
                     }
                 }
@@ -72,6 +87,10 @@ model {
             binaries.all {
                 lib library: "libcrypto", linkage: "shared"
                 lib library: "libssl", linkage: "shared"
+                if(!System.getenv().DISABLE_SAFEC.equals("TRUE"))
+                {
+                    lib library: "ciscosafec", linkage: "static"
+                }  
                 lib library: "cunit", linkage: "static"
                 lib library: "est", linkage: "shared"
                 lib library: "curl", linkage: "shared"

@@ -2144,6 +2144,7 @@ BIO * ossl_simple_enroll(const char *p10buf, int p10len) {
     conf = NULL;
     key = NULL;
     section = NULL;
+    memset(buf[2], 0, sizeof(buf[2]));
 
     preserve = 0;
     msie_hack = 0;
