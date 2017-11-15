@@ -9,7 +9,7 @@
  *
  * April, 2013
  *
- * Copyright (c) 2013-2014, 2016, 2017 by cisco Systems, Inc.
+ * Copyright (c) 2013-2014, 2016 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -111,13 +111,13 @@ int est_handle_cacerts (EST_CTX *ctx, unsigned char *ca_certs, int ca_certs_len,
     snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
              EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
     hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdrlen, "%s: %s%s", EST_HTTP_HDR_CT,
+    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
              EST_HTTP_CT_PKCS7, EST_HTTP_HDR_EOL);
     hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdrlen, "%s: %s%s", EST_HTTP_HDR_CE,
+    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CE,
              EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL);
     hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdrlen, "%s: %d%s%s", EST_HTTP_HDR_CL,
+    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
              ca_certs_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
     if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
         return (EST_ERR_HTTP_WRITE);
@@ -836,7 +836,7 @@ static EST_ERROR est_server_build_csr_oid_list (EST_OID_LIST **list, char *body,
  * against the attributes in the CSR.  If any attributes are
  * missing from the CSR, then an error is returned.
  */
-static EST_ERROR est_server_all_csrattrs_present (EST_CTX *ctx, char *body, int body_len, X509 *peer_cert) 
+static EST_ERROR est_server_all_csrattrs_present(EST_CTX *ctx, char *body, int body_len) 
 {
     int tag, xclass, j, found_match, nid;
     long len;
@@ -848,6 +848,7 @@ static EST_ERROR est_server_all_csrattrs_present (EST_CTX *ctx, char *body, int 
     long out_len_save;
     unsigned char *der_data;
     int der_len, out_len;
+    int a_len;
     char tbuf[EST_MAX_ATTR_LEN];
     EST_OID_LIST *csr_attr_oids = NULL; 
     EST_OID_LIST *oid_entry;
@@ -876,7 +877,7 @@ static EST_ERROR est_server_all_csrattrs_present (EST_CTX *ctx, char *body, int 
      * Use the callback if configured, otherwise use the local copy.
      */
     if (ctx->est_get_csr_cb) {
-	csr_data = (char *)ctx->est_get_csr_cb(&csr_len, NULL, peer_cert, ctx->ex_data);
+	csr_data = (char *)ctx->est_get_csr_cb(&csr_len, NULL, ctx->ex_data);
 	if (!csr_data) {
 	    EST_LOG_ERR("Application layer failed to return CSR attributes");
 	    est_server_free_csr_oid_list(csr_attr_oids);
@@ -889,7 +890,8 @@ static EST_ERROR est_server_all_csrattrs_present (EST_CTX *ctx, char *body, int 
 	    est_server_free_csr_oid_list(csr_attr_oids);
             return (EST_ERR_MALLOC);
         }
-        strcpy_s(csr_data, ctx->server_csrattrs_len + 1, (char *)ctx->server_csrattrs);
+        strncpy_s(csr_data, ctx->server_csrattrs_len + 1, 
+		  (char *)ctx->server_csrattrs, ctx->server_csrattrs_len);
 	csr_data[ctx->server_csrattrs_len] = 0;
 	csr_len = ctx->server_csrattrs_len;
     }
@@ -985,7 +987,7 @@ static EST_ERROR est_server_all_csrattrs_present (EST_CTX *ctx, char *body, int 
 		break;
 	    }
 
-	    i2t_ASN1_OBJECT(tbuf, EST_MAX_ATTR_LEN, a_object);
+	    a_len = i2t_ASN1_OBJECT(tbuf, EST_MAX_ATTR_LEN, a_object);
 	    EST_LOG_INFO("Looking for attr=%s in the CSR", tbuf);
 	    ASN1_OBJECT_free(a_object);
 
@@ -1006,7 +1008,7 @@ static EST_ERROR est_server_all_csrattrs_present (EST_CTX *ctx, char *body, int 
 	     */
 	    while (oid_entry) { 
 		EST_LOG_INFO("Comparing %s to %s", tbuf, oid_entry->oid);
-		strcmp_s(oid_entry->oid, strnlen_s(oid_entry->oid, EST_MAX_ATTR_LEN), tbuf, &comparator);
+		strcmp_s(oid_entry->oid, (a_len < EST_MAX_ATTR_LEN ? a_len : EST_MAX_ATTR_LEN), tbuf, &comparator);
 		if (!comparator) {
 		    found_match = 1;
 		    break;
@@ -1156,7 +1158,7 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
      * CSR attributes required by the CA.
      */
     if (ctx->enforce_csrattrs) {
-	if (EST_ERR_NONE != est_server_all_csrattrs_present(ctx, body, body_len, peer_cert)) {
+	if (EST_ERR_NONE != est_server_all_csrattrs_present(ctx, body, body_len)) {
 	    X509_REQ_free(csr);
 	    X509_free(peer_cert);
 	    return (EST_ERR_CSR_ATTR_MISSING);
@@ -1191,13 +1193,13 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
         snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
                  EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
         hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdrlen, "%s: %s%s", EST_HTTP_HDR_CT,
+        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
                  EST_HTTP_CT_PKCS7_CO, EST_HTTP_HDR_EOL);
         hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdrlen, "%s: %s%s", EST_HTTP_HDR_CE,
+        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CE,
                  EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL);
         hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX - hdrlen, "%s: %d%s%s", EST_HTTP_HDR_CL,
+        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
                  cert_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
         if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
             free(cert);
@@ -1239,13 +1241,12 @@ static EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx, SSL *ss
  * This function is used by the server to process an incoming
  * csr attributes request from the client.
  */
-static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx, SSL *ssl, char *path_seg)
+static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx, char *path_seg)
 {
     int rv = EST_ERR_NONE;
     int pop_present;
     char *csr_data, *csr_data_pop;
     int csr_len, csr_pop_len;
-    X509 *peer_cert = NULL;
 
     if (!ctx->server_csrattrs && !ctx->est_get_csr_cb) {
         if (!ctx->server_enable_pop) {
@@ -1258,7 +1259,8 @@ static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx, SSL *ssl, char *p
 	    if (!csr_data) {
                 return (EST_ERR_MALLOC);
 	    }
-	    strcpy_s(csr_data, EST_CSRATTRS_POP_LEN + 1, EST_CSRATTRS_POP);
+	    strncpy_s(csr_data, EST_CSRATTRS_POP_LEN + 1, EST_CSRATTRS_POP, 
+		      EST_CSRATTRS_POP_LEN);
 	    csr_data[EST_CSRATTRS_POP_LEN] = 0;
 	    csr_len = EST_CSRATTRS_POP_LEN;
 	    return (est_send_csrattr_data(ctx, csr_data, csr_len, http_ctx));
@@ -1266,19 +1268,12 @@ static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx, SSL *ssl, char *p
     }
 
     /*
-     * Get the peer certificate if available.  This
-     * identifies the client. The CA may desire
-     * this information.
-     */
-    peer_cert = SSL_get_peer_certificate(ssl);
-
-    /*
      * Invoke CA server callback to retrieve the CSR.  Callback takes priority
      * over saved values in the context.
      * Note: there is no need to authenticate the client (see sec 4.5)
      */
     if (ctx->est_get_csr_cb) {
-	csr_data = (char *)ctx->est_get_csr_cb(&csr_len, path_seg, peer_cert, ctx->ex_data);
+	csr_data = (char *)ctx->est_get_csr_cb(&csr_len, path_seg, ctx->ex_data);
 	rv = est_asn1_parse_attributes(csr_data, csr_len, &pop_present);
 	if (csr_len && (rv != EST_ERR_NONE)) {
             if (csr_data) {
@@ -1307,7 +1302,8 @@ static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx, SSL *ssl, char *p
 		    if (!csr_data) {
 			return (EST_ERR_MALLOC);
 		    }
-		    strcpy_s(csr_data, EST_CSRATTRS_POP_LEN + 1, EST_CSRATTRS_POP);
+		    strncpy_s(csr_data, EST_CSRATTRS_POP_LEN + 1, 
+			      EST_CSRATTRS_POP, EST_CSRATTRS_POP_LEN);
 		    csr_data[EST_CSRATTRS_POP_LEN] = 0;
 		    csr_len = EST_CSRATTRS_POP_LEN;
 		    return (est_send_csrattr_data(ctx, csr_data, csr_len, http_ctx));
@@ -1331,328 +1327,13 @@ static int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx, SSL *ssl, char *p
 	if (!csr_data) {
             return (EST_ERR_MALLOC);
         }
-        strcpy_s(csr_data, ctx->server_csrattrs_len + 1, (char *)ctx->server_csrattrs);
+        strncpy_s(csr_data, ctx->server_csrattrs_len + 1, 
+		  (char *)ctx->server_csrattrs, ctx->server_csrattrs_len);
 	csr_data[ctx->server_csrattrs_len] = 0;
 	csr_len = ctx->server_csrattrs_len;
     }
     return (est_send_csrattr_data(ctx, csr_data, csr_len, http_ctx));
 }
-
-#if ENABLE_BRSKI
-/*
- * This function is used by the server to process an incoming
- * voucher request
- */
-static EST_ERROR est_brski_handle_voucher_req (EST_CTX *ctx, void *http_ctx, SSL *ssl,
-                                               const char *ct, char *body, int body_len,
-                                               char *path_seg)
-{
-    EST_BRSKI_CALLBACK_RC rv;
-    char http_hdr[EST_HTTP_HDR_MAX];
-    int hdrlen;
-    X509 *peer_cert = NULL;
-    char *voucher = NULL;
-    int voucher_len = 0;
-
-    if (!ctx->est_brski_voucher_req_cb) {
-	EST_LOG_ERR("Null voucher request callback");
-        return (EST_ERR_NULL_CALLBACK);
-    }
-
-    /*
-     * Make sure the client has sent the correct content type for a voucher request
-     */
-    if ((strncmp(ct, EST_BRSKI_CT_VREQ_SIGNED, sizeof(EST_BRSKI_CT_VREQ_SIGNED))) &&
-        (strncmp(ct, EST_BRSKI_CT_VREQ, sizeof(EST_BRSKI_CT_VREQ)))) {
-	EST_LOG_ERR("Voucher request contains incorrect Content Type");
-        return (EST_ERR_BAD_CONTENT_TYPE);
-    }
-
-    /*
-     * Authenticate the client
-     */
-    switch (est_enroll_auth(ctx, http_ctx, ssl, path_seg, 0)) {
-    case EST_HTTP_AUTH:
-    case EST_SRP_AUTH:
-    case EST_CERT_AUTH:
-	/*
-	 * this means the user was authorized, either through
-	 * HTTP authoriztion or certificate authorization
-	 */
-        break;
-    case EST_HTTP_AUTH_PENDING:
-        return (EST_ERR_AUTH_PENDING);
-        break;
-    case EST_UNAUTHORIZED:
-    default:
-        return (EST_ERR_AUTH_FAIL);
-        break;
-    }
-
-    /*
-     * Get the peer certificate if available.  This
-     * identifies the client. The CA may desire
-     * this information.
-     */
-    peer_cert = SSL_get_peer_certificate(ssl);
-    if (peer_cert == NULL) {
-	EST_LOG_WARN("No Client certifcate provided");
-    }    
-
-    /* body now points to the voucher request, pass this to the application's
-     * voucher request callback
-     */
-    rv = ctx->est_brski_voucher_req_cb(body, body_len, &voucher, &voucher_len,
-                                       peer_cert);
-    
-    /*
-     * Peer cert is no longer needed, delete it if we have one
-     */
-    if (peer_cert) {
-	X509_free(peer_cert);
-    }
-
-    if (rv == EST_BRSKI_CB_SUCCESS && voucher_len > 0) {
-        /*
-         * Send HTTP header
-         */
-        snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
-                 EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
-        hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
-                 EST_BRSKI_CT_VRSP, EST_HTTP_HDR_EOL);
-        hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CE,
-                 EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL);
-        hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
-                 voucher_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
-        if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
-            free(voucher);
-            return (EST_ERR_HTTP_WRITE);
-        }
-        /*
-         * Send the signed PKCS7 certificate in the body
-         */
-        if (!mg_write(http_ctx, voucher, voucher_len)) {
-            free(voucher);
-            ossl_dump_ssl_errors();            
-            return (EST_ERR_HTTP_WRITE);
-        }
-    } else if (rv == EST_BRSKI_CB_RETRY) {
-
-        EST_LOG_ERR("EST server: BRSKI: Registrar application layer indicates that a retry-after is required");
-        /*
-         * The registrar did not provide the voucher at this time, but instead
-         * indicated that a retry-after should be sent in response.  This may
-         * occur if the application layer registrar logic cannot provide the
-         * voucher within a set time frame.  Send the HTTP retry response to
-         * the client.
-         */
-        if (EST_ERR_NONE != est_server_send_http_retry_after(ctx, http_ctx, ctx->brski_retry_period)) { 
-            return (EST_ERR_HTTP_WRITE);
-        }
-        
-    } else {
-        if (rv == EST_BRSKI_CB_INVALID_PARAMETER) {
-            /*
-             * Application claims we sent a bad parameter.
-             */
-            EST_LOG_ERR("Invalid parameter on get voucher callback");
-        }
-        if (voucher) {
-            free(voucher);
-        }   
-        return (EST_ERR_CA_ENROLL_FAIL);
-    }
-    if (voucher) {
-        free(voucher);
-    }
-    return (EST_ERR_NONE);
-}
-
-/*
- * This function is used by the server to process an incoming
- * voucher status
- */
-static EST_ERROR est_brski_handle_voucher_status (EST_CTX *ctx, void *http_ctx, SSL *ssl,
-                                                  const char *ct, char *body, int body_len,
-                                                  char *path_seg)
-{
-    EST_BRSKI_CALLBACK_RC rv;
-    char http_hdr[EST_HTTP_HDR_MAX];
-    X509 *peer_cert;
-
-    if (!ctx->est_brski_voucher_status_cb) {
-	EST_LOG_ERR("Null voucher status callback");
-        return (EST_ERR_NULL_CALLBACK);
-    }
-
-    /*
-     * Make sure the client has sent the correct content type for a voucher request
-     */
-    if (strncmp(ct, EST_BRSKI_CT_STATUS, sizeof(EST_BRSKI_CT_STATUS))) {
-	EST_LOG_ERR("Voucher request contains incorrect Content Type");
-        return (EST_ERR_BAD_CONTENT_TYPE);
-    }
-
-    /*
-     * Authenticate the client
-     */
-    switch (est_enroll_auth(ctx, http_ctx, ssl, path_seg, 0)) {
-    case EST_HTTP_AUTH:
-    case EST_SRP_AUTH:
-    case EST_CERT_AUTH:
-	/*
-	 * this means the user was authorized, either through
-	 * HTTP authoriztion or certificate authorization
-	 */
-        break;
-    case EST_HTTP_AUTH_PENDING:
-        return (EST_ERR_AUTH_PENDING);
-        break;
-    case EST_UNAUTHORIZED:
-    default:
-        return (EST_ERR_AUTH_FAIL);
-        break;
-    }
-
-    /*
-     * Get the peer certificate if available.  This
-     * identifies the client. The CA may desire
-     * this information.
-     */
-    peer_cert = SSL_get_peer_certificate(ssl);
-    if (peer_cert == NULL) {
-	EST_LOG_WARN("No Client certifcate provided");
-    }
-    
-    /* body now points to the voucher status, pass this to the application's
-     * voucher status callback
-     */
-    rv = ctx->est_brski_voucher_status_cb(body, body_len, peer_cert);
-    
-    /*
-     * Peer cert is no longer needed, delete it if we have one
-     */
-    if (peer_cert) {
-	X509_free(peer_cert);
-    }
-
-    if (rv == EST_BRSKI_CB_SUCCESS) {
-        /*
-         * Send HTTP header
-         */
-        snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
-                 EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
-        if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
-            return (EST_ERR_HTTP_WRITE);
-        }
-    } else {
-        if (rv == EST_BRSKI_CB_INVALID_PARAMETER) {
-            /*
-             * Application claims we sent a bad parameter.
-             */
-            EST_LOG_ERR("Invalid parameter on get voucher callback");
-        }
-        return (EST_ERR_CA_ENROLL_FAIL);
-    }
-    return (EST_ERR_NONE);
-}
-
-/*
- * PDB NOTE:  Once testing is about complete, if this is still effectviely
- * Identical to voucher_status then merge them and pass in the op code
- *
- * This function is used by the server to process an incoming
- * enroll status
- */
-static EST_ERROR est_brski_handle_enroll_status (EST_CTX *ctx, void *http_ctx, SSL *ssl,
-                                                 const char *ct, char *body, int body_len,
-                                                 char *path_seg)
-{
-    EST_BRSKI_CALLBACK_RC rv;
-    char http_hdr[EST_HTTP_HDR_MAX];
-    X509 *peer_cert;
-
-    if (!ctx->est_brski_enroll_status_cb) {
-	EST_LOG_ERR("Null enroll status callback");
-        return (EST_ERR_NULL_CALLBACK);
-    }
-
-    /*
-     * Make sure the client has sent the correct content type for a voucher request
-     */
-    if (strncmp(ct, EST_BRSKI_CT_STATUS, sizeof(EST_BRSKI_CT_STATUS))) {
-	EST_LOG_ERR("Voucher request contains incorrect Content Type");
-        return (EST_ERR_BAD_CONTENT_TYPE);
-    }
-
-    /*
-     * Authenticate the client
-     */
-    switch (est_enroll_auth(ctx, http_ctx, ssl, path_seg, 0)) {
-    case EST_HTTP_AUTH:
-    case EST_SRP_AUTH:
-    case EST_CERT_AUTH:
-	/*
-	 * this means the user was authorized, either through
-	 * HTTP authoriztion or certificate authorization
-	 */
-        break;
-    case EST_HTTP_AUTH_PENDING:
-        return (EST_ERR_AUTH_PENDING);
-        break;
-    case EST_UNAUTHORIZED:
-    default:
-        return (EST_ERR_AUTH_FAIL);
-        break;
-    }
-
-    /*
-     * Get the peer certificate if available.  This
-     * identifies the client. The CA may desire
-     * this information.
-     */
-    peer_cert = SSL_get_peer_certificate(ssl);
-    if (peer_cert == NULL) {
-	EST_LOG_WARN("No Client certifcate provided");
-    }
-
-    /* body now points to the voucher status, pass this to the application's
-     * voucher status callback
-     */
-    rv = ctx->est_brski_enroll_status_cb(body, body_len, peer_cert);
-    
-    /*
-     * Peer cert is no longer needed, delete it if we have one
-     */
-    if (peer_cert) {
-	X509_free(peer_cert);
-    }
-
-    if (rv == EST_BRSKI_CB_SUCCESS) {
-        /*
-         * Send HTTP header
-         */
-        snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
-                 EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
-        if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
-            return (EST_ERR_HTTP_WRITE);
-        }
-    } else {
-        if (rv == EST_BRSKI_CB_INVALID_PARAMETER) {
-            /*
-             * Application claims we sent a bad parameter.
-             */
-            EST_LOG_ERR("EST server: BRSKI: Invalid parameter on get voucher callback");
-        }
-        return (EST_ERR_CA_ENROLL_FAIL);
-    }
-    return (EST_ERR_NONE);
-}
-#endif
-
 
 /*
  * This function should be called by the web server layer when
@@ -1851,96 +1532,15 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
             return (EST_ERR_WRONG_METHOD);
         }
 
-        ssl = (SSL*)mg_get_conn_ssl(http_ctx);
-        if (!ssl) {
-            est_send_http_error(ctx, http_ctx, EST_ERR_NO_SSL_CTX);
-            free(path_seg);
-            path_seg = NULL;
-            return (EST_ERR_NO_SSL_CTX);
-        }        
-        
-        rc = est_handle_csr_attrs(ctx, http_ctx, ssl, path_seg);
+        rc = est_handle_csr_attrs(ctx, http_ctx, path_seg);
 	if (rc != EST_ERR_NONE) {
             est_send_http_error(ctx, http_ctx, rc); 
             free(path_seg);
             path_seg = NULL;
             return (rc);
         }
-
     }
-#if ENABLE_BRSKI
-    /*
-     * voucher request, voucher status, enroll status
-     */
-    else if (operation == EST_OP_BRSKI_REQ_VOUCHER    ||
-             operation == EST_OP_BRSKI_VOUCHER_STATUS ||
-             operation == EST_OP_BRSKI_ENROLL_STATUS) {
-        /* POST is referenced in draft so make sure it's POST */
-        if (strncmp(method, "POST", 4)) {
-            EST_LOG_WARN("Incoming HTTP request used wrong method\n");
-            est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
-            free(path_seg);
-            path_seg = NULL;
-            return (EST_ERR_WRONG_METHOD);
-        }
-	if (!ct) {
-            EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
-            est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
-            free(path_seg);
-            path_seg = NULL;
-	    return (EST_ERR_BAD_CONTENT_TYPE); 
-	}
-        /*
-         * Get the SSL context, which is required for authenticating
-         * the client.
-         */
-        ssl = (SSL*)mg_get_conn_ssl(http_ctx);
-        if (!ssl) {
-            est_send_http_error(ctx, http_ctx, EST_ERR_NO_SSL_CTX);
-            free(path_seg);
-            path_seg = NULL;
-            return (EST_ERR_NO_SSL_CTX);
-        }
 
-        switch (operation) {
-        case EST_OP_BRSKI_REQ_VOUCHER: 
-            rc = est_brski_handle_voucher_req(ctx, http_ctx, ssl, ct,
-                                              body, body_len,
-                                              path_seg);
-            break;
-        case EST_OP_BRSKI_VOUCHER_STATUS:
-            rc = est_brski_handle_voucher_status(ctx, http_ctx, ssl, ct,
-                                                 body, body_len,
-                                                 path_seg);
-            break;
-        case EST_OP_BRSKI_ENROLL_STATUS:
-            rc = est_brski_handle_enroll_status(ctx, http_ctx, ssl, ct,
-                                                body, body_len,
-                                                path_seg);
-            break;
-        default:
-            /*
-             * We're here because operation was one of the above three, so
-             * this should never happen.
-             */
-            EST_LOG_WARN("BRSKI request processing, invalid path\n");
-            rc = EST_ERR_HTTP_NOT_FOUND;
-        }
-        
-        if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
-            EST_LOG_WARN("Voucher request failed with rc=%d (%s)\n", 
-		         rc, EST_ERR_NUM_TO_STR(rc));
-	    if (rc == EST_ERR_AUTH_FAIL) {
-		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
-	    } else {
-		est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
-	    }
-            free(path_seg);
-            path_seg = NULL;
-            return rc;
-        }
-    }
-#endif // BRSKI
     /*
      * Send a 404 error if the URI didn't match 
      */
@@ -2116,15 +1716,15 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
     ctx->retry_period = EST_RETRY_PERIOD_DEF;
     ctx->require_http_auth = HTTP_AUTH_REQUIRED;
     ctx->server_read_timeout = EST_SSL_READ_TIMEOUT_DEF;
-    
-    ctx->brski_retry_period = EST_BRSKI_RETRY_PERIOD_DEF;
+
     /*
      * Load the CA certificates into local memory and retain
      * for future use.  This will be used for /cacerts requests.
      * They are optional parameters.  The alternative is for the
-     * app layer to provide a callback and return them on the fly.
+     * app layer to provide callback and return them on the fly.
      */
-    if (cacerts_resp_chain) {   
+    if (cacerts_resp_chain) 
+    {   
         if (est_load_ca_certs(ctx, cacerts_resp_chain, cacerts_resp_chain_len)) {
             EST_LOG_ERR("Failed to load CA certificates response buffer");
             free(ctx);
@@ -2137,7 +1737,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
         return NULL;
     }
 
-    strcpy_s(ctx->realm, MAX_REALM, http_realm);
+    strncpy_s(ctx->realm, MAX_REALM, http_realm, MAX_REALM);
     ctx->server_cert = tls_id_cert;
     ctx->server_priv_key = tls_id_key;
     ctx->auth_mode = AUTH_BASIC;
@@ -2289,7 +1889,7 @@ EST_ERROR est_set_ca_reenroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10,
  
     @return EST_ERROR.
  */
-EST_ERROR est_set_csr_cb (EST_CTX *ctx, unsigned char *(*cb)(int*csr_len, char *path_seg, X509 *peer_cert, void *ex_data))
+EST_ERROR est_set_csr_cb (EST_CTX *ctx, unsigned char *(*cb)(int*csr_len, char *path_seg, void *ex_data))
 {
     if (!ctx) {
 	EST_LOG_ERR("Null context");
@@ -2734,7 +2334,7 @@ EST_ERROR est_server_init_csrattrs (EST_CTX *ctx, char *csrattrs, int csrattrs_l
     }
     ctx->server_csrattrs_len = csrattrs_len;
 
-    strcpy_s((char *)ctx->server_csrattrs, csrattrs_len + 1, csrattrs);
+    strncpy_s((char *)ctx->server_csrattrs, csrattrs_len + 1, csrattrs, csrattrs_len);
     ctx->server_csrattrs[csrattrs_len] = 0;
     if (csrattrs_data_pop) {
       free(csrattrs_data_pop);
@@ -2813,147 +2413,5 @@ EST_ERROR est_server_set_read_timeout (EST_CTX *ctx, int timeout)
     }
         
     ctx->server_read_timeout = timeout;
-    return (EST_ERR_NONE);
-}
-
-
-/*! @brief est_set_brski_voucher_req_cb() is used by an application to install
-    a handler for processing incoming BRSKI client voucher requests.  
- 
-    @param ctx Pointer to the EST context
-    @param cb Function address of the handler
-
-    This function must be called prior to starting the EST server.  The
-    callback function must be defined to be of the brski_voucher_req_cb
-    function prototype.
-
-    This function is called by libEST when in server mode and receives
-    a BRSKI /requestvoucher request.  The callback function will be
-    passed the JSON based request from the BRSKI client
-    
-    @return EST_ERROR_NONE on success, or EST based error
- */
-EST_ERROR est_set_brski_voucher_req_cb (EST_CTX *ctx, brski_voucher_req_cb cb)
-{
-    if (!ctx) {
-	EST_LOG_ERR("Null context");
-        return (EST_ERR_NO_CTX);
-    }
-
-    if (cb == NULL) {
-        EST_LOG_ERR("EST Server: BRSKI: voucher_req_cb is NULL");
-        return EST_ERR_INVALID_PARAMETERS;
-    }    
-    
-    ctx->est_brski_voucher_req_cb = cb;
-
-    return (EST_ERR_NONE);
-}
-
-
-/*! @brief est_set_brski_voucher_status_cb() is used by an application to install
-    a handler for processing incoming BRSKI client voucher status indications.  
- 
-    @param ctx Pointer to the EST context
-    @param cb Function address of the handler
-
-    This function must be called prior to starting the EST server.  The
-    callback function must be defined to be of the brski_voucher_status_cb
-    function prototype.
-
-    This function is called by libEST when in server mode and receives
-    a BRSKI /voucher_status request.  The callback function will be
-    passed the JSON based response from the BRSKI client
-    
-    @return EST_ERROR_NONE on success, or EST based error
- */
-EST_ERROR est_set_brski_voucher_status_cb (EST_CTX *ctx, brski_voucher_status_cb cb)
-{
-    if (!ctx) {
-	EST_LOG_ERR("Null context");
-        return (EST_ERR_NO_CTX);
-    }
-
-    if (cb == NULL) {
-        EST_LOG_ERR("EST Server: BRSKI: voucher_status_cb is NULL");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-    
-    ctx->est_brski_voucher_status_cb = cb;
-
-    return (EST_ERR_NONE);
-}
-
-
-/*! @brief est_set_brski_enroll_status_cb() is used by an application to install
-    a handler for processing incoming BRSKI client certificate status indications.  
- 
-    @param ctx Pointer to the EST context
-    @param cb Function address of the handler
-
-    This function must be called prior to starting the EST server.  The
-    callback function must be defined to be of the brski_enroll_status_cb
-    function prototype.
-
-    This function is called by libEST when in server mode and receives
-    a BRSKI /enrollstatus primitive.  The callback function will be
-    passed the JSON based status from the BRSKI client
-    
-    @return EST_ERROR_NONE on success, or EST based error
- */
-EST_ERROR est_set_brski_enroll_status_cb (EST_CTX *ctx, brski_enroll_status_cb cb)
-{
-    if (!ctx) {
-	EST_LOG_ERR("Null context");
-        return (EST_ERR_NO_CTX);
-    }
-
-    if (cb == NULL) {
-        EST_LOG_ERR("EST Server: BRSKI: enroll_status_cb is NULL");
-        return EST_ERR_INVALID_PARAMETERS;
-    }        
-
-    ctx->est_brski_enroll_status_cb = cb;
-
-    return (EST_ERR_NONE);
-}
-
-
-/*! @brief est_server_set_brski_retry_period() is used by an application to
-    change the default retry-after period sent to the BRSKI pledge when the
-    registrar is not able to immediately provide the voucher.  This
-    retry-after value notifies the client how long to wait before attempting
-    the voucher request operation again to see if the registrar is ready to
-    respond with a voucher.
- 
-    @param ctx Pointer to the EST context
-    @param seconds Number of seconds the server will use in the
-           retry-after response.
-
-    This function may be called at any time after a context has
-    been created.   
- 
-    @return EST_ERROR.
- */
-EST_ERROR est_server_set_brski_retry_period (EST_CTX *ctx, int seconds)
-{
-    if (!ctx) {
-        EST_LOG_ERR("Null context");
-        return (EST_ERR_NO_CTX);
-    }
-
-    if (seconds > EST_BRSKI_RETRY_PERIOD_MAX) {
-        EST_LOG_ERR("Maximum retry-after period is %d seconds",
-                EST_BRSKI_RETRY_PERIOD_MAX);
-        return (EST_ERR_INVALID_PARAMETERS);
-    }
-
-    if (seconds < EST_BRSKI_RETRY_PERIOD_MIN) {
-        EST_LOG_ERR("Minimum retry-after period is %d seconds",
-                EST_BRSKI_RETRY_PERIOD_MIN);
-        return (EST_ERR_INVALID_PARAMETERS);
-    }
-
-    ctx->brski_retry_period = seconds;
     return (EST_ERR_NONE);
 }

@@ -35,7 +35,6 @@ extern int us1005_add_suite(void);
 extern int us1883_add_suite(void);
 extern int us1060c_add_suite(void);
 extern int us3496_add_suite(void);
-extern int us3646_add_suite(void);
 extern int us748_add_suite(void);
 extern int us893_add_suite(void);
 extern int us894_add_suite(void);
@@ -52,8 +51,6 @@ extern int us2174_add_suite(void);
 extern int us3512_add_suite(void);
 extern int us3612_add_suite(void);
 extern int us4020_add_suite(void);
-extern int us4778_add_suite(void);
-extern int us4784_add_suite(void);
 #if (DISABLE_SUITE != 0)
 extern int us1060_add_suite(void);
 #endif
@@ -316,30 +313,9 @@ int main(int argc, char *argv[]) {
     }
 #endif
 #ifdef ENABLE_ALL_SUITES
-    rv = us3646_add_suite();
-    if (rv != CUE_SUCCESS) {
-        printf("\nFailed to add test suite for US3646 (%d)", rv);
-        exit(1);
-    }
-#endif
-#ifdef ENABLE_ALL_SUITES
     rv = us4020_add_suite();
     if (rv != CUE_SUCCESS) {
         printf("\nFailed to add test suite for US4020 (%d)", rv);
-        exit(1);
-    }
-#endif
-#ifdef ENABLE_ALL_SUITES
-    rv = us4778_add_suite();
-    if (rv != CUE_SUCCESS) {
-        printf("\nFailed to add test suite for US4778 (%d)", rv);
-        exit(1);
-    }
-#endif
-#ifdef ENABLE_ALL_SUITES
-    rv = us4784_add_suite();
-    if (rv != CUE_SUCCESS) {
-        printf("\nFailed to add test suite for US4784 (%d)", rv);
         exit(1);
     }
 #endif
@@ -385,4 +361,5 @@ int main(int argc, char *argv[]) {
     printf("\nlibcunit not installed, unit test are not enabled\n");
 #endif
 }
+
 

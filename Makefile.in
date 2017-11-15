@@ -157,9 +157,7 @@ am__define_uniq_tagged_files = \
 ETAGS = etags
 CTAGS = ctags
 CSCOPE = cscope
-DIST_SUBDIRS = safe_c_stub src java/jni example/client \
-	example/client-simple example/server example/proxy \
-	example/client-brski
+DIST_SUBDIRS = $(SUBDIRS)
 am__DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/version.in \
 	$(top_srcdir)/config/compile $(top_srcdir)/config/config.guess \
 	$(top_srcdir)/config/config.sub \
@@ -334,9 +332,8 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 ACLOCAL_AMFLAGS = -I m4
-@ENABLE_CLIENT_ONLY_FALSE@SUBDIRS = safe_c_stub src java/jni example/client example/client-simple example/server example/proxy example/client-brski
-@ENABLE_CLIENT_ONLY_TRUE@SUBDIRS = safe_c_stub src java/jni example/client example/client-simple example/client-brski
-EXTRA_DIST = autogen.sh example/util LICENSE README.brski $(srcdir)/build.gradle $(srcdir)/example/build_examples.gradle
+SUBDIRS = safe_c_stub src java/jni example/client example/client-simple example/server example/proxy
+EXTRA_DIST = autogen.sh example/util LICENSE  $(srcdir)/build.gradle $(srcdir)/example/build_examples.gradle
 all: all-recursive
 
 .SUFFIXES:

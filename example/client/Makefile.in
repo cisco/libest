@@ -307,8 +307,7 @@ AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -I$(SSL_CFLAGS) -g
 @FREEBSD_TRUE@DL = 
 @DISABLE_PTHREAD_FALSE@PTHREAD = -lpthread
 @DISABLE_PTHREAD_TRUE@PTHREAD = 
-@ENABLE_CLIENT_ONLY_FALSE@estclient_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto
-@ENABLE_CLIENT_ONLY_TRUE@estclient_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest_client -lssl -lcrypto
+estclient_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto
 all: all-am
 
 .SUFFIXES:

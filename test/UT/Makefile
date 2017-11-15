@@ -24,11 +24,7 @@ SRC =  	runtest.c \
 	US3496/us3496.c \
 	US3512/us3512.c \
     US3612/us3612.c \
-	US3646/us3646.c \
 	US4020/us4020.c \
-	US4778/us4778.c \
-	US4784/us4784.c \
-	../util/cdets.c \
 	../util/curl_utils.c \
 	../util/test_utils.c \
 	../util/st_server.c \
@@ -61,25 +57,17 @@ endif
 INCLUDES = -I../../src/est -I../.. -I../util -I$(OPENSSL_DIR)/include -I$(CURL_DIR)/include -I$(CUNIT_DIR)/include -I$(URIPARSER_DIR)/include 
 
 # C++ compiler flags (-g -O2 -Wall)
-CCFLAGS = -Wall -g -DHAVE_CUNIT -DNO_SSL_DL $(CURL_CC_DEFINE) $(CFLAGS)
+CCFLAGS = -Wall -g -DHAVE_CUNIT -DNO_SSL_DL $(CURL_CC_DEFINE)
 
 # compiler
 CC = gcc
 
 # linker flags
-ifdef DISABLE_SAFEC
-    LDFLAGS += -lcunit -ldl -lpthread -lssl -lcrypto -lest -lcurl $(URIPARSER_LDFLAGS)
-else 
-    LDFLAGS += -lcunit -ldl -lpthread -lssl -lcrypto -lest -lciscosafec -lcurl $(URIPARSER_LDFLAGS)
-endif
-
+LDFLAGS += -lcunit -ldl -lpthread -lssl -lcrypto -lest -lcurl $(URIPARSER_LDFLAGS)
 
 # library paths
-ifdef DISABLE_SAFEC
-    LIBS = -L../../src/est/.libs -L$(URIPARSER_DIR)/lib -L$(OPENSSL_DIR)/lib -L$(CURL_DIR)/lib -L$(CUNIT_DIR)/lib $(LDFLAGS)
-else 
-    LIBS = -L../../src/est/.libs -L$(CISCOSAFEC_DIR)/lib -L$(URIPARSER_DIR)/lib -L$(OPENSSL_DIR)/lib -L$(CURL_DIR)/lib -L$(CUNIT_DIR)/lib $(LDFLAGS)
-endif
+LIBS = -L../../src/est/.libs -L$(URIPARSER_DIR)/lib -L$(OPENSSL_DIR)/lib -L$(CURL_DIR)/lib -L$(CUNIT_DIR)/lib $(LDFLAGS)
+
 
 
 
@@ -96,3 +84,4 @@ runtest: $(OBJ)
 clean:
 	rm -f $(OBJ)  
 	rm -f runtest
+

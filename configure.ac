@@ -1,10 +1,9 @@
 dnl Process this file with autoconf to produce a configure script.
-AC_INIT([libest],[2.1.0p.brski],[libest-dev])
+AC_INIT([libest],[2.1.0p],[libest-dev])
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(src/est/est.c)
 AC_CONFIG_SRCDIR(example/client/estclient.c)
 AC_CONFIG_SRCDIR(example/client-simple/estclient-simple.c)
-AC_CONFIG_SRCDIR(example/client-brski/estclient-brski.c)
 AC_CONFIG_SRCDIR(example/server/estserver.c)
 AC_CONFIG_SRCDIR(example/proxy/estproxy.c)
 AC_CONFIG_MACRO_DIR([m4])
@@ -30,8 +29,6 @@ AM_COND_IF([FREEBSD], AC_MSG_RESULT([FreeBSD is set]), AC_MSG_RESULT([FreeBSD no
 AM_COND_IF([FREEBSD], AC_MSG_RESULT([Skipping libdl check]),
 		    AC_CHECK_LIB([dl], [dlopen], [],
 				[AC_MSG_FAILURE([can't find libdl])]))
-
-
 AC_ARG_ENABLE([jni], 
 	       [AS_HELP_STRING([--enable-jni],
 			       [Enable support for JNI library])],
@@ -44,27 +41,6 @@ AM_COND_IF([ENABLE_JNI],
 	   AC_MSG_RESULT([JNI support is disabled]))
 AM_CONDITIONAL([JAVA_HOME_SET], [test ! -z "$JAVA_HOME"]) 
 
-AC_ARG_ENABLE([client-only], 
-	       [AS_HELP_STRING([--enable-client-only],
-			       [Enable the building of only the client mode of libEST])],
-		[clientonly_on=1],
-		[clientonly_on=0])
-AM_CONDITIONAL([ENABLE_CLIENT_ONLY], [test x$clientonly_on = x1])
-AM_COND_IF([ENABLE_CLIENT_ONLY], 
-	   AC_MSG_RESULT([Client only build enabled])
-	   AC_DEFINE([ENABLE_CLIENT_ONLY]),
-	   AC_MSG_RESULT([Client Only support is disabled]))
-
-AC_ARG_ENABLE([brski], 
-	       [AS_HELP_STRING([--enable-brski],
-			       [Enable support for brski bootstrap functionality])],
-		[brski_on=1],
-		[brski_on=0])
-AM_CONDITIONAL([ENABLE_BRSKI], [test x$brski_on = x1])
-AM_COND_IF([ENABLE_BRSKI], 
-	   AC_MSG_RESULT([BRSKI support enabled])
-	   AC_DEFINE([ENABLE_BRSKI]),
-	   AC_MSG_RESULT([BRSKI support is disabled]))
 
 AC_ARG_ENABLE([pthreads], 
 	       [AS_HELP_STRING([--disable-pthreads],
@@ -167,5 +143,5 @@ AC_PREFIX_DEFAULT([/usr/local/est])
 
 cp confdefs.h est_config.h
 
-AC_CONFIG_FILES([Makefile version safe_c_stub/Makefile safe_c_stub/lib/Makefile java/jni/Makefile src/Makefile src/est/Makefile example/client/Makefile example/client-simple/Makefile example/client-brski/Makefile example/server/Makefile example/proxy/Makefile])
+AC_CONFIG_FILES([Makefile version safe_c_stub/Makefile safe_c_stub/lib/Makefile java/jni/Makefile src/Makefile src/est/Makefile example/client/Makefile example/client-simple/Makefile example/server/Makefile example/proxy/Makefile])
 AC_OUTPUT

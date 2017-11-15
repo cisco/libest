@@ -37,7 +37,6 @@
 #include "est.h"
 #include "est_locl.h"
 #include "est_ossl_util.h"
-#include "jsmn.h"
 #include "safe_mem_lib.h"
 #include "safe_str_lib.h" 
 #include <openssl/x509v3.h>
@@ -48,10 +47,7 @@
 #ifdef WIN32
 #define close(socket) closesocket(socket)
 WSADATA wsaData;
-#define SLEEP(x) Sleep(x*1000)
-#else
-#define SLEEP(x) sleep(x)
-#endif
+#endif 
 
 #define SSL_EXDATA_INDEX_INVALID -1
 
@@ -635,7 +631,6 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
             EST_LOG_WARN("Certificate failed verification (%s)", current_cert->name);
             failed = 1;
         }
-        X509_STORE_CTX_cleanup(store_ctx);
     }
 
     /*
@@ -1039,7 +1034,7 @@ static void est_client_retrieve_credentials (EST_CTX *ctx, EST_HTTP_AUTH_MODE au
         EST_LOG_ERR("Userid provided is larger than the max of %d", MAX_UIDPWD);
         user[0] = '\0'; 
     } else {
-        if (EOK != strcpy_s(user, MAX_UIDPWD, auth_credentials.user)) {
+        if (EOK != strncpy_s(user, MAX_UIDPWD, auth_credentials.user, MAX_UIDPWD)) {
             EST_LOG_ERR("Invalid User ID provided");
         }
     }
@@ -1050,7 +1045,7 @@ static void est_client_retrieve_credentials (EST_CTX *ctx, EST_HTTP_AUTH_MODE au
         EST_LOG_ERR("Password provided is larger than the max of %d", MAX_UIDPWD);
         pwd[0] = '\0'; 
     } else {
-        if (EOK != strcpy_s(pwd, MAX_UIDPWD, auth_credentials.pwd)) {
+        if (EOK != strncpy_s(pwd, MAX_UIDPWD, auth_credentials.pwd, MAX_UIDPWD)) {
             EST_LOG_ERR("Invalid User password provided");
         }
     }
@@ -1156,10 +1151,10 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
             
             est_client_retrieve_credentials(ctx, ctx->auth_mode, user, pwd);
         } else {
-            if (EOK != strcpy_s(user, MAX_UIDPWD, ctx->userid)) {
+            if (EOK != strncpy_s(user, MAX_UIDPWD, ctx->userid, MAX_UIDPWD)) {
                 EST_LOG_ERR("Invalid User ID provided");
             }
-            if (EOK != strcpy_s(pwd, MAX_UIDPWD, ctx->password)) {
+            if (EOK != strncpy_s(pwd, MAX_UIDPWD, ctx->password, MAX_UIDPWD)) {
                 EST_LOG_ERR("Invalid User password provided");
             }
         }
@@ -1170,7 +1165,6 @@ static void est_client_add_auth_hdr (EST_CTX *ctx, char *hdr, char *uri)
             /* Force hdr to a null string */
             memzero_s(hdr, EST_HTTP_REQ_TOTAL_LEN);
             memzero_s(ctx->c_nonce, MAX_NONCE+1);
-
             memzero_s(user, MAX_UIDPWD+1);
             memzero_s(pwd, MAX_UIDPWD+1);
             break;
@@ -1280,11 +1274,6 @@ static int est_client_build_cacerts_header (EST_CTX *ctx, char *hdr)
         EST_LOG_WARN("CA Certs header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
     }
-
-    if(hdr_len > EST_HTTP_HDR_MAX) {
-        EST_LOG_ERR("CA Certs header is too big (%d) > (%d)", hdr_len, EST_HTTP_HDR_MAX);
-        return 0;
-    }
     
     return (hdr_len);
 }
@@ -1318,12 +1307,6 @@ static int est_client_build_csr_header (EST_CTX *ctx, char *hdr)
         EST_LOG_WARN("CSR attributes request header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
     }
-
-    if(hdr_len > EST_HTTP_HDR_MAX) {
-        EST_LOG_ERR("CSR attributes header is too big (%d) > (%d)", hdr_len, EST_HTTP_HDR_MAX);
-        return 0;
-    }
-
     return (hdr_len);
 }
 
@@ -1452,11 +1435,6 @@ static int est_client_build_enroll_header (EST_CTX *ctx, char *hdr, int pkcs10_l
         EST_LOG_WARN("Client enroll request header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
     }
-
-    if(hdr_len > EST_HTTP_HDR_MAX) {
-        EST_LOG_ERR("Client enroll request header is too big (%d) > (%d)", hdr_len, EST_HTTP_HDR_MAX);
-        return 0;
-    }
     
     return (hdr_len);
 }
@@ -1493,12 +1471,6 @@ static int est_client_build_reenroll_header (EST_CTX *ctx, char *hdr, int pkcs10
         EST_LOG_WARN("Client reenroll request header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
     }
-
-    if(hdr_len > EST_HTTP_HDR_MAX) {
-        EST_LOG_ERR("Client reenroll request header is too big (%d) > (%d)", hdr_len, EST_HTTP_HDR_MAX);
-        return 0;
-    }
-
     return (hdr_len);
 }
 
@@ -2492,10 +2464,6 @@ EST_ERROR est_client_connect (EST_CTX *ctx, SSL **ssl)
     }
 
     /*
-     * PDB TODO: Figure out why the following is needed and remove
-     * if not necessary
-     */
-    /*
      * Enable TCP keep-alive
      */
     rc = setsockopt(sock, SOL_SOCKET,SO_KEEPALIVE, (char *)&oval, sizeof(oval));
@@ -2647,12 +2615,6 @@ static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
     }
     
     hdr_len = est_client_build_cacerts_header(ctx, http_data);
-    if(hdr_len == 0) {
-        EST_LOG_ERR("Unable to build CA Cert header");
-        free(http_data);
-        return (EST_ERR_HTTP_CANNOT_BUILD_HEADER);
-    }
-
     /*
      * terminate the HTTP header
      */
@@ -2789,19 +2751,11 @@ EST_ERROR est_client_set_uid_pw (EST_CTX *ctx, const char *uid, const char *pwd)
      * if uid/pwd set, then we're doing basic/digest authentication
      */
     if (uid != NULL) {
-        if ( MAX_UIDPWD < strnlen_s(uid, MAX_UIDPWD+1)) {
-            EST_LOG_ERR("Invalid User ID provided, too long.");
-            return EST_ERR_INVALID_PARAMETERS;   
-        }
-        if (EOK != strcpy_s(ctx->userid, MAX_UIDPWD, uid)) {
+        if (EOK != strncpy_s(ctx->userid, MAX_UIDPWD, uid, MAX_UIDPWD)) {
             EST_LOG_ERR("Invalid User ID provided");
             return EST_ERR_INVALID_PARAMETERS;   
         }
-        if ( MAX_UIDPWD < strnlen_s(pwd, MAX_UIDPWD+1)) {
-            EST_LOG_ERR("Invalid Password provided, too long.");
-            return EST_ERR_INVALID_PARAMETERS;   
-        }
-        if (EOK != strcpy_s(ctx->password, MAX_UIDPWD, pwd)) {
+        if (EOK != strncpy_s(ctx->password, MAX_UIDPWD, pwd, MAX_UIDPWD)) {
             EST_LOG_ERR("Invalid Password provided");
             return EST_ERR_INVALID_PARAMETERS;
         }
@@ -2883,7 +2837,7 @@ EST_ERROR est_client_enroll_csr (EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EV
     }
 
     if (priv_key) {
-        rv = est_client_enroll_pkcs10(ctx, ssl, csr, pkcs7_len, priv_key, 0);
+      rv = est_client_enroll_pkcs10(ctx, ssl, csr, pkcs7_len, priv_key, 0);
     } else {
         rv = est_client_enroll_req(ctx, ssl, csr, pkcs7_len, 0);
     }
@@ -2904,10 +2858,10 @@ EST_ERROR est_client_enroll_csr (EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EV
         }
         
         /* Try one more time if we're doing Digest auth */
-        EST_LOG_INFO("HTTP Auth failed, trying again with HTTP Auth credentials");
+        EST_LOG_INFO("HTTP Auth failed, trying again with digest/basic parameters");
         rv = est_client_connect(ctx, &ssl);
         if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Connection failed on second attempt with HTTP Auth credentials");
+            EST_LOG_ERR("Connection failed on second attempt with basic/digest parameters");
             goto err;
         }
 	if (priv_key) {
@@ -2916,7 +2870,7 @@ EST_ERROR est_client_enroll_csr (EST_CTX *ctx, X509_REQ *csr, int *pkcs7_len, EV
 	  rv = est_client_enroll_req(ctx, ssl, csr, pkcs7_len, 0);
 	}
         if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Enroll failed on second attempt with HTTP Auth credentials");
+            EST_LOG_ERR("Enroll failed on second attempt during basic/digest authentication");
         }
         est_client_disconnect(ctx, &ssl);
     }
@@ -2997,15 +2951,15 @@ EST_ERROR est_client_enroll (EST_CTX *ctx, char *cn, int *pkcs7_len,
         }
         
         /* Try one more time if we're doing Digest auth */
-        EST_LOG_INFO("HTTP Auth failed, trying again with HTTP Auth credentials");
+        EST_LOG_INFO("HTTP Auth failed, trying again with basic/digest/token parameters");
         rv = est_client_connect(ctx, &ssl);
         if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Connection failed on second attempt with HTTP Auth credentials");
+            EST_LOG_ERR("Connection failed on second attempt with basic/digest/token parameters");
             goto err;
         }
         rv = est_client_enroll_cn(ctx, ssl, cn, pkcs7_len, new_public_key);
         if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Enroll failed on second attempt with HTTP Auth credentials");
+            EST_LOG_ERR("Enroll failed on second attempt during basic/digest authentication");
 
             /*
              * If we're attempting token mode for the second time, and
@@ -3317,15 +3271,15 @@ EST_ERROR est_client_reenroll (EST_CTX *ctx, X509 *cert, int *pkcs7_len, EVP_PKE
         }
         
         /* Try one more time if we're doing Digest auth */
-        EST_LOG_INFO("HTTP Auth failed, trying again with HTTP Auth credentials");
+        EST_LOG_INFO("HTTP Auth failed, trying again with digest/basic parameters");
         rv = est_client_connect(ctx, &ssl);
         if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Connection failed on second attempt with HTTP Auth credentials");
+            EST_LOG_ERR("Connection failed on second attempt with basic/digest parameters");
             goto err;
         }
         rv = est_client_enroll_pkcs10(ctx, ssl, req, pkcs7_len, priv_key, 1);
         if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Reenroll failed on second attempt with HTTP Auth credentials");
+            EST_LOG_ERR("Reenroll failed on second attempt during basic/digest authentication");
             
             /*
              * If we're attempting token mode for the second time, and
@@ -3350,7 +3304,9 @@ err:
     }
     X509_REQ_free(req);
 
-    return (rv);   
+    return (rv);
+
+    
 }
 
 /*! @brief est_client_copy_enrolled_cert() passes back the client certificate
@@ -3746,9 +3702,10 @@ EST_ERROR est_client_enable_srp (EST_CTX *ctx, int strength, char *uid, char *pw
     and digest based authentication
     @param pwd char buffer containing the passowrd to be used for basic
     and digest based authentication
-    @param client_cert char buffer containing the client application
+    @param client_cert_raw char buffer containing the client application
     certificate.
-    @param private_key Private key that can be used with the client cert
+    @param pkey_raw Private key that can be used with the client cert
+    @param pkey_len Length of buffer holding the private key
 
     This function allows an application to provide the information required
     for authenticating the EST client with the EST server.  Until this call is
@@ -4132,12 +4089,8 @@ EST_ERROR est_client_set_server (EST_CTX *ctx, const char *server, int port,
         return EST_ERR_INVALID_PORT_NUM;
     }
     
-    if (EST_MAX_SERVERNAME_LEN < strnlen_s(server, EST_MAX_SERVERNAME_LEN+1)) {
-        EST_LOG_ERR("Invalid server name provided, too long.");
-        return EST_ERR_INVALID_SERVER_NAME;
-    }
-    
-    if (EOK != strcpy_s(ctx->est_server, EST_MAX_SERVERNAME_LEN, server)) {
+    if (EOK != strncpy_s(ctx->est_server, EST_MAX_SERVERNAME_LEN, server,
+                         EST_MAX_SERVERNAME_LEN)) {
         return EST_ERR_INVALID_SERVER_NAME;
     }   
 
@@ -4254,7 +4207,8 @@ EST_ERROR est_client_set_proxy (EST_CTX *ctx, EST_CLIENT_PROXY_PROTO proxy_proto
     }
 
     ctx->proxy_server[0] = '\0';
-    if (EOK != strcpy_s(ctx->proxy_server, sizeof(ctx->proxy_server), proxy_server)) {
+    if (EOK != strncpy_s(ctx->proxy_server, sizeof(ctx->proxy_server),
+                         proxy_server, sizeof(ctx->proxy_server))) {
         return EST_ERR_INVALID_SERVER_NAME;
     }
 
@@ -4286,7 +4240,8 @@ EST_ERROR est_client_set_proxy (EST_CTX *ctx, EST_CLIENT_PROXY_PROTO proxy_proto
         }
 
         ctx->proxy_username[0] = '\0';
-        if (EOK != strcpy_s(ctx->proxy_username, sizeof(ctx->proxy_username), username)) {
+        if (EOK != strncpy_s(ctx->proxy_username, sizeof(ctx->proxy_username),
+                             username, sizeof(ctx->proxy_username))) {
             return EST_ERR_INVALID_PARAMETERS;
         }
 
@@ -4299,7 +4254,8 @@ EST_ERROR est_client_set_proxy (EST_CTX *ctx, EST_CLIENT_PROXY_PROTO proxy_proto
         }
 
         ctx->proxy_password[0] = '\0';
-        if (EOK != strcpy_s(ctx->proxy_password, sizeof(ctx->proxy_password), password)) {
+        if (EOK != strncpy_s(ctx->proxy_password, sizeof(ctx->proxy_password), password,
+                             sizeof(ctx->proxy_password))) {
             return EST_ERR_INVALID_PARAMETERS;
         }
 
@@ -4547,1463 +4503,3 @@ int est_client_get_last_http_status (EST_CTX *ctx)
 	return 0;
     }
 }
-
-#if ENABLE_BRSKI
-/*! @brief est_client_set_brski_mode() is called by the application layer to
-    configure and enable BRSKI mode. It must be called after est_client_init()
-    and prior to issuing any of the other BRSKI specific calls.
-    
-    @param ctx Pointer to EST context for a client session
-
-    @return EST_ERROR_NONE on success, or EST based error
-    
-    est_client_set_brski_mode error checks its input parameters and sets the
-    BRSKI mode flag in the EST context.
-*/    
-EST_ERROR est_client_set_brski_mode (EST_CTX *ctx)
-{
-    /*
-     * error check inputs
-     */
-    if (!ctx) {
-        return EST_ERR_NO_CTX;
-    }
-
-    if (!ctx->est_client_initialized) {
-        return EST_ERR_CLIENT_NOT_INITIALIZED;
-    }
-
-    if (ctx->brski_mode == BRSKI_ENABLED) {
-        EST_LOG_ERR("BRSKI mode already enabled");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-    
-    /*
-     * Enable BRSKI mode
-     */
-    ctx->brski_mode = BRSKI_ENABLED;
-    
-    return EST_ERR_NONE;
-}
-
-/*
- * This function is used to build the HTTP header for
- * the BRSKI voucher request flow.
- *
- * Parameters:
- *      ctx:        EST context
- *      hdr:        pointer to the buffer to hold the header
- *      sign_voucher: Flag indicating whether or not the voucher request
- *                    is signed
- *      req_buf_len length of the voucher req buffer that is ready for
- *                  transmission
- */
-static int est_client_brski_build_voucherreq_header (EST_CTX *ctx, char *hdr,
-                                                     int sign_voucher, int req_buf_len)
-{
-    int hdr_len;
-
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.1\r\n"
-             "User-Agent: %s\r\n"
-             "Connection: close\r\n"
-             "Host: %s:%d\r\n"
-             "Accept: */*\r\n"
-             "Content-Type: %s\r\n"
-             "Content-Length: %d\r\n",
-             EST_PATH_PREFIX,
-             (ctx->uri_path_segment?"/":""),
-             (ctx->uri_path_segment?ctx->uri_path_segment:""),
-             EST_BRSKI_GET_VOUCHER, 
-             EST_HTTP_HDR_EST_CLIENT,
-             ctx->est_server, ctx->est_port_num,
-             sign_voucher?EST_BRSKI_CT_VREQ_SIGNED:EST_BRSKI_CT_VREQ,
-             req_buf_len);
-    est_client_add_auth_hdr(ctx, hdr, EST_BRSKI_GET_VOUCHER_URI);
-    hdr_len = (int) strnlen_s(hdr, EST_HTTP_REQ_TOTAL_LEN);
-    if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
-        EST_LOG_WARN("BRSKI voucher request header took up the maximum amount in buffer (%d)",
-                     EST_HTTP_REQ_TOTAL_LEN);
-    }
-    
-    return (hdr_len);
-}
-
-
-/*
- * This function performs the work for the BRSKI get voucher request flow.
- * It builds the necessary headers, includes the voucher request as payload,
- * writes the message on the TLS connection, retrieves the response from the
- * server, and stores the voucher in the context.
- * 
- *
- * Parameters:
- *      ctx:        EST context
- *      ssl:        SSL context
- *      sign_voucher: indicate whether voucher has been signed.  This controls
- *                    the HTTP media type. 
- *      req_buf:    pointer to buffer containing the JSON based voucher request
- *      req_len:    voucher request buffer len
- */
-static int est_client_brski_send_voucher_request (EST_CTX *ctx, SSL *ssl,
-                                                  int sign_voucher,
-                                                  char *req_buf, int req_buf_len)
-{
-    char *http_data;
-    int  hdr_len;
-    int  write_size;
-    int  rv;
-    unsigned char *voucher_buf = NULL;
-    int  voucher_buf_len = 0;
-    errno_t safec_rc;
-
-    /*
-     * Build the HTTP request
-     * - allocate buffer: header, voucher req, terminating characters
-     * - build the header
-     * - data - voucher request
-     * - terminate it
-     */
-    http_data = malloc(EST_HTTP_REQ_TOTAL_LEN);
-    if (http_data == NULL) {
-        EST_LOG_ERR("Unable to allocate memory for http_data");
-        return EST_ERR_MALLOC;
-    }
-    /*
-     * build the HTTP headers
-     */
-    hdr_len = est_client_brski_build_voucherreq_header(ctx, http_data,
-                                                       sign_voucher,
-                                                       req_buf_len);
-    /*
-     * terminate the HTTP header
-     */
-    snprintf(http_data + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,"\r\n");
-    hdr_len += 2;
-
-    /*
-     * Build the HTTP body containing the voucher request
-     */
-    safec_rc = memcpy_s(http_data + hdr_len, EST_HTTP_REQ_DATA_MAX,
-             req_buf, req_buf_len);
-    if (safec_rc != EOK) {
-        EST_LOG_ERR("memcpy_s failed with 0x%xO", safec_rc);
-        free(http_data);
-        return (EST_ERR_SYSCALL);
-    }    
-    hdr_len += req_buf_len;
-
-    /*
-     * terminate the HTTP request
-     */
-    snprintf(http_data + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,"\r\n");
-    hdr_len += 2;
-    
-    /*
-     * Send the request to the server and wait for a response
-     */
-    ctx->last_http_status = 0;
-    write_size = SSL_write(ssl, http_data, hdr_len);
-    if (write_size < 0) {
-        EST_LOG_ERR("TLS write error");
-        free(http_data);
-        ossl_dump_ssl_errors();
-        rv = EST_ERR_SSL_WRITE;
-    } else {
-        EST_LOG_INFO("TLS wrote %d bytes, attempted %d bytes\n",
-                     write_size, hdr_len);
-
-        /*
-         * Try to get the response from the server
-         */
-        rv = est_io_get_response(ctx, ssl, EST_OP_BRSKI_REQ_VOUCHER,
-                                 &voucher_buf, &voucher_buf_len);
-        switch (rv) {
-        case EST_ERR_NONE:
-            
-            /*
-             * Make sure that even though we got a success return code, that we
-             * actually received something
-             */
-            if (voucher_buf_len == 0) {
-                EST_LOG_ERR("Retrieved voucher buf is zero bytes in length");
-                rv = EST_ERR_ZERO_LENGTH_BUF;
-                break;
-            }
-            if (voucher_buf_len+1 > EST_CA_MAX) {
-                EST_LOG_ERR("Retrieved voucher buf is larger than maximum allowed");
-                rv = EST_ERR_BUF_EXCEEDS_MAX_LEN;
-                break;
-            }
-            
-            /*
-             * Resize the buffer holding the retrieved voucher and link it
-             * into the ctx.  Get rid of the http hdr and any extra space on
-             * the back.  If for some reason there is one already linked
-             * to the context, get rid of it to make room for this new one.
-             */
-            if (ctx->brski_retrieved_voucher != NULL){
-                free(ctx->brski_retrieved_voucher);
-            }
-            ctx->brski_retrieved_voucher = malloc(voucher_buf_len+1);
-            if (ctx->brski_retrieved_voucher == NULL) {
-                
-                EST_LOG_ERR("Unable to allocate voucher buffer");
-                rv = EST_ERR_MALLOC;
-                break;
-            }
-            
-            ctx->brski_retrieved_voucher[voucher_buf_len] = '\0';
-            memcpy_s(ctx->brski_retrieved_voucher, voucher_buf_len+1, voucher_buf,
-                   voucher_buf_len);
-            ctx->brski_retrieved_voucher_len = voucher_buf_len;            
-            
-            EST_LOG_INFO("BRSKI Voucher buf: %s", ctx->brski_retrieved_voucher);
-            EST_LOG_INFO("BRSKI Voucher length: %d", ctx->brski_retrieved_voucher_len);
-            break;
-        case EST_ERR_AUTH_FAIL:
-            EST_LOG_ERR("HTTP auth failure");
-            break;
-        case EST_ERR_CA_ENROLL_RETRY:
-            EST_LOG_INFO("HTTP request failed with a RETRY AFTER resp");
-            break;
-        default:
-            EST_LOG_ERR("EST request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
-            break;
-        }
-    }
-    
-    if (http_data) {
-        free(http_data);
-    }
-    if (voucher_buf) {
-        free(voucher_buf);
-    }
-    
-    return (rv);
-}
-
-/*
- * Utility function to determine if a JSON token equals a specific value.
- */
-static int jsoneq(const char *json, jsmntok_t *tok, const char *s) {
-        if (tok->type == JSMN_STRING && (int) strlen(s) == tok->end - tok->start &&
-                        strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
-                return 0;
-        }
-        return -1;
-}
-
-static int retrieve_token_from_voucher (unsigned char *voucher,
-                                        unsigned char *token_value,
-                                        int max_token_value_size,
-                                        int parser_resp,
-                                        jsmntok_t *tok,
-                                        char *token)
-{
-    int i;
-    int token_found = 0;
-
-    for (i = 1; i < parser_resp; i++) {
-        if (jsoneq((const char *)voucher, &tok[i], token) == 0) {
-            token_found = 1;
-            if (tok[i+1].type == JSMN_UNDEFINED) {
-                EST_LOG_ERR("token \"%s\" is last in JSON with no assigned value\n", token);
-                *token_value = '\0';
-                break;
-            }
-            snprintf((char *)token_value, max_token_value_size, "%.*s",
-                     tok[i+1].end-tok[i+1].start, voucher+tok[i+1].start);
-            EST_LOG_INFO("Found token %s = %s\n", token, token_value);
-            break;
-        }
-    }
-    return (token_found);
-}
-
-/*
- * parse up the voucher, check the nonce to make sure it matches,
- * extract and return the cacert
- */
-static EST_ERROR brski_parse_voucher (EST_CTX *ctx, char *sent_nonce,
-                                      unsigned char *returned_cacert,
-                                      int *cacert_len)
-{    
-    jsmn_parser p;
-    jsmntok_t *tok;
-    size_t tokcount = 100;  /* PDB: Need to determine a final value for this */
-    int parser_resp;
-    int cacert_found = 0;
-    int nonce_found = 0;
-    int ser_num_found = 0;
-    unsigned char returned_nonce[EST_BRSKI_VOUCHER_REQ_NONCE_SIZE+2];
-    unsigned char returned_ser_num[EST_BRSKI_MAX_SER_NUM_LEN+2];
-    int returned_nonce_len;
-    int returned_ser_num_len;
-    int diff;
-    errno_t safec_rc;
-    EST_ERROR rv;
-    
-    *cacert_len = 0;
-    
-    /*
-     * PDB: BRSKI states that the voucher is to be in a CMS signed-data
-     * content type.  Verify the signature of this before parsing begins.
-     */
-    
-    /*
-     * Parse the returned voucher.
-     */
-    jsmn_init(&p);
-    tok = calloc(tokcount, sizeof(*tok));
-    if (tok == NULL) {
-        EST_LOG_ERR("calloc(): errno=%d\n", errno);
-        return (EST_ERR_MALLOC);
-    }
-    parser_resp = jsmn_parse(&p, (char *)ctx->brski_retrieved_voucher,
-                             (size_t)ctx->brski_retrieved_voucher_len,
-                             tok, tokcount);
-    if (parser_resp < 0) {
-        EST_LOG_ERR("Voucher parse failed. Parse error = %d ", parser_resp);
-        free(tok);
-        return (EST_ERR_MALLOC);
-    } else {
-        EST_LOG_INFO("Voucher parsed\n");
-    }
-
-    /*
-     * Verify the nonce if it exists
-     */
-    nonce_found = retrieve_token_from_voucher(ctx->brski_retrieved_voucher,
-                                              returned_nonce,
-                                              EST_BRSKI_VOUCHER_REQ_NONCE_SIZE+2,
-                                              parser_resp, tok, "nonce");
-    if (!nonce_found) {
-        EST_LOG_WARN("Nonce missing from voucher\n");
-    } else {
-
-        /*
-         * Make sure returned nonce is not larger than maximum supported size
-         */
-        returned_nonce_len = strnlen_s((char *)returned_nonce,
-                                       EST_BRSKI_VOUCHER_REQ_NONCE_SIZE+1);
-        if (returned_nonce_len > EST_BRSKI_VOUCHER_REQ_NONCE_SIZE) {
-            EST_LOG_ERR("Nonce in voucher larger than maximum length");
-            free(tok);
-            return (EST_ERR_CLIENT_BRSKI_NONCE_TOO_LARGE);
-        }
-            
-        /*
-         * Check that the returned nonce matches what we sent.  If it does
-         * then proceed with the parsing, else return an error.
-         */
-        safec_rc = memcmp_s(sent_nonce, EST_BRSKI_VOUCHER_REQ_NONCE_SIZE,
-                            returned_nonce ,EST_BRSKI_VOUCHER_REQ_NONCE_SIZE,
-                            &diff);
-        if (safec_rc != EOK) {
-            EST_LOG_ERR("memcmp_s error 0x%xO\n", safec_rc);
-            free(tok);
-            return (EST_ERR_SYSCALL);
-        }
-        if (diff) {
-            EST_LOG_ERR("Nonce in voucher did not match nonce in request");
-            free(tok);
-            return (EST_ERR_CLIENT_BRSKI_NONCE_MISMATCH);
-        }    
-    }
-    
-
-    /*
-     * In case the nonce is missing, check the serial number to prove that this
-     * voucher is really for us
-     */
-    ser_num_found = retrieve_token_from_voucher(ctx->brski_retrieved_voucher,
-                                                returned_ser_num,
-                                                EST_BRSKI_MAX_SER_NUM_LEN+2,
-                                                parser_resp, tok, "serial-number");
-    if (!ser_num_found) {
-        EST_LOG_ERR("Serial Number missing from voucher\n");
-        free(tok);
-        return (EST_ERR_CLIENT_BRSKI_SERIAL_NUM_MISSING);
-    } else {
-
-        /*
-         * Make sure returned serial number is not larger than maximum supported size
-         */
-        returned_ser_num_len = strnlen_s((char *)returned_ser_num,
-                                         EST_BRSKI_MAX_SER_NUM_LEN+1);
-        if (returned_ser_num_len > EST_BRSKI_MAX_SER_NUM_LEN) {
-            EST_LOG_ERR("Serial Number in voucher larger than maximum supported size");
-            free(tok);
-            return (EST_ERR_CLIENT_BRSKI_SERIAL_NUM_TOO_LARGE);
-        }
-            
-        /*
-         * Check that the returned serial number matches what we sent.  If it does
-         * then save away the CA certs
-         */
-        safec_rc = memcmp_s(ctx->client_cert_ser_num, returned_ser_num_len+1,
-                            returned_ser_num, returned_ser_num_len+1,
-                            &diff);
-        if (safec_rc != EOK) {
-            EST_LOG_ERR("memcmp_s error 0x%xO\n", safec_rc);
-            free(tok);
-            return (EST_ERR_SYSCALL);
-        }
-        if (diff) {
-            EST_LOG_ERR("Serial Number in voucher does not match serial number in client certificate");
-            free(tok);
-            return (EST_ERR_CLIENT_BRSKI_SERIAL_NUM_MISMATCH);
-        }
-    }
-    
-    /*
-     * Attempt to get the ca_cert from the voucher, store it in the ctx
-     */
-    cacert_found = retrieve_token_from_voucher(ctx->brski_retrieved_voucher,
-                                               returned_cacert,
-                                               EST_BRSKI_MAX_CACERT_LEN+1,
-                                               parser_resp, tok, "pinned-domain-cert");
-    if (!cacert_found) {
-        EST_LOG_ERR("CA certs missing from voucher");
-        free(tok);
-        return (EST_ERR_NO_CERT);
-    }
-    if (ctx->brski_retrieved_cacert != NULL){
-        free(ctx->brski_retrieved_cacert);
-    }
-    ctx->brski_retrieved_cacert_len = strnlen_s((const char *)returned_cacert,
-                                                EST_BRSKI_MAX_CACERT_LEN);
-    if (ctx->brski_retrieved_cacert) {
-        free(ctx->brski_retrieved_cacert);
-    }
-    ctx->brski_retrieved_cacert = malloc(ctx->brski_retrieved_cacert_len+1);
-    if (ctx->brski_retrieved_cacert == NULL) {
-        EST_LOG_ERR("Unable to allocate cacert buffer");
-        free(tok);
-        return (EST_ERR_MALLOC);
-    }
-    ctx->brski_retrieved_cacert[ctx->brski_retrieved_cacert_len] = '\0';
-    safec_rc = memcpy_s(ctx->brski_retrieved_cacert, ctx->brski_retrieved_cacert_len+1,
-                        returned_cacert, ctx->brski_retrieved_cacert_len);
-    if (safec_rc != EOK) {
-        EST_LOG_ERR("memcpy_s failed with 0x%xO", safec_rc);
-        free(ctx->brski_retrieved_cacert);
-        ctx->brski_retrieved_cacert = NULL;
-        ctx->brski_retrieved_cacert_len = 0;
-        free(tok);
-        return (EST_ERR_SYSCALL);
-    }
-    
-    /*
-     * Verify the returned CA cert that was in the voucher
-     */
-    rv = verify_cacert_resp(ctx, ctx->brski_retrieved_cacert,
-                            &ctx->brski_retrieved_cacert_len);
-    if (rv != EST_ERR_NONE) {
-        EST_LOG_ERR("Returned CA Cert in voucher was invalid. rv = %s", 
-            EST_ERR_NUM_TO_STR(rv));
-        free(ctx->brski_retrieved_cacert);
-        ctx->brski_retrieved_cacert = NULL;
-        ctx->brski_retrieved_cacert_len = 0;
-        free(tok);
-        return (rv);
-    }
-
-    EST_LOG_INFO("BRSKI Voucher cacert : %s", ctx->brski_retrieved_cacert);
-    EST_LOG_INFO("BRSKI Voucher cacert length: %d", ctx->brski_retrieved_cacert_len);
-    
-    free(tok);
-    return (EST_ERR_NONE);
-}
-
-
-/*
- * Utility function to take a list of certs in a BIO and
- * convert it to a stack of X509 records.
- */
-static int ossl_add_certs_from_BIO (STACK_OF(X509) *stack, BIO *in)
-{
-    int count=0;
-    int ret= -1;
-    STACK_OF(X509_INFO) *sk=NULL;
-    X509_INFO *xi;
-
-    /* This loads from a file, a stack of x509/crl/pkey sets */
-    sk=PEM_X509_INFO_read_bio(in,NULL,NULL,NULL);
-    if (sk == NULL) {
-        EST_LOG_ERR("EST Client: error reading certs from BIO");
-	goto end;
-    }
-
-    /* scan over it and pull out the CRL's */
-    while (sk_X509_INFO_num(sk)) {
-        xi=sk_X509_INFO_shift(sk);
-        if (xi->x509 != NULL) {
-            sk_X509_push(stack,xi->x509);
-            xi->x509=NULL;
-            count++;
-        }
-        X509_INFO_free(xi);
-    }
-
-    ret=count;
-end:
-    /* never need to OPENSSL_free x */
-    if (in != NULL) BIO_free(in);
-    if (sk != NULL) sk_X509_INFO_free(sk);
-    return(ret);
-}
-
-/*
- * This utility function takes a list of certificate that hav been written 
- * to a BIO, reads the BIO, and converts it to a pkcs7 certificate.
- * The input form is PEM encoded X509 certificates in a BIO.
- * The pkcs7 data is then written to a new BIO and returned to the
- * caller.
- */
-static BIO * ossl_get_certs_pkcs7(BIO *in)
-{
-    STACK_OF(X509) *cert_stack=NULL;
-    PKCS7_SIGNED *p7s = NULL;
-    PKCS7 *p7 = NULL;
-    BIO *out = NULL;
-    BIO *b64;
-    int rv = 0;
-
-    if ((p7=PKCS7_new()) == NULL) {
-        EST_LOG_ERR("EST Client: pkcs7_new failed");
-        goto end;
-    }
-    if ((p7s=PKCS7_SIGNED_new()) == NULL) { 
-        EST_LOG_ERR("EST Client: pkcs7_signed_new failed");
-        goto end;
-    }
-    p7->type=OBJ_nid2obj(NID_pkcs7_signed);
-    p7->d.sign=p7s;
-    p7s->contents->type=OBJ_nid2obj(NID_pkcs7_data);
-    if (!ASN1_INTEGER_set(p7s->version,1)) {
-        EST_LOG_ERR("EST Client: ASN1_integer_set failed");
-        goto end;
-    }
-
-    if ((cert_stack=sk_X509_new_null()) == NULL) {
-        EST_LOG_ERR("EST Client: X509 stack malloc failed");
-        goto end;
-    }
-    p7s->cert=cert_stack;
-
-    if (ossl_add_certs_from_BIO(cert_stack, in) < 0) {
-        EST_LOG_ERR("EST Client: error loading certificates");
-        ossl_dump_ssl_errors();        
-        goto end;
-    }
-
-    /* Output BASE64 encoded ASN.1 (DER) PKCS7 cert */
-    b64 = BIO_new(BIO_f_base64());
-    if (!b64) {
-        EST_LOG_ERR("EST Client: BIO_new failed");
-        goto end;
-    }
-    out = BIO_new(BIO_s_mem());
-    if (!out) {
-        BIO_free_all(b64);
-        b64 = NULL;
-        EST_LOG_ERR("EST Client: BIO_new failed");
-        goto end;
-    }
-    out = BIO_push(b64, out);
-    rv = i2d_PKCS7_bio(out, p7);
-    (void)BIO_flush(out);
-    if (!rv) {
-        EST_LOG_ERR("EST Client: error in PEM_write_bio_PKCS7");
-        ossl_dump_ssl_errors();        
-        BIO_free_all(out);
-        out = NULL;
-        goto end;
-    }
-  end:    
-    if (p7) PKCS7_free(p7);
-    return out;
-}
-
-
-/*
- * Call into OpenSSL to obtain the server's ID certificate.  It comes
- * from OpenSSL as a X509 structure and need to get it into PKCS7 and
- * base64 encoded.  Return this in in achar string.
- */
-EST_ERROR est_brski_get_server_cert (char *server_cert, SSL *ssl) 
-{
-    X509 *server_cert_x509;
-    char *server_cert_p7_b64 = NULL;
-    int server_cert_p7_b64_len = 0;
-    BIO *p7out;
-    BIO *server_cert_pem = NULL;
-
-    /*
-     * Obtain the registrar's certificate to use as the pinned-domain-cert and
-     * convert it to PKCS7 and base64 encode it.
-     */
-    server_cert_x509 = SSL_get_peer_certificate(ssl);
-    server_cert_pem = BIO_new(BIO_s_mem());
-    if (server_cert_pem == NULL) {
-        EST_LOG_ERR("PEM_write_bio_PKCS7 failed");
-        return (EST_ERR_LOAD_CACERTS);
-    }
-    PEM_write_bio_X509(server_cert_pem, server_cert_x509);
-    /*
-     * Done with the X509 struct.
-     */
-    X509_free(server_cert_x509);
-    
-    p7out = ossl_get_certs_pkcs7(server_cert_pem);
-    if (!p7out) {
-        EST_LOG_ERR("PEM_write_bio_PKCS7 failed");
-        BIO_free_all(server_cert_pem);
-        return (EST_ERR_LOAD_CACERTS);
-    }
-    server_cert_p7_b64_len = (int) BIO_get_mem_data(p7out, (char**)&server_cert_p7_b64);
-    if (server_cert_p7_b64_len <= 0) {
-        EST_LOG_ERR("Failed to copy PKCS7 data");
-        BIO_free_all(server_cert_pem);
-        BIO_free_all(p7out);
-        return (EST_ERR_LOAD_CACERTS);
-    }
-
-    memcpy_s(server_cert, EST_BRSKI_MAX_CACERT_LEN, server_cert_p7_b64, server_cert_p7_b64_len);
-
-    BIO_free_all(p7out);
-    return (EST_ERR_NONE);
-}
-
-/*
- * Take in the pieces needed to build the voucher request and also sign
- * it if needed.
- */
-static
-void est_brski_build_voucher_req (char *voucher_req, int *voucher_req_len,
-                                  char *nonce_str, char *time_str, char *assertion,
-                                  char *server_cert, int sign_voucher) 
-{
-    /*
-     * create the voucher request
-     */
-    snprintf(voucher_req, EST_BRSKI_MAX_VOUCHER_REQ_LEN, "{\r\n"
-             "\"ietf-voucher:voucher\": {\r\n"
-             "\"nonce\": \"%s\",\r\n"
-             "\"created-on\": \"%s\",\r\n"
-             "\"assertion\": \"%s\",\r\n"
-             "\"pinned-domain-cert\": \"%s\"\r\n"
-             "}}",nonce_str, time_str, assertion, server_cert);
-    *voucher_req_len = strnlen_s(voucher_req, EST_BRSKI_MAX_VOUCHER_REQ_LEN);
-
-    if (sign_voucher) {
-        /*
-         * PDB TODO: need to sign the voucher
-         *
-         * YANG-defined JSON document that has been signed using a PKCS#7
-         * structure.  Need to get the private key to use.  Likely use
-         * ctx->client_key = private_key;
-         *    this is the key used on the TLS connections so this would be the
-         *    private key of the MFG key pair.
-         */
-    }    
-}
-
-
-/*  est_client_brski_send_get_voucher() performs a BRSKI voucher request to
-    the EST server.
- 
-    ctx Pointer to an EST context.
-    cacert_len Pointer to an integer to hold the length of the cacert
-    that is returned in the voucher.
-    sign_voucher Integer indicating whether or not the voucher request is
-                        to be signed.
- 
-    @return EST_ERROR_NONE on success, or EST based error
-
-    est_client_brski_send_get_voucher() connects to the EST server, builds a BRSKI
-    request voucher and sends the request.  The returned voucher is parsed and
-    the domain CA cert within the voucher is extracted into a NULL terminated
-    string buffer and stored in the EST context.  The length of the CA cert is
-    returned to the calling application.  The application layer can then call
-    est_client_brski_copy_cacert() to retrieve the CA certificate.
- */
-static EST_ERROR est_client_brski_send_get_voucher (EST_CTX *ctx, int *cacert_len,
-                                                    int sign_voucher)
-{
-    EST_ERROR rv = EST_ERR_NONE;
-    SSL *ssl = NULL;
-    int voucher_req_len;
-    char voucher_req[EST_BRSKI_MAX_VOUCHER_REQ_LEN+1];
-    unsigned char nonce[EST_BRSKI_VOUCHER_REQ_NONCE_SIZE/2+1];
-    char nonce_str[EST_BRSKI_VOUCHER_REQ_NONCE_SIZE+1];
-    unsigned char returned_cacert[EST_BRSKI_MAX_CACERT_LEN];
-    time_t epoch_time;
-    char time_str[26];  /* PDB: Look for standard macro defining the length */
-    char *assertion = "";
-    struct tm brkn_down_time;
-    char *server_cert = NULL;        
-
-    /*
-     * Establish the connection.  We need the server cert from the handshake
-     * to insert into the voucher request.
-     */
-    rv = est_client_connect(ctx, &ssl);
-    if (rv != EST_ERR_NONE) {
-        if (ssl) {
-            SSL_shutdown(ssl);
-            SSL_free(ssl);
-        }        
-        return (rv);
-    }
-
-    /*
-     * Build the voucher request
-     * - nonce
-     * - time stamp
-     * - proximity assertion
-     * - server cert     
-     */
-    memset(voucher_req, 0, EST_BRSKI_MAX_VOUCHER_REQ_LEN+1);
-    memset(nonce, 0, EST_BRSKI_VOUCHER_REQ_NONCE_SIZE/2+1);
-    memset(nonce_str, 0, EST_BRSKI_VOUCHER_REQ_NONCE_SIZE+1);
-    
-    if (!RAND_bytes(nonce, EST_BRSKI_VOUCHER_REQ_NONCE_SIZE/2)) {
-        EST_LOG_ERR("Unable to obtain nonce value.");
-        return EST_ERR_SYSCALL;
-    }
-    est_hex_to_str(nonce_str, nonce, EST_BRSKI_VOUCHER_REQ_NONCE_SIZE/2);
-    epoch_time = time(NULL);
-    if (epoch_time != -1) {
-        gmtime_r(&epoch_time, &brkn_down_time);
-        strftime(time_str, 26, "%Y-%m-%dT%H:%M:%SZ", &brkn_down_time);
-    } else {
-        EST_LOG_ERR("Unable to obtain current time when creating voucher request");
-        return EST_ERR_SYSCALL;
-    }        
-    
-   /*
-     * Determine the proximity setting. This must be included if the
-     * server's ID cert is to be included.
-     */
-    assertion = "proximity";
-
-    server_cert = calloc(EST_BRSKI_MAX_CACERT_LEN+1, sizeof(char));
-    if (server_cert == NULL) {
-        EST_LOG_ERR("calloc(): errno=%d\n", errno);
-        return (EST_ERR_MALLOC);
-    }
-    
-    rv = est_brski_get_server_cert(server_cert, ssl);
-    if (rv != EST_ERR_NONE) {
-        EST_LOG_ERR("Failed to obtain server's certificate from TLS connection");
-        free(server_cert);
-        return (rv);
-    }    
-
-    est_brski_build_voucher_req(voucher_req, &voucher_req_len,
-                                nonce_str, time_str, assertion,
-                                server_cert, sign_voucher);
-    rv = est_client_brski_send_voucher_request(ctx, ssl, sign_voucher,
-                                               voucher_req, voucher_req_len);
-
-    est_client_disconnect(ctx, &ssl);
-
-    /*
-     * Handle the case where the server is requesting further authentication
-     */
-    if (rv == EST_ERR_AUTH_FAIL &&
-        (ctx->auth_mode == AUTH_DIGEST ||
-         ctx->auth_mode == AUTH_BASIC  ||
-         ctx->auth_mode == AUTH_TOKEN)) {
-
-        /*
-         * HTTPS digest mode requires the use of MD5.  Make sure we're not
-         * in FIPS mode and can use MD5
-         */
-        if (ctx->auth_mode == AUTH_DIGEST && (FIPS_mode())){
-            EST_LOG_ERR("HTTP digest auth not allowed while in FIPS mode");
-            rv = EST_ERR_BAD_MODE;
-            goto err;
-        }
-        
-        /* Try one more time if we're doing Digest auth */
-        EST_LOG_INFO("HTTP Auth failed, trying again with HTTP Auth credentials");
-        rv = est_client_connect(ctx, &ssl);
-        if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Connection failed on second attempt with HTTP Auth credentials");
-            goto err;
-        }
-
-        /*
-         * Go get the server cert again since this is new connection and registrar
-         * may have changed it from the first attempt.
-         */
-        rv = est_brski_get_server_cert(server_cert, ssl);
-        if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Failed to obtain server's certificate from TLS connection");
-            goto err;
-        }
-
-        est_brski_build_voucher_req(voucher_req, &voucher_req_len,
-                                    nonce_str, time_str, assertion,
-                                    server_cert, sign_voucher);
-        
-        rv = est_client_brski_send_voucher_request(ctx, ssl, sign_voucher,
-                                                   voucher_req, voucher_req_len);
-        if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Voucher request failed on second attempt with HTTP Auth credentials");
-        }
-        
-        est_client_disconnect(ctx, &ssl);
-    }
-
-    /*
-     * If there was an auth request from the server we've processed it and
-     * we're now looking at the subsequent voucher, OR, we didn't receive a
-     * auth request and we're ready to see if we got a valid response on the
-     * voucher request.
-     */
-    if (rv == EST_ERR_NONE) {
-        
-        /*
-         * Parse the voucher and extract the cacert and store it in the ctx
-         */
-        rv = brski_parse_voucher(ctx, nonce_str, &returned_cacert[0], cacert_len);
-        if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Unable to parse voucher. rv = %d(%s)", rv, EST_ERR_NUM_TO_STR(rv));
-        }
-    }
-
-    ctx->auth_mode = AUTH_NONE;
-  err:
-    if (ssl) {
-        SSL_shutdown(ssl);    
-        SSL_free(ssl);
-    }
-    if (server_cert) {
-        free(server_cert);
-    }
-    
-    return (rv);
-}
-
-
-/*! @brief est_client_brski_get_voucher() performs a BRSKI voucher request to
-     the EST server.
- 
-    @param ctx Pointer to an EST context.
-    @param cacert_len Pointer to an integer to hold the length of the cacert
-    that is returned in the voucher.
-    @param sign_voucher Integer indicating whether or not the voucher request is
-                        to be signed.
- 
-    @return EST_ERROR_NONE on success, or EST based error
-
-    est_client_brski_get_voucher() is the main entry point for sending a
-    voucher request and handles the higher level processing of sending a BRSKI
-    request voucher to the registrar, primarily the processing of a retry
-    response from the registrar.
- */
-EST_ERROR est_client_brski_get_voucher (EST_CTX *ctx, int *cacert_len,
-                                        int sign_voucher)
-{
-    EST_ERROR rv = EST_ERR_NONE;
-    int actual_retry_delay = 0;
-    char *ser_num_str = NULL;
-    int ser_num_len = 0;
-
-    if (!ctx) {
-        return (EST_ERR_NO_CTX);
-    }
-
-    if (!ctx->est_client_initialized) {
-        return EST_ERR_CLIENT_NOT_INITIALIZED;
-    }
-
-    if (ctx->brski_mode != BRSKI_ENABLED) {
-        EST_LOG_ERR("BRSKI mode not enabled or supported");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-    
-    if (cacert_len == NULL) {
-        EST_LOG_ERR("cacert_len is NULL");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-        
-    /*
-     * It's now time to connect with the Registrar, and this connection
-     * must use a certificate.  If one has not been provided, or the
-     * one that has been provided does not contain a serialNumber element in
-     * in the DN, then error out.
-     */
-    if (!ctx->client_cert) {
-        EST_LOG_ERR("No client MFG cert provided.");
-        return (EST_ERR_NO_CERT);
-    }
-
-    ser_num_str = est_find_ser_num_in_subj(ctx->client_cert);
-    if (ser_num_str == NULL) {
-        char *subj;
-
-        EST_LOG_ERR("Client MFG cert does not contain a serial number.");
-        
-        subj = X509_NAME_oneline(X509_get_subject_name(ctx->client_cert), NULL, 0);
-        EST_LOG_ERR("Client MFG cert subject: %s", subj);
-        OPENSSL_free(subj);
-        
-        return (EST_ERR_CLIENT_BRSKI_SERIAL_NUM_MISSING);        
-    }
-    ser_num_len = strnlen_s(ser_num_str, EST_BRSKI_MAX_SER_NUM_LEN+1);
-    if (ser_num_len > EST_BRSKI_MAX_SER_NUM_LEN) {
-        EST_LOG_ERR("Client MFG cert contains serial number that is too long.");
-        return (EST_ERR_CLIENT_BRSKI_SERIAL_NUM_TOO_LARGE);        
-    }
-
-    if (ctx->client_cert_ser_num) {
-        free(ctx->client_cert_ser_num);
-    }
-    ctx->client_cert_ser_num = calloc(ser_num_len+1, sizeof(char));
-    if (ctx->client_cert_ser_num == NULL) {
-        EST_LOG_ERR("calloc(): errno=%d\n", errno);
-        return (EST_ERR_MALLOC);
-    }
-    memcpy_s(ctx->client_cert_ser_num, ser_num_len,
-             ser_num_str, ser_num_len);    
-
-    /*
-     * Unlike an EST enroll, the processing of a retry-after response on a
-     * BRSKI voucher request needs to be handled by the library to ensure it
-     * meets the requirements of the standard.  The BRSKI spec states that the
-     * pledge must limit the retry time to no more than 60 seconds and to
-     * allow only one retry attempt to help prevent a DoS attack from a
-     * malicious Registrar.
-     *
-     * Perform the first attempt at sending the voucher request
-     */
-    rv = est_client_brski_send_get_voucher(ctx, cacert_len, sign_voucher);
-
-    /*
-     * If it resulted in a retry-after response, wait the appropriate amount
-     * of time and try again.
-     */
-    if (rv == EST_ERR_CA_ENROLL_RETRY) {
-        
-        if (ctx->retry_after_delay > EST_BRSKI_CLIENT_RETRY_MAX) {
-            EST_LOG_WARN("Retry attempt. Registrar indicated a delay greater than 60 seconds."
-                         "  Overriding to 60 seconds");
-            actual_retry_delay = EST_BRSKI_CLIENT_RETRY_MAX;
-        } else {
-            actual_retry_delay = ctx->retry_after_delay;
-        }
-        EST_LOG_INFO("Retry attempt. Delaying for %d seconds", actual_retry_delay);
-        SLEEP(actual_retry_delay);
-
-        /* Try one more time now that we've waited the retry time delay */
-        EST_LOG_INFO("Attempting retry after a retry-after delay.");
-
-        rv = est_client_brski_send_get_voucher(ctx, cacert_len, sign_voucher);
-        if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Voucher request failed on attempt after retry timeout delay");
-        }
-    }
-    
-    return (rv);
-}
-
-
-/*! @brief est_client_brski_copy_cacert() copies the previously retrieved
-    BRSKI based cacert to the application's buffer.
- 
-    @param ctx Pointer to the current EST context.
-    @param cacert Pointer to the buffer into which the retrieved BRSKI cacert
-    is to be copied. 
- 
-    @return EST_ERROR_NONE on success, or EST based error
-
-    est_client_brski_copy_cacert() copies the most recently retrieved BRSKI 
-    cacert from the EST server.  Once the cacert is copied
-    to the application's buffer pointed to by cacert it is removed from
-    the EST client context.
-
- */
-EST_ERROR est_client_brski_copy_cacert (EST_CTX *ctx, unsigned char *cacert)
-{
-    errno_t safec_rc;
-    
-    if (!ctx) {
-        return (EST_ERR_NO_CTX);
-    }
-
-    if (!ctx->est_client_initialized) {
-        return EST_ERR_CLIENT_NOT_INITIALIZED;
-    }
-
-    if (ctx->brski_mode != BRSKI_ENABLED) {
-        EST_LOG_ERR("BRSKI mode not enabled or supported");
-        return EST_ERR_INVALID_PARAMETERS;
-    }        
-
-    if (cacert == NULL) {
-        EST_LOG_ERR("cacert ptr is NULL");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-    
-    if (ctx->brski_retrieved_cacert == NULL) {
-        EST_LOG_ERR("No BRSKI cacert to copy");
-        return(EST_ERR_NO_CERT);
-    }
-
-    memzero_s(cacert, ctx->brski_retrieved_cacert_len);
-    safec_rc = memcpy_s(cacert, ctx->brski_retrieved_cacert_len,
-                       ctx->brski_retrieved_cacert,
-                       ctx->brski_retrieved_cacert_len);
-    if (safec_rc != EOK) {
-        EST_LOG_ERR("memcpy_s failed with 0x%xO", safec_rc);
-        return (EST_ERR_SYSCALL);
-    }    
-    memzero_s(ctx->brski_retrieved_cacert, ctx->brski_retrieved_cacert_len);
-
-    return (EST_ERR_NONE);
-}
-
-
-/*
- * This function is used to build the HTTP headers for
- * the BRSKI status indication flow.
- *
- * Parameters:
- *      ctx:        EST context
- *      hdr:        pointer to the buffer to hold the header
- *      req_buf_len:length fo the status indictation buffer that is ready for
- *                  transmission
- *      uri:        buffer containing which operation is to be performed.
- */
-static int est_client_brski_build_status_header (EST_CTX *ctx, char *hdr,
-                                                 int req_buf_len, char * uri)
-{
-    int hdr_len;
-    
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.1\r\n"
-             "User-Agent: %s\r\n"
-             "Connection: close\r\n"
-             "Host: %s:%d\r\n"
-             "Accept: */*\r\n"
-             "Content-Type: %s\r\n"
-             "Content-Length: %d\r\n",
-             EST_PATH_PREFIX,
-             (ctx->uri_path_segment?"/":""),
-             (ctx->uri_path_segment?ctx->uri_path_segment:""),
-             uri, 
-             EST_HTTP_HDR_EST_CLIENT,
-             ctx->est_server, ctx->est_port_num,
-             EST_BRSKI_CT_STATUS,
-             req_buf_len);
-    est_client_add_auth_hdr(ctx, hdr, EST_BRSKI_GET_VOUCHER_URI);
-    hdr_len = (int) strnlen_s(hdr, EST_HTTP_REQ_TOTAL_LEN);
-    if (hdr_len == EST_HTTP_REQ_TOTAL_LEN) {
-        EST_LOG_WARN("BRSKI voucher request header took up the maximum amount in buffer (%d)",
-                     EST_HTTP_REQ_TOTAL_LEN);
-    }
-    
-    return (hdr_len);
-}
-
-/*
- * This function does the work for the voucher status indication flow.
- *
- * Parameters:
- *      ctx:        EST context
- *      ssl:        SSL context
- *      status:     pointer to buffer containing the JSON status indication
- *      status_len: length of the status buffer
- *      opcode:     Indicates which of the two status operations to be performed.
- */
-static int send_status (EST_CTX *ctx, SSL *ssl, char *status, int status_len,
-                        EST_OPERATION opcode)
-{
-    char *http_data;
-    int  hdr_len;
-    int  write_size;
-    int  rv;
-    unsigned char *resp_buf;
-    int resp_buf_len;
-    char *uri;
-    errno_t safec_rc;
-    
-    /*
-     * Build the HTTP request
-     */
-    http_data = malloc(EST_HTTP_REQ_TOTAL_LEN);
-    if (http_data == NULL) {
-        EST_LOG_ERR("Unable to allocate memory for http_data");
-        return EST_ERR_MALLOC;
-    }
-
-    if (opcode == EST_OP_BRSKI_VOUCHER_STATUS) {
-        uri = EST_BRSKI_VOUCHER_STATUS;
-    } else if (opcode == EST_OP_BRSKI_ENROLL_STATUS){
-        uri = EST_BRSKI_ENROLL_STATUS;        
-    }    
-    hdr_len = est_client_brski_build_status_header(ctx, http_data, status_len, uri);
-    /*
-     * terminate the HTTP header
-     */
-    snprintf(http_data + hdr_len, EST_HTTP_REQ_TOTAL_LEN-hdr_len,"\r\n");
-    hdr_len += 2;
-
-    /*
-     * Build the HTTP body containing the status indication
-     */
-    safec_rc = memcpy_s(http_data + hdr_len, EST_HTTP_REQ_DATA_MAX,
-                        status, status_len);
-    if (safec_rc != EOK) {
-        EST_LOG_ERR("memcpy_s failed with 0x%xO", safec_rc);
-        free(http_data);
-        return (EST_ERR_SYSCALL);
-    }    
-    
-    hdr_len += status_len;
-
-    /*
-     * terminate the HTTP request
-     */
-    snprintf(http_data + hdr_len,EST_HTTP_REQ_TOTAL_LEN-hdr_len, "\r\n");
-    hdr_len += 2;
-    
-    /*
-     * Send the request to the server and wait for a response
-     */
-    ctx->last_http_status = 0;
-    write_size = SSL_write(ssl, http_data, hdr_len);
-    if (write_size < 0) {
-        EST_LOG_ERR("TLS write error");
-        ossl_dump_ssl_errors();
-        free(http_data);
-        rv = EST_ERR_SSL_WRITE;
-    } else {
-        EST_LOG_INFO("TLS wrote %d bytes, attempted %d bytes\n",
-                     write_size, hdr_len);
-        
-        /*
-         * Try to get the response from the server
-         */
-        rv = est_io_get_response(ctx, ssl, opcode, &resp_buf, &resp_buf_len);
-        
-        switch (rv) {
-        case EST_ERR_NONE:            
-            break;
-        case EST_ERR_AUTH_FAIL:
-            EST_LOG_ERR("HTTP auth failure");
-            break;
-        case EST_ERR_CA_ENROLL_RETRY:
-            EST_LOG_INFO("HTTP request failed with a RETRY AFTER resp");
-            break;
-        default:
-            EST_LOG_ERR("EST request failed: %d (%s)", rv, EST_ERR_NUM_TO_STR(rv));
-            break;
-        }
-    }
-    
-    if (http_data) {
-        free(http_data);
-    }
-    
-    return (rv);
-}
-
-
-/*! @brief est_client_brski_send_voucher_status() sends a BRSKI voucher status
-    indication to the EST server. 
- 
-    @param ctx Pointer to an EST context
-    @param status  Enum value defined in the enum EST_BRSKI_STATUS_VALUE
-    @param reason  NULL terminated string containing the reason.
- 
-    @return EST_ERROR_NONE on success, or EST based error
-
-    est_client_brski_send_voucher_status() implements the BRSKI
-    /voucher_status.  It connects to the EST server, builds the BRSKI voucher
-    status message, and sends the status message.  The HTTP status returned
-    from the EST server represents the status of the sending of this BRSKI
-    message.  The application can call est_client_get_last_http_status() to
-    obtain the HTTP status of this message.
-
- */
-EST_ERROR est_client_brski_send_voucher_status (EST_CTX *ctx, EST_BRSKI_STATUS_VALUE status,
-                                                char *reason)
-{
-    EST_ERROR rv = EST_ERR_NONE;
-    SSL *ssl = NULL;
-    int voucher_status_len;
-    char voucher_status[EST_BRSKI_MAX_STATUS_LEN];
-    char *status_str;
-
-    if (!ctx) {
-        return (EST_ERR_NO_CTX);
-    }
-
-    if (!ctx->est_client_initialized) {
-        return EST_ERR_CLIENT_NOT_INITIALIZED;
-    }
-
-    if (ctx->brski_mode != BRSKI_ENABLED) {
-        EST_LOG_ERR("BRSKI mode not enabled or supported");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-    
-    if (status == EST_BRSKI_STATUS_SUCCESS) {
-        status_str = "true";
-    } else if (status == EST_BRSKI_STATUS_FAIL) {
-        status_str = "false";
-    } else {
-        EST_LOG_ERR("BRSKI send voucher status not valid");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-
-    if (reason == NULL || *reason == '\n') {
-        EST_LOG_ERR("Reason buffer is NULL or is an empty string");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-
-    if (strnlen_s(reason, EST_BRSKI_MAX_REASON_LEN+1) > EST_BRSKI_MAX_REASON_LEN) {
-        EST_LOG_ERR("Reason buffer exceeds maximum");
-        return EST_ERR_INVALID_PARAMETERS;
-    }        
-
-    /*
-     * build up the voucher status buffer
-     */
-    snprintf(voucher_status, EST_BRSKI_MAX_STATUS_LEN,
-             "{\r\n"
-             "\"version\":\"%s\",\r\n"
-             "\"Status\":%s,\r\n"  /* no quotes to simulate a JSON boolean */
-             "\"Reason\":\"%s\"\r\n"
-             "}", BRSKI_VERSION, status_str, reason);
-    
-    voucher_status_len = strnlen_s(voucher_status, EST_BRSKI_MAX_STATUS_LEN+1);
-    if (voucher_status_len > EST_BRSKI_MAX_STATUS_LEN) {
-        EST_LOG_ERR("Status buffer too large");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-    
-    rv = est_client_connect(ctx, &ssl);
-    if (rv != EST_ERR_NONE) {
-        if (ssl) {
-            SSL_shutdown(ssl);
-            SSL_free(ssl);
-        }        
-        return (rv);
-    }
-
-    rv = send_status(ctx, ssl, voucher_status, voucher_status_len, EST_OP_BRSKI_VOUCHER_STATUS);
-    est_client_disconnect(ctx, &ssl);
-
-    /*
-     * Handle the case where the server is requesting further authentication
-     */
-    if (rv == EST_ERR_AUTH_FAIL &&
-        (ctx->auth_mode == AUTH_DIGEST ||
-         ctx->auth_mode == AUTH_BASIC  ||
-         ctx->auth_mode == AUTH_TOKEN)) {
-
-        /*
-         * HTTPS digest mode requires the use of MD5.  Make sure we're not
-         * in FIPS mode and can use MD5
-         */
-        if (ctx->auth_mode == AUTH_DIGEST && (FIPS_mode())){
-            EST_LOG_ERR("HTTP digest auth not allowed while in FIPS mode");
-            rv = EST_ERR_BAD_MODE;
-            goto err;
-        }
-        
-        /* Try one more time if we're doing Digest auth */
-        EST_LOG_INFO("HTTP Auth failed, trying again with HTTP Auth credentials");
-        rv = est_client_connect(ctx, &ssl);
-        if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Connection failed on second attempt with HTTP Auth credentials");
-            goto err;
-        }
-
-        rv = send_status(ctx, ssl, voucher_status, voucher_status_len, EST_OP_BRSKI_VOUCHER_STATUS);
-        if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Voucher status failed on second attempt with HTTP Auth credentials");
-        }
-        
-        est_client_disconnect(ctx, &ssl);
-    }
-
-    ctx->auth_mode = AUTH_NONE;
-  err:
-    if (ssl) {
-        SSL_shutdown(ssl);    
-        SSL_free(ssl);
-    }
-    
-    return (rv);
-}
-
-
-/*! @brief est_client_send_cert_status() sends a certificate status
-    indication to the EST server. 
- 
-    @param ctx Pointer to an EST context
-    @param status  Enum value defined in the enum EST_BRSKI_STATUS_VALUE
-    @param reason Pointer to buffer containing the enroll status 
-    reason being sent back to the EST server.  This can be an empty
-    string when status is success.
-    @param subject_key_id Pointer to buffer containing the SubjectKeyIdentifier
-    of the certificate that was just returned from the CA as a result of the
-    enrollment process.
- 
-    @return EST_ERROR_NONE on success, or EST based error
-
-    est_client_send_cert_status() connects to the EST server, builds
-    enrollment status message, and sends the message.  The response is just
-    the HTTP response.  The application can call est_client_get_last_http_status()
-    to obtain the HTTP status of this message.  
- */
-EST_ERROR est_client_brski_send_enroll_status (EST_CTX *ctx, EST_BRSKI_STATUS_VALUE status,
-                                               char *reason,
-                                               unsigned char *subject_key_id)
-{
-    EST_ERROR rv = EST_ERR_NONE;
-    char enroll_status[EST_BRSKI_MAX_STATUS_LEN];
-    SSL *ssl = NULL;
-    int enroll_status_len;
-    unsigned char subject_key_b64[EST_BRSKI_MAX_SUBJ_KEY_ID_LEN*2];
-    /* PDB: *2 to cover b64 growth */
-    int ski_b64_len = 0;
-    char *status_str;
-
-    if (!ctx) {
-        return (EST_ERR_NO_CTX);
-    }
-
-    if (!ctx->est_client_initialized) {
-        return EST_ERR_CLIENT_NOT_INITIALIZED;
-    }
-
-    if (ctx->brski_mode != BRSKI_ENABLED) {
-        EST_LOG_ERR("BRSKI mode not enabled or supported");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-
-    if (status == EST_BRSKI_STATUS_SUCCESS) {
-        status_str = "true";
-    } else if (status == EST_BRSKI_STATUS_FAIL) {
-        status_str = "false";
-    } else {
-        EST_LOG_ERR("BRSKI send voucher status not valid");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-
-    if (reason != NULL && strnlen_s(reason, EST_BRSKI_MAX_REASON_LEN+1) > EST_BRSKI_MAX_REASON_LEN) {
-        EST_LOG_ERR("Reason buffer exceeds maximum");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-    
-    /*
-     * If the status is a failure, then there needs to be a reason.
-     */
-    if (status == EST_BRSKI_STATUS_FAIL) {
-        if (reason == NULL) {
-            EST_LOG_ERR("Reason buffer is NULL, and status is FAIL");
-            return EST_ERR_INVALID_PARAMETERS;
-        } 
-    }
-    
-    if (subject_key_id == NULL || *subject_key_id == '\n') {
-        EST_LOG_ERR("Subject Key Identifier buffer is NULL or is an empty string");
-        return EST_ERR_INVALID_PARAMETERS;
-    }
-
-    if (strnlen_s((char *)subject_key_id, EST_BRSKI_MAX_SUBJ_KEY_ID_LEN+1) > EST_BRSKI_MAX_SUBJ_KEY_ID_LEN) {
-        EST_LOG_ERR("Subject key identifier buffer exceeds maximum");
-        return EST_ERR_INVALID_PARAMETERS;
-    }        
-
-    ski_b64_len = est_base64_encode((const char *)subject_key_id,
-                                    strnlen_s((char *)subject_key_id, EST_BRSKI_MAX_SUBJ_KEY_ID_LEN),
-                                    (char *)subject_key_b64,
-                                    (EST_BRSKI_MAX_SUBJ_KEY_ID_LEN*2));
-    if (ski_b64_len == 0) {
-        EST_LOG_ERR("Cannot base64 encode Subject Key Identifier");
-        return EST_ERR_INVALID_PARAMETERS;
-    }        
-    
-    /*
-     * build up the enroll status buffer
-     */
-    snprintf(enroll_status, EST_BRSKI_MAX_STATUS_LEN,
-             "{\r\n"
-             "\"version\":\"%s\",\r\n"
-             "\"Status\":%s,\r\n"
-             "\"Reason\":\"%s\",\r\n"
-             "\"SubjectKeyIdentifier\":\"%s\"\r\n"
-             "}",
-             BRSKI_VERSION, status_str, reason, subject_key_b64);
-    
-    enroll_status_len = strnlen_s(enroll_status, EST_BRSKI_MAX_STATUS_LEN+1);
-    if (enroll_status_len > EST_BRSKI_MAX_STATUS_LEN) {
-        EST_LOG_ERR("Status buffer too large");
-        return EST_ERR_INVALID_PARAMETERS;
-    }    
-    
-    rv = est_client_connect(ctx, &ssl);
-    if (rv != EST_ERR_NONE) {
-        if (ssl) {
-            SSL_shutdown(ssl);
-            SSL_free(ssl);
-        }        
-        return (rv);
-    }
-
-    rv = send_status(ctx, ssl, enroll_status, enroll_status_len, EST_OP_BRSKI_ENROLL_STATUS);
-    est_client_disconnect(ctx, &ssl);
-
-    /*
-     * Handle the case where the server is requesting further authentication
-     */
-    if (rv == EST_ERR_AUTH_FAIL &&
-        (ctx->auth_mode == AUTH_DIGEST ||
-         ctx->auth_mode == AUTH_BASIC  ||
-         ctx->auth_mode == AUTH_TOKEN)) {
-
-        /*
-         * HTTPS digest mode requires the use of MD5.  Make sure we're not
-         * in FIPS mode and can use MD5
-         */
-        if (ctx->auth_mode == AUTH_DIGEST && (FIPS_mode())){
-            EST_LOG_ERR("HTTP digest auth not allowed while in FIPS mode");
-            rv = EST_ERR_BAD_MODE;
-            goto err;
-        }
-        
-        /* Try one more time if we're doing Digest auth */
-        EST_LOG_INFO("HTTP Auth failed, trying again with HTTP Auth credentials");
-        rv = est_client_connect(ctx, &ssl);
-        if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Connection failed on second attempt with HTTP Auth credentials");
-            goto err;
-        }
-
-        rv = send_status(ctx, ssl, enroll_status, enroll_status_len, EST_OP_BRSKI_ENROLL_STATUS);
-        if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Enroll status failed on second attempt with HTTP Auth credentials");
-        }
-        
-        est_client_disconnect(ctx, &ssl);
-    }
-
-    ctx->auth_mode = AUTH_NONE;
-  err:
-    if (ssl) {
-        SSL_shutdown(ssl);    
-        SSL_free(ssl);
-    }
-    
-    return (rv);
-}
-#endif // BRSKI Support

@@ -608,26 +608,12 @@ static int parsedate(const char *date, time_t *output)
  * the response from the server meets the EST draft.  This
  * table is implicitly tied to EST_OPERATION.  If that ENUM
  * changes, this table must change.
- *
- * NOTE: BRSKI voucher status and enroll status deviate from the rest of the
- *       EST and BRSKI primitives in that the response to these two do not
- *       contain any content.  est_op_map is used to verify the responses,
- *       specifically, the content headers, which are not applicable when
- *       there is no content.  These two are being left in to this matrix to
- *       maintain parity with EST_OPERATION in case other operations are added
- *       later.
- *       
  */
 EST_OP_DEF est_op_map [EST_OP_MAX] = {
     { EST_OP_SIMPLE_ENROLL,   EST_SIMPLE_ENROLL_URI, EST_HTTP_CT_PKCS7_CO, sizeof(EST_HTTP_CT_PKCS7_CO) },
     { EST_OP_SIMPLE_REENROLL, EST_RE_ENROLL_URI,     EST_HTTP_CT_PKCS7_CO, sizeof(EST_HTTP_CT_PKCS7_CO) },
     { EST_OP_CACERTS,         EST_CACERTS_URI,       EST_HTTP_CT_PKCS7,    sizeof(EST_HTTP_CT_PKCS7)    },
-    { EST_OP_CSRATTRS,        EST_CSR_ATTRS_URI,     EST_HTTP_CT_CSRATTRS, sizeof(EST_HTTP_CT_CSRATTRS) },
-#if ENABLE_BRSKI
-    { EST_OP_BRSKI_REQ_VOUCHER,    EST_BRSKI_GET_VOUCHER_URI,    EST_BRSKI_CT_VRSP,    sizeof(EST_BRSKI_CT_VRSP)},
-    { EST_OP_BRSKI_VOUCHER_STATUS, EST_BRSKI_VOUCHER_STATUS_URI, EST_BRSKI_CT_STATUS,  sizeof(EST_BRSKI_CT_STATUS)},
-    { EST_OP_BRSKI_ENROLL_STATUS,  EST_BRSKI_ENROLL_STATUS_URI,  EST_BRSKI_CT_STATUS,  sizeof(EST_BRSKI_CT_STATUS)},
-#endif
+    { EST_OP_CSRATTRS,        EST_CSR_ATTRS_URI,     EST_HTTP_CT_CSRATTRS, sizeof(EST_HTTP_CT_CSRATTRS) }
 };
 
 /**********************************************************************
@@ -751,7 +737,7 @@ static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
     while ((token = HTNextField(&p))) {
         if (!est_strcasecmp_s(token, "realm")) {
             if ((value = HTNextField(&p))) {
-                if (EOK != strcpy_s(ctx->realm, MAX_REALM, value)) {
+                if (EOK != strncpy_s(ctx->realm, MAX_REALM, value, MAX_REALM)) {
                     rv = EST_ERR_INVALID_TOKEN;
                 }
             } else {
@@ -759,7 +745,7 @@ static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
             }
         } else if (!est_strcasecmp_s(token, "nonce")) {
             if ((value = HTNextField(&p))) {
-                if (EOK != strcpy_s(ctx->s_nonce, MAX_NONCE, value)) {
+                if (EOK != strncpy_s(ctx->s_nonce, MAX_NONCE, value, MAX_NONCE)) {
                     rv = EST_ERR_INVALID_TOKEN;
                 }                
             } else {
@@ -792,7 +778,7 @@ static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
             }
         } else if (!est_strcasecmp_s(token, "error")) {
             if ((value = HTNextField(&p))) {
-                if (EOK != strcpy_s(ctx->token_error, MAX_TOKEN_ERROR, value)) {
+                if (EOK != strncpy_s(ctx->token_error, MAX_TOKEN_ERROR, value, MAX_TOKEN_ERROR)) {
                     rv = EST_ERR_INVALID_TOKEN;
                 }
             } else {
@@ -800,7 +786,7 @@ static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
             }
         } else if (!est_strcasecmp_s(token, "error_description")) {
             if ((value = HTNextField(&p))) {
-                if (EOK != strcpy_s(ctx->token_error_desc, MAX_TOKEN_ERROR_DESC, value)) {
+                if (EOK != strncpy_s(ctx->token_error_desc, MAX_TOKEN_ERROR_DESC, value, MAX_TOKEN_ERROR_DESC)) {
                     rv = EST_ERR_INVALID_TOKEN;
                 }
             } else {
@@ -907,16 +893,13 @@ static HTTP_HEADER * parse_http_headers (unsigned char **buf, int *num_headers)
  * unrecognized codes will result in an error.
  * Note that HTTP 1.1 is expected.
  */
-static int est_io_parse_response_status_code (unsigned char *buf, char *reason_phrase)
+static int est_io_parse_response_status_code (unsigned char *buf)
 {
     if (!strncmp((const char *)buf, EST_HTTP_HDR_200,
                         strnlen_s(EST_HTTP_HDR_200, EST_HTTP_HDR_MAX))) {
         return 200;
     } else if (!strncmp((const char *)buf, EST_HTTP_HDR_202,
                         strnlen_s(EST_HTTP_HDR_202, EST_HTTP_HDR_MAX))) {
-        buf = buf + strnlen_s(EST_HTTP_HDR_202, EST_HTTP_HDR_MAX);
-        memcpy_s(reason_phrase, EST_HTTP_MAX_REASON_PHRASE, buf,
-                 strnlen_s((const char *)buf, EST_HTTP_MAX_REASON_PHRASE));
         return 202;
     } else if (!strncmp((const char *)buf, EST_HTTP_HDR_204,
                         strnlen_s(EST_HTTP_HDR_204, EST_HTTP_HDR_MAX))) {
@@ -1250,7 +1233,6 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
     HTTP_HEADER *hdrs;
     int hdr_cnt;
     int http_status;
-    char reason_phrase[EST_HTTP_MAX_REASON_PHRASE];
     unsigned char *raw_buf, *payload_buf, *payload;    
     int raw_len = 0;
     
@@ -1283,7 +1265,7 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
      * Parse the HTTP header to get the status
      * Look for status 200 for success
      */
-    http_status = est_io_parse_response_status_code(raw_buf, &(reason_phrase[0]));
+    http_status = est_io_parse_response_status_code(raw_buf);
     ctx->last_http_status = http_status;
     hdrs = parse_http_headers(&payload, &hdr_cnt);
     EST_LOG_INFO("HTTP status %d received", http_status);
@@ -1351,48 +1333,37 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
     }
 
     if (rv == EST_ERR_NONE) {
-#if (ENABLE_BRSKI)
         /*
-         * Voucher status and enroll status responses do not contain
-         * any content so no need to check the content related headers
+         * Get the Content-Type and Content-Length headers
+         * and verify the HTTP response contains the correct amount
+         * of data.
          */
-        if (op != EST_OP_BRSKI_VOUCHER_STATUS &&
-            op != EST_OP_BRSKI_ENROLL_STATUS) {
-#endif
-            /*
-             * Get the Content-Type and Content-Length headers
-             * and verify the HTTP response contains the correct amount
-             * of data.
-             */
-            *payload_len = est_io_check_http_hdrs(hdrs, hdr_cnt, op);
-            EST_LOG_INFO("HTTP Content len=%d", *payload_len);
+        *payload_len = est_io_check_http_hdrs(hdrs, hdr_cnt, op);
+        EST_LOG_INFO("HTTP Content len=%d", *payload_len);
 
-            if (*payload_len > EST_CA_MAX) {
-                EST_LOG_ERR("Content Length larger than maximum value of %d.",
-                            EST_CA_MAX);
-                rv = EST_ERR_UNKNOWN;
-                *payload_len = 0;
-                *buf = NULL;
-            } else if (*payload_len == 0) {
-                *payload_len = 0;
-                *buf = NULL;
-            } else {
-                /*
-                 * Allocate the buffer to hold the payload to be passed back
-                 */
-                payload_buf = malloc(*payload_len);   
-                if (!payload_buf) {
-                    EST_LOG_ERR("Unable to allocate memory");
-                    free(raw_buf);
-                    free(hdrs);
-                    return EST_ERR_MALLOC;
-                }
-                memcpy_s(payload_buf, *payload_len, payload, *payload_len);
-                *buf = payload_buf;
+        if (*payload_len > EST_CA_MAX) {
+            EST_LOG_ERR("Content Length larger than maximum value of %d.",
+                        EST_CA_MAX);
+            rv = EST_ERR_UNKNOWN;
+            *payload_len = 0;
+            *buf = NULL;
+        } else if (*payload_len == 0) {
+            *payload_len = 0;
+            *buf = NULL;
+        } else {
+            /*
+             * Allocate the buffer to hold the payload to be passed back
+             */
+            payload_buf = malloc(*payload_len);   
+            if (!payload_buf) {
+                EST_LOG_ERR("Unable to allocate memory");
+                free(raw_buf);
+                free(hdrs);
+                return EST_ERR_MALLOC;
             }
-#if (ENABLE_BRSKI)
+            memcpy_s(payload_buf, *payload_len, payload, *payload_len);
+            *buf = payload_buf;
         }
-#endif
     }
     
     if (raw_buf) {
