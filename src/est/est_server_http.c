@@ -12,7 +12,7 @@
  *
  * May, 2013
  *
- * Copyright (c) 2013-2014, 2016, 2017 by cisco Systems, Inc.
+ * Copyright (c) 2013-2014, 2016 by cisco Systems, Inc.
  * All rights reserved.
  ***------------------------------------------------------------------
  */
@@ -127,7 +127,6 @@ typedef int socklen_t;
 #define PATH_MAX 4096
 #endif
 
-static int mg_printf(struct mg_connection *conn, const char *fmt, ...);
 
 // Describes a string (chunk of memory).
 struct vec {
@@ -162,7 +161,7 @@ static void sockaddr_to_string (char *buf, size_t len,
               (void*)&usa->sin6.sin6_addr, buf, (socklen_t) len);
 #elif defined(_WIN32)
     // Only Windoze Vista (and newer) have inet_ntop()
-    strcpy_s(buf, MAX_SRC_ADDR, inet_ntoa(usa->sin.sin_addr));
+    strncpy_s(buf, MAX_SRC_ADDR, inet_ntoa(usa->sin.sin_addr), len);
 #else
     inet_ntop(usa->sa.sa_family, (void*)&usa->sin.sin_addr, buf, len);
 #endif
@@ -311,6 +310,104 @@ static int mg_snprintf (struct mg_connection *conn, char *buf, size_t buflen,
     va_end(ap);
 
     return n;
+}
+
+static size_t est_strcspn(const char * str1,const char * str2){
+
+    rsize_t count;
+    errno_t safec_rc; 
+
+    if ((str1 != NULL) && (str1[0] == '\0')) {
+        return 0; 
+    }
+
+    safec_rc = strcspn_s(str1, strnlen_s(str1, RSIZE_MAX_STR),
+            str2, RSIZE_MAX_STR, &count);
+    if (safec_rc != EOK) {
+        EST_LOG_INFO("strcspn_s error 0x%xO\n", safec_rc);
+        return 0;
+    }
+
+    return count; 
+
+
+}
+
+static size_t est_strspn(const char * str1,const char  * str2) {
+
+    rsize_t count;
+    errno_t safec_rc; 
+
+    if ((str1 != NULL) && (str1[0] == '\0')) {
+        return 0; 
+    }
+
+    safec_rc = strspn_s(str1, strnlen_s(str1, RSIZE_MAX_STR), 
+            str2, RSIZE_MAX_STR, &count);
+    if (safec_rc != EOK) {
+        EST_LOG_INFO("strspn_s error 0x%xO\n", safec_rc);
+        return 0; 
+    }
+
+    return count; 
+
+}
+
+// Skip the characters until one of the delimiters characters found.
+// 0-terminate resulting word. Skip the delimiter and following whitespaces.
+// Advance pointer to buffer to the next word. Return found 0-terminated word.
+// Delimiters can be quoted with quotechar.
+char *skip_quoted (char **buf, const char *delimiters,
+                   const char *whitespace, char quotechar)
+{
+    char *p, *begin_word, *end_word, *end_whitespace;
+
+    begin_word = *buf;
+
+    end_word = begin_word + est_strcspn(begin_word,delimiters);
+
+    // Check for quotechar
+    if (end_word > begin_word) {
+        p = end_word - 1;
+        while (*p == quotechar) {
+            // If there is anything beyond end_word, copy it
+            if (*end_word == '\0') {
+                *p = '\0';
+                break;
+            } else {
+
+                rsize_t end_off = (rsize_t) est_strcspn(end_word + 1, delimiters);
+                memmove_s(p, end_off + 1, end_word, end_off + 1);
+                p += end_off; // p must correspond to end_word - 1
+                end_word += end_off + 1;
+            }
+        }
+        for (p++; p < end_word; p++) {
+            *p = '\0';
+        }
+    }
+
+    if (*end_word == '\0') {
+        *buf = end_word;
+    } else {
+
+        end_whitespace = end_word + 1 + est_strspn(end_word + 1, whitespace);
+
+        for (p = end_word; p < end_whitespace; p++) {
+            *p = '\0';
+        }
+
+        *buf = end_whitespace;
+    }
+
+    return begin_word;
+}
+
+// Simplified version of skip_quoted without quote char
+// and whitespace == delimiters
+char *skip (char **buf, const char *delimiters)
+{
+    return skip_quoted(buf, delimiters, delimiters, 0);
 }
 
 
@@ -660,7 +757,7 @@ int mg_write (struct mg_connection *conn, const void *buf, size_t len)
     return (int)total;
 }
 
-static int mg_printf (struct mg_connection *conn, const char *fmt, ...)
+int mg_printf (struct mg_connection *conn, const char *fmt, ...)
 {
     char mem[MG_BUF_LEN], *buf = mem;
     int len;
@@ -866,7 +963,7 @@ static void mg_parse_auth_hdr_digest (struct mg_connection *conn,
     ah->mode = AUTH_DIGEST;
 
     // Make modifiable copy of the auth header
-    strcpy_s(buf, MAX_AUTH_HDR_LEN, auth_header + 7);
+    strncpy_s(buf, MAX_AUTH_HDR_LEN, auth_header + 7, MAX_AUTH_HDR_LEN);
     s = buf;
 
     // Parse authorization header
@@ -1045,7 +1142,7 @@ EST_HTTP_AUTH_HDR_RESULT mg_parse_auth_header (struct mg_connection *conn,
          * Save the user ID on the connection context.
          * We will want to pass this to the CA later.
          */
-        strcpy_s(conn->user_id, MG_UID_MAX, ah->user);
+        strncpy_s(conn->user_id, MG_UID_MAX, ah->user, MG_UID_MAX);
     }
     
     return EST_AUTH_HDR_GOOD;
@@ -1666,7 +1763,7 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
         conn->request_info.is_ssl = 1;
 
         /*
-         * EST requires TLS,  Setup the TLS tunnel
+         * EST require TLS,  Setup the TLS tunnel
          */
         conn->ssl = SSL_new(conn->ctx->ssl_ctx);
         if (conn->ssl != NULL) {
@@ -1778,7 +1875,7 @@ struct mg_context *mg_start (void *user_data)
 EST_ERROR est_send_csrattr_data (EST_CTX *ctx, char *csr_data, int csr_len, void *http_ctx)
 {
    char http_hdr[EST_HTTP_HDR_MAX];
-   int hdr_len;
+   int hdrlen;
 
    if ((csr_len > 0) && csr_data) {
         /*
@@ -1786,14 +1883,14 @@ EST_ERROR est_send_csrattr_data (EST_CTX *ctx, char *csr_data, int csr_len, void
          */
         snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
                  EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
-        hdr_len = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdr_len, EST_HTTP_HDR_MAX - hdr_len, "%s: %s%s", EST_HTTP_HDR_CT,
+        hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
+        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
                  EST_HTTP_CT_CSRATTRS, EST_HTTP_HDR_EOL);
-        hdr_len = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdr_len, EST_HTTP_HDR_MAX - hdr_len, "%s: %s%s", EST_HTTP_HDR_CE,
+        hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
+        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CE,
                  EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL);
-        hdr_len = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdr_len, EST_HTTP_HDR_MAX - hdr_len, "%s: %d%s%s", EST_HTTP_HDR_CL,
+        hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
+        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
                  csr_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
         if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
             free(csr_data);

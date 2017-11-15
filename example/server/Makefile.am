@@ -1,6 +1,6 @@
 bin_PROGRAMS = estserver
 estclient_includedir=$(includedir)/est
-estserver_SOURCES = estserver.c ossl_srv.c ../util/utils.c ../util/simple_server.c ../util/jsmn.c
+estserver_SOURCES = estserver.c ossl_srv.c ../util/utils.c ../util/simple_server.c 
 AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -I$(SSL_CFLAGS) -g 
 if FREEBSD 
 DL=

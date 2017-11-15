@@ -49,7 +49,6 @@ static int cacerts_len = 0;
 static char *attrs;
 
 static unsigned char * handle_csrattrs_request (int *csr_len, char *path_seg,
-                                                X509 *peer_cert,
                                                 void *app_data)
 {
     unsigned char *csr_data;

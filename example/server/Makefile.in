@@ -105,8 +105,7 @@ am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
 am__dirstamp = $(am__leading_dot)dirstamp
 am_estserver_OBJECTS = estserver.$(OBJEXT) ossl_srv.$(OBJEXT) \
-	../util/utils.$(OBJEXT) ../util/simple_server.$(OBJEXT) \
-	../util/jsmn.$(OBJEXT)
+	../util/utils.$(OBJEXT) ../util/simple_server.$(OBJEXT)
 estserver_OBJECTS = $(am_estserver_OBJECTS)
 estserver_LDADD = $(LDADD)
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -303,7 +302,7 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 estclient_includedir = $(includedir)/est
-estserver_SOURCES = estserver.c ossl_srv.c ../util/utils.c ../util/simple_server.c ../util/jsmn.c
+estserver_SOURCES = estserver.c ossl_srv.c ../util/utils.c ../util/simple_server.c 
 AM_CFLAGS = -I../.. -I$(srcdir)/../../src/est -I$(SSL_CFLAGS) -g 
 @FREEBSD_FALSE@DL = -ldl
 @FREEBSD_TRUE@DL = 
@@ -403,8 +402,6 @@ clean-binPROGRAMS:
 	../util/$(DEPDIR)/$(am__dirstamp)
 ../util/simple_server.$(OBJEXT): ../util/$(am__dirstamp) \
 	../util/$(DEPDIR)/$(am__dirstamp)
-../util/jsmn.$(OBJEXT): ../util/$(am__dirstamp) \
-	../util/$(DEPDIR)/$(am__dirstamp)
 
 estserver$(EXEEXT): $(estserver_OBJECTS) $(estserver_DEPENDENCIES) $(EXTRA_estserver_DEPENDENCIES) 
 	@rm -f estserver$(EXEEXT)
@@ -417,7 +414,6 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@../util/$(DEPDIR)/jsmn.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@../util/$(DEPDIR)/simple_server.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@../util/$(DEPDIR)/utils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/estserver.Po@am__quote@

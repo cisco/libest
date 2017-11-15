@@ -7,9 +7,4 @@ DL=
 else
 DL=-ldl
 endif
-
-if ENABLE_CLIENT_ONLY 
-estclient_simple_LDFLAGS = -L../../src/est/.libs $(DL) -lest_client -lssl -lcrypto
-else
 estclient_simple_LDFLAGS = -L../../src/est/.libs $(DL) -lest -lssl -lcrypto
-endif

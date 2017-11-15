@@ -1219,4 +1219,222 @@ V	170421184107Z		04C2	unknown	/CN=TC2174-4
 V	170421184107Z		04C3	unknown	/CN=TC2174-4
 V	170421184108Z		04C4	unknown	/CN=TC2174-4
 V	170421184108Z		04C5	unknown	/CN=TC2174-4
-R	290119152317Z	170206152407Z	04C6	unknown	/CN=revoked-cert-test
+V	290226175044Z		04C6	unknown	/CN=TC4020-2
+V	290226175057Z		04C7	unknown	/CN=TC4020-2
+V	290226175057Z		04C8	unknown	/CN=TC4020-3
+V	290226175058Z		04C9	unknown	/CN=TC4020-4
+V	290226175058Z		04CA	unknown	/CN=TC4020-5
+V	290226175058Z		04CB	unknown	/CN=TC4020-6
+V	290226175058Z		04CC	unknown	/CN=TC4020-6
+V	290226181216Z		04CD	unknown	/CN=TC4020-2
+V	290226181216Z		04CE	unknown	/CN=TC4020-4
+V	290226181216Z		04CF	unknown	/CN=TC4020-5
+V	290226181217Z		04D0	unknown	/CN=TC4020-6
+V	290226181217Z		04D1	unknown	/CN=TC4020-6
+V	290226181217Z		04D2	unknown	/CN=TC4020-8
+V	290226181307Z		04D3	unknown	/CN=TC4020-3
+V	290226181335Z		04D4	unknown	/CN=TC4020-3
+V	290226181343Z		04D5	unknown	/CN=TC4020-2
+V	290226181343Z		04D6	unknown	/CN=TC4020-3
+V	290226181343Z		04D7	unknown	/CN=TC4020-4
+V	290226181344Z		04D8	unknown	/CN=TC4020-5
+V	290226181344Z		04D9	unknown	/CN=TC4020-6
+V	290226181344Z		04DA	unknown	/CN=TC4020-6
+V	290226181344Z		04DB	unknown	/CN=TC4020-8
+V	180316181359Z		04DC	unknown	/CN=rsa doe
+V	180316181359Z		04DD	unknown	/CN=EC doe
+V	180316181359Z		04DE	unknown	/CN=dsa doe
+V	180316181412Z		04DF	unknown	/CN=rsa doe
+V	180316181424Z		04E0	unknown	/CN=US748-test7 CN
+V	180316181425Z		04E1	unknown	/CN=TestCase9
+V	180316181512Z		04E2	unknown	/CN=rsa doe
+V	180316181513Z		04E3	unknown	/CN=localhost
+V	180316181542Z		04E4	unknown	/CN=rsa doe
+V	180316181555Z		04E5	unknown	/CN=localhost
+V	180316181555Z		04E6	unknown	/CN=rsa doe
+V	180316181656Z		04E7	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316181658Z		04E8	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316181702Z		04E9	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316181703Z		04EA	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316181716Z		04EB	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226181832Z		04EC	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226181842Z		04ED	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226181847Z		04EE	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226181857Z		04EF	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226181903Z		04F0	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226181933Z		04F1	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226181948Z		04F2	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182013Z		04F3	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182029Z		04F4	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182134Z		04F5	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182145Z		04F6	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182150Z		04F7	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182155Z		04F8	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182200Z		04F9	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182205Z		04FA	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182215Z		04FB	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182220Z		04FC	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182225Z		04FD	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182230Z		04FE	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182337Z		04FF	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182337Z		0500	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182358Z		0501	unknown	/CN=US1060C_TEST1xx
+V	290226182358Z		0502	unknown	/CN=US1060C_TEST1xx
+V	290226182405Z		0503	unknown	/CN=US1060C_TEST1xx
+V	290226182417Z		0504	unknown	/CN=US1060C_TEST104
+V	290226182430Z		0505	unknown	/CN=US1060C_TEST106b
+V	290226182500Z		0506	unknown	/CN=Test 1
+V	290226182500Z		0507	unknown	/CN=Test 2/serialNumber=12349999B
+V	290226182500Z		0508	unknown	/CN=Test 10
+V	290226182501Z		0509	unknown	/CN=Test 20/serialNumber=12349999B
+V	290226182501Z		050A	unknown	/CN=Test 21/serialNumber=12349999B
+V	290226182501Z		050B	unknown	/CN=Test 50
+V	290226182501Z		050C	unknown	/CN=Test 51
+V	290226182616Z		050D	unknown	/CN=rsa doe
+V	290226182627Z		050E	unknown	/CN=TC1883-4
+V	290226182628Z		050F	unknown	/CN=TC1883-6
+V	290226182628Z		0510	unknown	/CN=TC1883-7
+V	290226182628Z		0511	unknown	/CN=TC1883-7
+V	290226182629Z		0512	unknown	/CN=TC1883-6
+V	290226182729Z		0513	unknown	/CN=rsa doe
+V	290226182729Z		0514	unknown	/CN=TC3512-2
+V	290226182729Z		0515	unknown	/CN=TC-US898-1
+V	290226182729Z		0516	unknown	/CN=TC-US898-1
+V	290226182732Z		0517	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182733Z		0518	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226182737Z		0519	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316182804Z		051A	unknown	/CN=rsa doe
+V	180316182805Z		051B	unknown	/CN=EC doe
+V	180316182805Z		051C	unknown	/CN=dsa doe
+V	180316182818Z		051D	unknown	/CN=rsa doe
+V	180316182830Z		051E	unknown	/CN=US748-test7 CN
+V	180316182831Z		051F	unknown	/CN=TestCase9
+V	180316182841Z		0520	unknown	/CN=rsa doe
+V	180316182842Z		0521	unknown	/CN=localhost
+V	180316182911Z		0522	unknown	/CN=rsa doe
+V	180316182924Z		0523	unknown	/CN=localhost
+V	180316182924Z		0524	unknown	/CN=rsa doe
+V	180316182951Z		0525	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316182954Z		0526	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316182957Z		0527	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316182958Z		0528	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316183012Z		0529	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316183151Z		052A	unknown	/CN=TC-US898-1
+V	180316183151Z		052B	unknown	/CN=TC-US898-1
+V	180316183151Z		052C	unknown	/CN=localhost
+V	180316183200Z		052D	unknown	/CN=localhost
+V	290226183201Z		052E	unknown	/CN=127.0.0.1
+V	180316183201Z		052F	unknown	/CN=127.0.0.1
+V	290226183206Z		0530	unknown	/CN=TC899-1
+V	290226183206Z		0531	unknown	/CN=US899-TC2
+V	290226183206Z		0532	unknown	/CN=US899-TC5
+V	290226183219Z		0533	unknown	/CN=TC899-8
+V	290226183227Z		0534	unknown	/CN=TC899-10
+V	290226183240Z		0535	unknown	/CN=TC899-13
+V	290226183244Z		0536	unknown	/CN=TC899-14
+V	290226183256Z		0537	unknown	/CN=TEST16-CN
+V	290226183322Z		0538	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183334Z		0539	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183413Z		053A	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183419Z		053B	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183442Z		053C	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183459Z		053D	unknown	/CN=rsa doe
+V	290226183459Z		053E	unknown	/CN=EC doe
+V	290226183459Z		053F	unknown	/CN=dsa doe
+V	290226183504Z		0540	unknown	/CN=rsa doe
+V	290226183512Z		0541	unknown	/CN=rsa doe
+V	290226183512Z		0542	unknown	/CN=EC doe
+V	290226183512Z		0543	unknown	/CN=dsa doe
+V	290226183518Z		0544	unknown	/CN=rsa doe
+V	290226183522Z		0545	unknown	/CN=US903-test7 CN
+V	290226183526Z		0546	unknown	/CN=rsa doe
+V	290226183526Z		0547	unknown	/CN=TestCase9
+V	290226183527Z		0548	unknown	/CN=TESTCN
+V	290226183531Z		0549	unknown	/CN=TC1005-1
+V	290226183531Z		054A	unknown	/CN=TC1005-2
+V	290226183532Z		054B	unknown	/CN=TC1005-3
+V	290226183532Z		054C	unknown	/CN=TC1005-4
+V	290226183537Z		054D	unknown	/CN=TC1005-6
+V	290226183541Z		054E	unknown	/CN=TC1005-7
+V	290226183545Z		054F	unknown	/CN=TC1005-8
+V	290226183550Z		0550	unknown	/CN=TC1005-9
+V	290226183554Z		0551	unknown	/CN=TC1005-10
+V	290226183558Z		0552	unknown	/CN=TC1005-11
+V	290226183603Z		0553	unknown	/CN=TC1005-93
+V	290226183603Z		0554	unknown	/CN=TC1005-94
+V	290226183614Z		0555	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183624Z		0556	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183629Z		0557	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183639Z		0558	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183645Z		0559	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183715Z		055A	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183730Z		055B	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183756Z		055C	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183811Z		055D	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183916Z		055E	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183927Z		055F	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183932Z		0560	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183937Z		0561	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183942Z		0562	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183947Z		0563	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226183957Z		0564	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226184002Z		0565	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226184007Z		0566	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226184012Z		0567	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226184119Z		0568	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226184119Z		0569	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226184132Z		056A	unknown	/CN=US1060C_TEST1xx
+V	290226184132Z		056B	unknown	/CN=US1060C_TEST1xx
+V	290226184139Z		056C	unknown	/CN=US1060C_TEST1xx
+V	290226184152Z		056D	unknown	/CN=US1060C_TEST104
+V	290226184204Z		056E	unknown	/CN=US1060C_TEST106b
+V	290226184213Z		056F	unknown	/CN=Test 1
+V	290226184213Z		0570	unknown	/CN=Test 2/serialNumber=12349999B
+V	290226184213Z		0571	unknown	/CN=Test 10
+V	290226184213Z		0572	unknown	/CN=Test 20/serialNumber=12349999B
+V	290226184214Z		0573	unknown	/CN=Test 21/serialNumber=12349999B
+V	290226184214Z		0574	unknown	/CN=Test 50
+V	290226184214Z		0575	unknown	/CN=Test 51
+V	290226184227Z		0576	unknown	/CN=rsa doe
+V	290226184232Z		0577	unknown	/CN=TC1883-4
+V	290226184232Z		0578	unknown	/CN=TC1883-6
+V	290226184232Z		0579	unknown	/CN=TC1883-7
+V	290226184232Z		057A	unknown	/CN=TC1883-7
+V	290226184233Z		057B	unknown	/CN=TC1883-6
+V	180316184245Z		057C	unknown	/CN=TC2174-4
+V	180316184246Z		057D	unknown	/CN=TC2174-4
+V	180316184246Z		057E	unknown	/CN=TC2174-4
+V	180316184247Z		057F	unknown	/CN=TC2174-4
+V	180316184247Z		0580	unknown	/CN=TC2174-4
+V	290226184319Z		0581	unknown	/CN=rsa doe
+V	290226184319Z		0582	unknown	/CN=TC3512-2
+V	290226184320Z		0583	unknown	/CN=TC-US898-1
+V	290226184320Z		0584	unknown	/CN=TC-US898-1
+V	290226184322Z		0585	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226184323Z		0586	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226184328Z		0587	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	290226184335Z		0588	unknown	/CN=TCUS3612-1
+V	290226184335Z		0589	unknown	/CN=TCUS3612-3
+V	290226184345Z		058A	unknown	/CN=TC4020-2
+V	290226184345Z		058B	unknown	/CN=TC4020-3
+V	290226184345Z		058C	unknown	/CN=TC4020-4
+V	290226184345Z		058D	unknown	/CN=TC4020-5
+V	290226184346Z		058E	unknown	/CN=TC4020-6
+V	290226184346Z		058F	unknown	/CN=TC4020-6
+V	290226184346Z		0590	unknown	/CN=TC4020-8
+V	180316193239Z		0591	unknown	/CN=rsa doe
+V	180316193239Z		0592	unknown	/CN=EC doe
+V	180316193239Z		0593	unknown	/CN=dsa doe
+V	180316193252Z		0594	unknown	/CN=rsa doe
+V	180316193305Z		0595	unknown	/CN=US748-test7 CN
+V	180316193305Z		0596	unknown	/CN=TestCase9
+V	180316193316Z		0597	unknown	/CN=rsa doe
+V	180316193316Z		0598	unknown	/CN=localhost
+V	180316193345Z		0599	unknown	/CN=rsa doe
+V	180316193358Z		059A	unknown	/CN=localhost
+V	180316193358Z		059B	unknown	/CN=rsa doe
+V	180316193426Z		059C	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316193428Z		059D	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316193432Z		059E	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316193433Z		059F	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2
+V	180316193446Z		05A0	unknown	/CN=req by client in demo step 2/serialNumber=PID:Widget SN:2

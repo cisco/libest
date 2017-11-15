@@ -321,7 +321,7 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
     
     /*
      * Now that we've decoded the certs, get a reference
-     * to the stack of certs
+     * the the stack of certs
      */
     nid=OBJ_obj2nid(p7->type);
     switch (nid)
@@ -340,7 +340,7 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
         }
 
     if (!certs) {
-        EST_LOG_ERR("Failed to obtain X509 cert stack from PKCS7 data");
+        EST_LOG_ERR("Failed to attain X509 cert stack from PKCS7 data");
 	PKCS7_free(p7);
 	return (-1);
     }
@@ -384,29 +384,3 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
     return (pem_len);
 }
 
-#if ENABLE_BRSKI
-
-char *est_find_ser_num_in_subj(X509 *cert)
-{
-    X509_NAME *subj = X509_get_subject_name(cert);
-    ASN1_STRING *ser_num_asn1 = NULL;
-    X509_NAME_ENTRY *entry;
-    int i;
-    char *ser_num_str;
-    
-    i = X509_NAME_get_index_by_NID(subj, NID_serialNumber, -1);
-    if (i == -1) {
-        EST_LOG_ERR("Serial Number element not defined in certificate subject attribute");
-        return (NULL);
-    }
-    
-    /*
-     * Serial number exists in the subject.  Extract the value and return it
-     */
-    entry = X509_NAME_get_entry(subj, i);
-    ser_num_asn1 = X509_NAME_ENTRY_get_data(entry);
-    ser_num_str = (char *)ASN1_STRING_data(ser_num_asn1);
-    EST_LOG_INFO("Found Serial Number.  Serial number = %s", ser_num_str);
-    return(ser_num_str);
-}
-#endif
