@@ -3,7 +3,7 @@
  *
  * August, 2013
  *
- * Copyright (c) 2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016, 2017 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -21,6 +21,31 @@
  * Key wrap algorithm optionally used to protect private keys
  */
 #define EST_PRIVATE_KEY_ENC EVP_aes_128_cbc()
+
+
+/*
+ * This function can be used to output the OpenSSL
+ * error buffer.  This is useful when an OpenSSL
+ * API call fails and you'd like to provide some
+ * detail to the user regarding the cause of the
+ * failure.
+ */
+void ossl_dump_ssl_errors ()
+{
+    BIO		*e = NULL;
+    BUF_MEM	*bptr = NULL;
+
+    e = BIO_new(BIO_s_mem());
+    if (!e) {
+	EST_LOG_ERR("BIO_new failed");
+	return;
+    }
+    ERR_print_errors(e);
+    (void)BIO_flush(e);
+    BIO_get_mem_ptr(e, &bptr);
+    EST_LOG_WARN("OSSL error: %s", bptr->data); 
+    BIO_free_all(e);
+}
 
 /*
  * Reads a file into an unsigned char array.
@@ -179,9 +204,15 @@ char *generate_private_EC_key (int curve_nid, pem_password_cb *cb)
     }
 
     group = EC_GROUP_new_by_curve_name(curve_nid);
+    if (!group) {
+        return NULL;
+    }
     EC_GROUP_set_asn1_flag(group, asn1_flag);
     EC_GROUP_set_point_conversion_form(group, form);
     EC_KEY_set_group(eckey, group);
+    if (!EC_KEY_set_group(eckey, group)) {
+        return NULL;
+    }
     if (!EC_KEY_generate_key(eckey)) {
         return (NULL);
     }

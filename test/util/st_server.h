@@ -41,6 +41,16 @@ int st_start_tls10(int tcp_port,
 	     int simulate_manual_enroll,
 	     int enable_pop,
 	     int ec_nid);
+int st_start_crl(int listen_port,
+             char *certfile,
+             char *keyfile,
+             char *realm,
+             char *ca_chain_file,
+             char *trusted_certs_file,
+             char *ossl_conf_file,
+             int simulate_manual_enroll,
+             int enable_pop,
+             int ec_nid);
 int st_start_srp (int listen_port,
 	          char *certfile,
 	          char *keyfile,
@@ -76,6 +86,12 @@ void st_enable_csrattr_enforce();
 void st_set_read_timeout(int timeout);
 void st_write_csr(int state);
 void st_csr_filename(char *incoming_name);
+int st_set_brski_mode();
+int st_set_brski_retry_mode(int enable_retry, int retry_delay, int retry_count);
+int st_set_brski_nonce_mode (int send_nonce, int nonce_too_long,
+                             int nonce_mismatch);
+int st_set_brski_serial_num_mode (int send_serial_num, int serial_num_too_long,
+                                  int serial_num_mismatch);
 #ifdef WIN32
 void st_toggle_ipv6();
 #endif

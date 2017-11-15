@@ -1195,7 +1195,7 @@ int us4020_add_suite (void)
    CU_pSuite pSuite = NULL;
 
    /* add a suite to the registry */
-   pSuite = CU_add_suite("us4020_tok_auth_client", 
+   pSuite = CU_add_suite("us4020_client_proxy", 
 	                  us4020_init_suite, 
 			  us4020_destroy_suite);
    if (NULL == pSuite) {

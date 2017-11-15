@@ -6,7 +6,7 @@
  *
  * November, 2012
  *
- * Copyright (c) 2012-2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2012-2013, 2016, 2017 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -163,7 +163,7 @@ static void show_usage_and_exit (void)
 	"  -t <count>        Number of threads to start for multi-threaded test (default=1)\n"
 #endif
 	"  -i <count>        Number of enrollments to perform per thread (default=1)\n"
-	   "  -w <count>        Timeout in seconds to wait for server response (default=10)\n" //EST_SSL_READ_TIMEOUT_DEF
+	"  -w <count>        Timeout in seconds to wait for server response (default=10)\n" //EST_SSL_READ_TIMEOUT_DEF
         "  -f                Runs EST Client in FIPS MODE = ON\n"
 	"  -u <string>       Specify user name for HTTP authentication.\n"
 	"  -h <string>       Specify password for HTTP authentication.\n"
@@ -891,6 +891,27 @@ static void worker_thread (void *ptr)
 	    operation = "Re-enrollment";
 
 	    rv = est_client_reenroll(ectx, client_cert_dup, &pkcs7_len, client_priv_key);
+
+            if (rv == EST_ERR_CA_ENROLL_RETRY) {
+
+                /*
+                 * go get the retry period
+                 */
+                rv = est_client_copy_retry_after(ectx, &retry_delay, &retry_time);
+                if (verbose) printf("\nretry after period copy rv = %d "
+                                    "Retry-After delay seconds = %d "
+                                    "Retry-After delay time = %s\n",
+                                    rv, retry_delay, ctime(&retry_time) );
+                if (rv == EST_ERR_NONE) {
+                    retry_enroll_delay(retry_delay, retry_time);
+                }
+
+                /*
+                 * now that we're back, try to re-enroll again
+                 */
+                rv = est_client_reenroll(ectx, client_cert_dup, &pkcs7_len, client_priv_key);
+            }
+
 	    if (verbose) printf("\nreenroll rv = %d (%s) with pkcs7 length = %d\n",
                                 rv, EST_ERR_NUM_TO_STR(rv), pkcs7_len);
 	    if (rv == EST_ERR_NONE) {

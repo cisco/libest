@@ -7,7 +7,7 @@
  *
  * August, 2013
  *
- * Copyright (c) 2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016, 2017 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -32,6 +32,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
+#include <jsmn.h>
 
 #define MAX_CERT_LEN 8192
 #define MAX_FILENAME_LEN 255
@@ -61,6 +62,18 @@ char tst_srvr_path_seg_enroll[EST_MAX_PATH_SEGMENT_LEN+1];
 char tst_srvr_path_seg_cacerts[EST_MAX_PATH_SEGMENT_LEN+1];
 char tst_srvr_path_seg_csrattrs[EST_MAX_PATH_SEGMENT_LEN+1];
 
+static int brski_retry_enabled = 0;
+static int brski_retry_delay = 0;
+static int brski_retry_count = 0;
+static int brski_retry_running_count = 0;
+
+static int brski_send_nonce = 1;
+static int brski_nonce_too_long = 0;
+static int brski_nonce_mismatch = 0;
+
+static int brski_send_serial_num = 1;
+static int brski_serial_num_too_long = 0;
+static int brski_serial_num_mismatch = 0;
 
 unsigned char *p7_ca_certs = NULL;
 int   p7_ca_certs_len = 0;
@@ -167,7 +180,7 @@ static int compare (const void *pa, const void *pb)
  * case we'll add the public key from the cert request into
  * our lookup table so it can be correlated later.
  */
-static int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
+static int lookup_pkcs10_request (unsigned char *pkcs10, int p10_len)
 {
     X509_REQ *req = NULL;
     BIO *in = NULL;
@@ -323,6 +336,7 @@ static int process_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
 #define TEST_CSR "MCYGBysGAQEBARYGCSqGSIb3DQEJBwYFK4EEACIGCWCGSAFlAwQCAg==\0"
 
 static unsigned char * process_csrattrs_request (int *csr_len, char *path_seg,
+                                                 X509 *peer_cert,
                                                  void *app_data)
 {
     unsigned char *csr_data;
@@ -553,7 +567,7 @@ static int load_ca_certs (EST_CTX *ctx, unsigned char *pem_cacerts, int pem_cace
         return (-1);
     }
 
-    p7_ca_certs = malloc(p7_ca_certs_len);
+    p7_ca_certs = calloc(p7_ca_certs_len+1, sizeof(char));
     if (!p7_ca_certs) {
         printf("malloc failed\n");
         BIO_free_all(cacerts_bio);
@@ -819,8 +833,14 @@ void st_stop ()
  *  simulate_manual_enroll: Pass in a non-zero value to have the EST
  *                  simulate manual approval at the CA level.  This
  *                  is used to test the retry-after logic.
+ *  enable_pop:     Enable PoP support.
  *  ec_nid:         Openssl NID value for ECDHE curve to use during
  *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ *  enable_tls10    Enable TLS 1.0 support
+ *  disable_cacerts_response: Do not pass down the CA certs response chain
+ *                  to the library.
+ *  enable_crl:     Enable CRL checks
+ *
  */
 static int st_start_internal (
     int listen_port,
@@ -836,7 +856,8 @@ static int st_start_internal (
     int enable_srp,
     char *srp_vfile,
     int enable_tls10,
-    int disable_cacerts_response)
+    int disable_cacerts_response,
+    int enable_crl)
 {
     X509 *x;
     EVP_PKEY *priv_key;
@@ -964,6 +985,10 @@ static int st_start_internal (
 
     if (enable_tls10) {
 	est_server_enable_tls10(ectx);
+    }
+
+    if (enable_crl) {
+        est_enable_crl(ectx);
     }
 
     if (est_set_ca_enroll_cb(ectx, &process_pkcs10_enrollment)) {
@@ -1098,7 +1123,50 @@ int st_start_tls10 (int listen_port,
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
 	      trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
-                           enable_pop, ec_nid, 0, NULL, 1, 0);
+                           enable_pop, ec_nid, 0, NULL, 1, 0, 0);
+
+    return (rv);
+}
+
+/*
+ * Call this to start a simple EST server with CRL check enabled,
+ * This server will not be thread safe.  It can only handle a single
+ * EST request on the listening socket at any given time.
+ * This server will run until st_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  ossl_conf_file: Configuration file that specifies the OpenSSL
+ *                  CA to use.
+ *  simulate_manual_enroll: Pass in a non-zero value to have the EST
+ *                  simulate manual approval at the CA level.  This
+ *                  is used to test the retry-after logic.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_start_crl (int listen_port,
+	      char *certfile,
+	      char *keyfile,
+	      char *realm,
+	      char *ca_chain_file,
+	      char *trusted_certs_file,
+	      char *ossl_conf_file,
+	      int simulate_manual_enroll,
+	      int enable_pop,
+	      int ec_nid)
+{
+    int rv;
+
+    rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+	      trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
+                           enable_pop, ec_nid, 0, NULL, 0, 0, 1);
 
     return (rv);
 }
@@ -1141,7 +1209,7 @@ int st_start (int listen_port,
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
 	      trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
-                           enable_pop, ec_nid, 0, NULL, 0, 0);
+                           enable_pop, ec_nid, 0, NULL, 0, 0, 0);
 
     return (rv);
 }
@@ -1185,7 +1253,7 @@ int st_start_nocacerts (int listen_port,
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
 	      trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
-                           enable_pop, ec_nid, 0, NULL, 0, 1);
+                           enable_pop, ec_nid, 0, NULL, 0, 1, 0);
 
     return (rv);
 }
@@ -1224,7 +1292,7 @@ int st_start_srp (int listen_port,
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
                            trusted_certs_file, ossl_conf_file, 0, enable_pop,
-                           0, 1, vfile, 0, 0);
+                           0, 1, vfile, 0, 0, 0);
 
     return (rv);
 }
@@ -1261,10 +1329,10 @@ int st_start_srp_tls10 (int listen_port,
 		  char *vfile)
 {
     int rv;
-    /* Note here that the last parm turns on tls1.0 */
+    /* Note here that the third to last parm turns on tls1.0 */
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
                            trusted_certs_file, ossl_conf_file, 0, enable_pop, 0,
-                           1, vfile, 1, 0);
+                           1, vfile, 1, 0, 0);
 
     return (rv);
 }
@@ -1379,3 +1447,557 @@ void st_csr_filename (char *incoming_name)
     }
 }
 
+static int jsoneq(const char *json, jsmntok_t *tok, const char *s) {
+        if (tok->type == JSMN_STRING && (int) strlen(s) == tok->end - tok->start &&
+                        strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
+                return 0;
+        }
+        return -1;
+}
+
+static int dump(const char *js, jsmntok_t *t, size_t count, int indent) {
+        int i, j, k;
+        if (count == 0) {
+                return 0;
+        }
+        if (t->type == JSMN_PRIMITIVE) {
+                printf("%.*s", t->end - t->start, js+t->start);
+                return 1;
+        } else if (t->type == JSMN_STRING) {
+                printf("'%.*s'", t->end - t->start, js+t->start);
+                return 1;
+        } else if (t->type == JSMN_OBJECT) {
+                printf("\n");
+                j = 0;
+                for (i = 0; i < t->size; i++) {
+                        for (k = 0; k < indent; k++) printf("  ");
+                        j += dump(js, t+1+j, count-j, indent+1);
+                        printf(": ");
+                        j += dump(js, t+1+j, count-j, indent+1);
+                        printf("\n");
+                }
+                return j+1;
+        } else if (t->type == JSMN_ARRAY) {
+                j = 0;
+                printf("\n");
+                for (i = 0; i < t->size; i++) {
+                        for (k = 0; k < indent-1; k++) printf("  ");
+                        printf("   - ");
+                        j += dump(js, t+1+j, count-j, indent+1);
+                        printf("\n");
+                }
+                return j+1;
+        }
+        return 0;
+}
+
+/*   { */
+/*      "ietf-voucher:voucher": { */
+/*        "nonce": "62a2e7693d82fcda2624de58fb6722e5", */
+/*        "assertion": "logging" */
+/*        "pinned-domain-cert": "<base64 encoded certificate>" */
+/*        "serial-number": "JADA123456789" */
+/*      } */
+/*    } */
+#define BRSKI_DEVICE_SERIAL_NUM "F7BE0D"
+#define VOUCHER "{\n\r\"ietf-voucher:voucher\":{\n\r\"nonce\":\"%s\",\n\r\"assertion\":\"logging\",\n\r\"pinned-domain-cert\":\"%s\",\n\r\"serial-number\":\"%s\"}\n\r}"
+#define VOUCHER_NONONCE "{\n\r\"ietf-voucher:voucher\":{\n\r\"assertion\":\"logging\",\n\r\"pinned-domain-cert\":\"%s\",\n\r\"serial-number\":\"%s\"}\n\r}"
+#define VOUCHER_NOSERIAL "{\n\r\"ietf-voucher:voucher\":{\n\r\"assertion\":\"logging\",\n\r\"pinned-domain-cert\":\"%s\",\n\r}\n\r}"
+
+#define EST_BRSKI_MAX_NONCE_LEN 256
+#define EST_BRSKI_MAX_SERIAL_NUM_LEN 256
+
+#define NONCE_TEMPLATE "\"nonce\":\"%s\""
+#define SERIAL_NUM_TEMPLATE "\"serial-number\":\"%s\""
+#define VOUCHER_TEMPLATE "{\n\r\"ietf-voucher:voucher\":{\n\r%s,\n\r\"assertion\":\"logging\",\n\r\"pinned-domain-cert\":\"%s\",\n\r%s}\n\r}"
+
+
+/*
+ * Callback function used by EST stack to process a BRSK 
+ * voucher request.  The parameters are:
+ *
+ *   voucher_req Contains the voucher request from the client
+ *   voucher_req_len Length of the voucher request
+ *   voucher     Pointer to a buffer pointer that will contain
+ *               the voucher to be returned
+ *   voucher_len Pointer to an integer that will be set to the length
+ *               of the returned voucher.
+ *   peer_cert - client certificate, if available, in internal X509
+ *               structure format
+ */
+static
+EST_BRSKI_CALLBACK_RC
+process_brski_voucher_request (char *voucher_req, int voucher_req_len,
+                               char **voucher, int *voucher_len, X509 *peer_cert)
+{
+    char *voucher_buf = NULL;
+    jsmn_parser p;
+    jsmntok_t *tok;
+    size_t tokcount = 100;
+    int parser_resp;
+    int i;
+    int nonce_found = 0;
+    int incoming_server_cert_found = 0;
+    char incoming_nonce[EST_BRSKI_VOUCHER_REQ_NONCE_SIZE+1];
+    char incoming_server_cert[EST_BRSKI_MAX_CACERT_LEN+1];
+    char *ser_num_str = NULL;
+
+    char *nonce_buf = NULL;
+    char *serial_num_buf = NULL;
+
+    
+    memset(incoming_nonce, 0, EST_BRSKI_VOUCHER_REQ_NONCE_SIZE+1);
+
+    printf("BRSKI voucher request received\n");
+    printf(" voucher_req = %s\n voucher_req_len = %d\n",
+           voucher_req, voucher_req_len);
+
+    /*
+     * If configured to perform retries, alternate between
+     * sending the retry and sending the voucher response.
+     * Unlike simple enroll retry processing, there is nothing
+     * in the voucher request to key off of to determine if
+     * the voucher request has been seen before, so the only
+     * option is to toggle based on time.  This can be more
+     * error prone if the test code gets out of sync with
+     * this toggling.
+     */
+    if (brski_retry_enabled) {
+        if (brski_retry_running_count) {
+            brski_retry_running_count--; 
+	    return (EST_BRSKI_CB_RETRY);
+        } else {
+            brski_retry_running_count = brski_retry_count;            
+            /*
+             * Continue on with sending the voucher response
+             */
+        }
+    }
+    
+    /*
+     * Parse the voucher request and obtain the nonce
+     */
+    jsmn_init(&p);
+    tok = calloc(tokcount, sizeof(*tok));
+    if (tok == NULL) {
+        printf("calloc(): errno=%d\n", errno);
+        return 3;
+    }
+    parser_resp = jsmn_parse(&p, (char *)voucher_req, (size_t)voucher_req_len,
+                             tok, tokcount);
+    if (parser_resp < 0) {
+        printf("Voucher request parse failed. parse error = %d\n", parser_resp);
+    } else {
+        dump((char *)voucher_req, tok, p.toknext, 0);
+        printf("Voucher request parsed\n");
+    }
+    for (i = 1; i < parser_resp; i++) {
+        if (jsoneq(voucher_req, &tok[i], "nonce") == 0) {
+            sprintf(incoming_nonce, "%.*s", tok[i+1].end-tok[i+1].start,
+                    voucher_req + tok[i+1].start);            
+            printf("Found nonce %s\n", incoming_nonce);
+            nonce_found = 1;
+            break;
+        }
+    }
+    if (!nonce_found) {
+        printf("Nonce missing from voucher request\n");
+        return (EST_BRSKI_CB_FAILURE);
+    }
+
+    /*
+     * Now look for the Registrar's cert
+     */
+    for (i = 1; i < parser_resp; i++) {
+        if (jsoneq(voucher_req, &tok[i], "pinned-domain-cert") == 0) {
+            sprintf(incoming_server_cert, "%.*s", tok[i+1].end-tok[i+1].start,
+                    voucher_req + tok[i+1].start);            
+            printf("Found pinned domain cert %s\n", incoming_server_cert);
+            incoming_server_cert_found = 1;
+            break;
+        }
+    }
+    if (!incoming_server_cert_found) {
+        printf("Pinned domain cert missing from voucher request\n");
+        return (EST_BRSKI_CB_FAILURE);
+    }
+
+    free(tok);
+    
+    /*
+     * Obtain the serial number of the pledge device from its ID cert
+     */
+    ser_num_str = est_find_ser_num_in_subj(peer_cert);
+    if (ser_num_str == NULL) {
+        char *subj;
+
+        printf("Pledge MFG cert does not contain a serial number.");
+
+        subj = X509_NAME_oneline(X509_get_subject_name(peer_cert), NULL, 0);
+        printf("Client MFG cert subject: %s", subj);
+        OPENSSL_free(subj);
+        
+        return (EST_ERR_CLIENT_BRSKI_SERIAL_NUM_MISSING);        
+    }
+    
+    voucher_buf = calloc(EST_BRSKI_MAX_VOUCHER_LEN, sizeof(char));
+    if (voucher_buf) {
+        
+        if (brski_send_nonce) {
+
+            nonce_buf = calloc(EST_BRSKI_MAX_NONCE_LEN+1, sizeof(char));
+            
+            if (brski_nonce_too_long) {
+
+                snprintf(nonce_buf, EST_BRSKI_MAX_NONCE_LEN, NONCE_TEMPLATE,
+                                      "123456789012345678901234567890123");
+                
+/*                 *voucher_len = snprintf(voucher_buf, EST_BRSKI_MAX_VOUCHER_LEN, VOUCHER, */
+/*                                         "123456789012345678901234567890123", p7_ca_certs, */
+/*                                         ser_num_str); */
+            } else if (brski_nonce_mismatch) {
+                snprintf(nonce_buf, EST_BRSKI_MAX_NONCE_LEN, NONCE_TEMPLATE,
+                                      "12345678901234567890123456789012");
+                
+/*                 *voucher_len = snprintf(voucher_buf, EST_BRSKI_MAX_VOUCHER_LEN, VOUCHER, */
+/*                                         "12345678901234567890123456789012", p7_ca_certs, */
+/*                                         ser_num_str); */
+            } else {
+                snprintf(nonce_buf, EST_BRSKI_MAX_NONCE_LEN, NONCE_TEMPLATE,
+                                      incoming_nonce);
+                
+/*                 *voucher_len = snprintf(voucher_buf, EST_BRSKI_MAX_VOUCHER_LEN, VOUCHER, */
+/*                                         incoming_nonce, p7_ca_certs, */
+/*                                         ser_num_str); */
+            }
+        } else {
+/*             *voucher_len = snprintf(voucher_buf, EST_BRSKI_MAX_VOUCHER_LEN, VOUCHER_NONONCE, */
+/*                                     p7_ca_certs, */
+/*                                     ser_num_str);             */
+        }
+
+        
+        if (brski_send_serial_num) {
+
+            serial_num_buf = calloc(EST_BRSKI_MAX_NONCE_LEN+1, sizeof(char));
+            
+            if (brski_serial_num_too_long) {
+/*                 *voucher_len = snprintf(voucher_buf, EST_BRSKI_MAX_VOUCHER_LEN, VOUCHER, */
+/*                                         "123456789012345678901234567890123", p7_ca_certs, */
+/*                                         ser_num_str); */
+                snprintf(serial_num_buf, EST_BRSKI_MAX_SERIAL_NUM_LEN, SERIAL_NUM_TEMPLATE,
+                         "SERIAL-NUM-TOO-LONG0123456789012345678901234567890123456789012345");
+            } else if (brski_serial_num_mismatch) {
+/*                 *voucher_len = snprintf(voucher_buf, EST_BRSKI_MAX_VOUCHER_LEN, VOUCHER, */
+/*                                         "12345678901234567890123456789012", p7_ca_certs, */
+/*                                         ser_num_str); */
+                snprintf(serial_num_buf, EST_BRSKI_MAX_SERIAL_NUM_LEN, SERIAL_NUM_TEMPLATE,
+                         "SERIAL-NUM-MISMATCH012345678901234567890123456789012345678901234");
+            } else {
+/*                 *voucher_len = snprintf(voucher_buf, EST_BRSKI_MAX_VOUCHER_LEN, VOUCHER, */
+/*                                         incoming_nonce, p7_ca_certs, */
+/*                                         ser_num_str); */
+                snprintf(serial_num_buf, EST_BRSKI_MAX_SERIAL_NUM_LEN, SERIAL_NUM_TEMPLATE,
+                         ser_num_str);
+            }
+        } else {
+/*             *voucher_len = snprintf(voucher_buf, EST_BRSKI_MAX_VOUCHER_LEN, VOUCHER_NONONCE, */
+/*                                     p7_ca_certs, */
+/*                                     ser_num_str);             */
+        }
+        
+/*         *voucher_len = snprintf(voucher_buf, EST_BRSKI_MAX_VOUCHER_LEN, VOUCHER_TEMPLATE, */
+/*                                 nonce_buf, p7_ca_certs, serial_num_buf); */
+        *voucher_len = snprintf(voucher_buf, EST_BRSKI_MAX_VOUCHER_LEN, VOUCHER_TEMPLATE,
+                                nonce_buf, p7_ca_certs, serial_num_buf);
+        free(nonce_buf);
+        free(serial_num_buf);
+        
+        *voucher = voucher_buf;
+        printf("Voucher to be returned = %s\n", *voucher);
+    } else {
+        *voucher = NULL;
+        *voucher_len = 0;
+        return (EST_BRSKI_CB_FAILURE);
+    }
+    
+    return EST_BRSKI_CB_SUCCESS;
+}
+
+/*
+ * Callback function used by EST stack to process a BRSKI
+ * voucher status indication.  The parameters are:
+ *
+ *   voucher_status Contains the voucher status from the client
+ *   voucher_status_len Length of the voucher status
+ *   peer_cert - client certificate, if available, in internal X509
+ *               structure format
+ *
+ */
+static EST_BRSKI_CALLBACK_RC
+process_brski_voucher_status (char *voucher_status, int voucher_status_len, X509 *peer_cert)
+{
+    jsmn_parser p;
+    jsmntok_t *tok;
+    size_t tokcount = 100;
+    int parser_resp;
+    int i;
+    int status_found = 0;
+    char incoming_status[5+1];
+    int reason_found = 0;
+    char incoming_reason[EST_BRSKI_MAX_REASON_LEN];
+    
+    memset(incoming_status, 0, 5+1);
+
+    printf("BRSKI voucher status received\n");
+    printf(" voucher_status = %s\n voucher_status_len = %d\n",
+           voucher_status, voucher_status_len);
+    
+    /*
+     * Parse the voucher response and obtain the status and reason
+     */
+    jsmn_init(&p);
+    tok = calloc(tokcount, sizeof(*tok));
+    if (tok == NULL) {
+        printf("calloc(): errno=%d\n", errno);
+        return 3;
+    }
+    parser_resp = jsmn_parse(&p, (char *)voucher_status, (size_t)voucher_status_len,
+                             tok, tokcount);
+    if (parser_resp < 0) {
+        printf("Voucher response parse failed. parse error = %d\n", parser_resp);
+    } else {
+        dump((char *)voucher_status, tok, p.toknext, 0);
+        printf("Voucher status parsed\n");
+    }
+    
+    for (i = 1; i < parser_resp; i++) {
+        if (jsoneq(voucher_status, &tok[i], "Status") == 0) {
+            sprintf(incoming_status, "%.*s", tok[i+1].end-tok[i+1].start,
+                    voucher_status + tok[i+1].start);            
+            printf("Found status %s\n", incoming_status);
+            status_found = 1;
+            break;
+        }
+    }
+    if (!status_found) {
+        printf("Status value missing from voucher status\n");
+        return (EST_BRSKI_CB_FAILURE);
+    }
+
+    for (i = 1; i < parser_resp; i++) {
+        if (jsoneq(voucher_status, &tok[i], "Reason") == 0) {
+            sprintf(incoming_reason, "%.*s", tok[i+1].end-tok[i+1].start,
+                    voucher_status + tok[i+1].start);            
+            printf("Found reason: %s\n", incoming_reason);
+            reason_found = 1;
+            break;
+        }
+    }
+    if (!reason_found) {
+        printf("Reason value missing from voucher status\n");
+        return (EST_BRSKI_CB_FAILURE);
+    }
+    
+    free(tok);
+    return EST_BRSKI_CB_SUCCESS;
+}
+
+/*
+ * Callback function used by EST stack to process a BRSK 
+ * enrollment status.  The parameters are:
+ *
+ *   voucher_req Contains the voucher request from the client
+ *   voucher_req_len Length of the voucher request
+ *   voucher     Pointer to a buffer pointer that will contain
+ *               voucher/
+ *   voucher_len Pointer to an integer that will be set to the length
+ *               of the returned voucher.
+ *
+ */
+static EST_BRSKI_CALLBACK_RC 
+process_brski_enroll_status (char *enroll_status, int enroll_status_len, X509 *peer_cert)
+{
+    jsmn_parser p;
+    jsmntok_t *tok;
+    size_t tokcount = 100;
+    int parser_resp;
+    int i;
+    int status_found = 0;
+    char incoming_status[5+1];
+    int reason_found = 0;
+    char incoming_reason[EST_BRSKI_MAX_REASON_LEN];
+    
+    memset(incoming_status, 0, 5+1);
+
+    printf("BRSKI enroll status received\n");
+    printf(" enroll_status = %s\n enroll_status_len = %d\n",
+           enroll_status, enroll_status_len);
+
+    /*
+     * Parse the voucher response and obtain the status and reason
+     */
+    jsmn_init(&p);
+    tok = calloc(tokcount, sizeof(*tok));
+    if (tok == NULL) {
+        printf("calloc(): errno=%d\n", errno);
+        return 3;
+    }
+    parser_resp = jsmn_parse(&p, (char *)enroll_status, (size_t)enroll_status_len,
+                             tok, tokcount);
+    if (parser_resp < 0) {
+        printf("Enroll response parse failed. parse error = %d\n", parser_resp);
+    } else {
+        dump((char *)enroll_status, tok, p.toknext, 0);
+        printf("Enroll status parsed\n");
+    }
+    
+    for (i = 1; i < parser_resp; i++) {
+        if (jsoneq(enroll_status, &tok[i], "Status") == 0) {
+            sprintf(incoming_status, "%.*s", tok[i+1].end-tok[i+1].start,
+                    enroll_status + tok[i+1].start);            
+            printf("Found status %s\n", incoming_status);
+            status_found = 1;
+            break;
+        }
+    }
+    if (!status_found) {
+        printf("Status value missing from enroll status\n");
+        return (EST_BRSKI_CB_FAILURE);
+    }
+
+    for (i = 1; i < parser_resp; i++) {
+        if (jsoneq(enroll_status, &tok[i], "Reason") == 0) {
+            sprintf(incoming_reason, "%.*s", tok[i+1].end-tok[i+1].start,
+                    enroll_status + tok[i+1].start);            
+            printf("Found reason: %s\n", incoming_reason);
+            reason_found = 1;
+            break;
+        }
+    }
+    if (!reason_found) {
+        printf("Reason value missing from enroll status\n");
+        return (EST_BRSKI_CB_FAILURE);
+    }
+
+    free(tok);
+    return EST_BRSKI_CB_SUCCESS;    
+}
+
+int st_set_brski_mode (void)
+{
+    int rc;
+    
+    if (est_set_brski_voucher_req_cb(ectx, &process_brski_voucher_request)) {
+        printf(
+            "\nUnable to set EST BRSKI voucher request callback.  Aborting!!!\n");
+        return(-1);
+    }
+    if (est_set_brski_voucher_status_cb(ectx, &process_brski_voucher_status)) {
+        printf(
+            "\nUnable to set EST BRSKI voucher request callback.  Aborting!!!\n");
+        return(-1);
+    }
+    if (est_set_brski_enroll_status_cb(ectx, &process_brski_enroll_status)) {
+        printf(
+            "\nUnable to set EST BRSKI voucher request callback.  Aborting!!!\n");
+        return(-1);
+    }
+
+    /*
+     * For EST /cacerts, the CA certs response can be processed two ways,
+     * they can be provided to the EST library and the library repsonds
+     * directly, or the application layer can provide a call back and
+     * it provides the response buffer containing the CA certs.  The estserver
+     * test app does it the first way, so the EST library responds directly.
+     * With BRSKI, this response of the CA certs is contained in the voucher, so
+     * the application layer needs to be responsible for preparing the response.
+     * The following code is replicated from the EST library.
+     */
+    /*
+     * Convert the PEM encoded buffer previously read the file into the
+     * PKCS7 buffer used for responding to /cacerts requests
+     */
+    rc = load_ca_certs(ectx, cacerts_raw, cacerts_len);
+    if (rc != 0) {
+        printf("\nUnable to convert CA certs chain in PEM format to PKCS7."
+               " Aborting!!!\n");
+        return (-1);
+    }
+    return (0);
+}
+
+/*
+ * Used to control the retry-after mode of the voucher request processing
+ */
+int st_set_brski_retry_mode (int enable_retry, int retry_delay, int retry_count)
+{    
+    /*
+     * reset the retry-after logic
+     */
+    brski_retry_delay = retry_delay;
+    if (EST_ERR_NONE != est_server_set_brski_retry_period(ectx, brski_retry_delay)) {
+        printf("\nFailed to set retry period in context\n");
+        return (-1);
+    }    
+    brski_retry_running_count = brski_retry_count = retry_count;
+    brski_retry_enabled = enable_retry;
+
+    printf("\nSetting retry mode to:\n"
+           "  retry_enabled = %d\n"
+           "  retry_delay = %d\n"
+           "  retry_count = %d\n",
+           brski_retry_enabled,
+           brski_retry_delay,
+           brski_retry_count);
+    
+    return (0);
+}
+
+/*
+ * Used to control the nonce error processing
+ */
+int st_set_brski_nonce_mode (int send_nonce, int nonce_too_long,
+                             int nonce_mismatch)
+{    
+    /*
+     * set the retry-after testing logic
+     */
+    brski_send_nonce = send_nonce;
+    brski_nonce_too_long = nonce_too_long;
+    brski_nonce_mismatch = nonce_mismatch;
+
+    printf("\nSetting nonce mode to:\n"
+           "  send_nonce = %d\n"
+           "  send_nonce_too_long = %d\n"
+           "  send_nonce_mismatch = %d\n",
+           brski_send_nonce,
+           brski_nonce_too_long,
+           brski_nonce_mismatch);
+    
+    return (0);
+}
+
+/*
+ * Used to control the serial number error processing
+ */
+int st_set_brski_serial_num_mode (int send_serial_num, int serial_num_too_long,
+                                  int serial_num_mismatch)
+{    
+    /*
+     * set the serial number testing logic
+     */
+    brski_send_serial_num = send_serial_num;
+    brski_serial_num_too_long = serial_num_too_long;
+    brski_serial_num_mismatch = serial_num_mismatch;
+
+    printf("\nSetting serial_num mode to:\n"
+           "  send_serial_num = %d\n"
+           "  send_serial_num_too_long = %d\n"
+           "  send_serial_num_mismatch = %d\n",
+           brski_send_serial_num,
+           brski_serial_num_too_long,
+           brski_serial_num_mismatch);
+    
+    return (0);
+}
