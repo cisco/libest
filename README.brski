@@ -1,28 +1,41 @@
 
 The BRSKI support in libEST is a work in progress.  The functionality that's
-implemented does not yet address every aspect of the BRSKI draft, and is not
-yet integrated into the full functionality of libEST. 
+implemented does not yet address every aspect of the BRSKI draft and voucher
+profile draft.  In addition, both drafts are continuing to be refined and this
+code will necessarily fall behind the latest versions of the draft as they
+continue to evolved.  This first pass of functionality is implemented to
+version 7 of the BRSKI draft and version 5 of the voucher profile draft.
 
-The following work items are being worked on and will be made available as
-they are completed,
+The BRSKI support is not yet integrated into the full functionality of libEST.
+The first phase of support is to add BRSKI pledge support only into EST client
+mode.  There is currently no official support for the BRSKI based primitives
+in EST server or proxy modes of operation.  However, in order to test the
+BRSKI pledge support there does contain experimental functionality in the EST
+server mode to address the BRSKI primitives.
+
+The following work items are currently being worked on and will be made
+available as they are completed,
+
 - Uplift to the lasted version of the BRSKI draft and Voucher profile draft
 - Support for provisional TLS connections
 - Support for signed voucher requests and vouchers
+- Support for mfg credentials in the example applications
 - Support for unprintable ASCII characters in JSON based payloads
 - Support for Registrar Discovery
 
 Building libEST
 =================
 
-The following steps are used to build and use the BRSKI support in libEST,
+The following steps are used to build and use the current BRSKI support in
+libEST,
 
 1. At a minimum, libEST requires OpenSSL.  It's best to get the latest
 OpenSSL, build and install it, and use it in the building of libEST.
 
 2. The BRSKI support is conditioned off a compile time flag.  This flag is set
-by adding '--enable-brski' on the configure statement. 
+by adding '--enable-brski' on the configure statement.
 
-./configure --prefix=<location of private install of libEST> \
+./configure --prefix=<intended location of private install of libEST> \
             --with-ssl-dir=<location of installation of OpenSSL> \
             --enable-brski
 
@@ -60,11 +73,12 @@ export EST_CACERTS_RESP=./estCA/cacert.crt
 export EST_OPENSSL_CACONFIG=./estExampleCA.cnf
 
 The server example application is started with BRSKI support using the
-following command
+following command,
 
 ./estserver -p 9231 -c estCA/private/estservercertandkey.pem -k estCA/private/estservercertandkey.pem -r estrealm -v --enable-brski -n
 
-2. The estclient example with BRSKI support is invoked with the following command
+2. The estclient example with BRSKI support is invoked with the following
+command,
 
 export EST_OPENSSL_CACERT=../server/estCA/cacert.crt
 ./estclient_brski -s 127.0.0.1 -p 9231 -c ../server/estCA/private/estservercertandkey.pem -k ../server/estCA/private/estservercertandkey.pem

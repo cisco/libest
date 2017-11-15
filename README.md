@@ -10,3 +10,8 @@ http://testrfc7030.com/ and can be used for interop testing the EST
 protocol.
 
 Please direct questions/comments to est-interest@external.cisco.com
+
+BRSKI NOTE:
+
+See the README.brski file for the latest information regarding the BRSKI pledge support being added to libEST.
+
