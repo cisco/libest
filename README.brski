@@ -78,8 +78,26 @@ following command,
 ./estserver -p 9231 -c estCA/private/estservercertandkey.pem -k estCA/private/estservercertandkey.pem -r estrealm -v --enable-brski -n
 
 2. The estclient example with BRSKI support is invoked with the following
-command,
+commands,
 
+# Point to the CA Cert for the test CA over in the server example app
 export EST_OPENSSL_CACERT=../server/estCA/cacert.crt
-./estclient_brski -s 127.0.0.1 -p 9231 -c ../server/estCA/private/estservercertandkey.pem -k ../server/estCA/private/estservercertandkey.pem
+# Generate a test manufacturing identity for this test node.
+# - First, generate a key pair and a Certificate Signing Request (CSR)
+openssl req -nodes -days 365 -sha256 -newkey rsa:2048 -subj '/CN=www.iotrus.com/O=IOT-R-US, Inc./C=US/ST=NC/L=RTP/serialNumber=IOTRUS-0123456789'  -keyout ./est_client_mfg_privkey.pem -out ./est_client_mfg_csr.pem
+
+# - Then move over to the test CA to get a certificate generated
+cd ..
+cd server
+openssl ca -config ../server/estExampleCA.cnf -in ../client-brski/est_client_mfg_csr.pem -extensions v3_ca -out ../client-brski/est_client_mfg_cert.pem -batch
+cd ..
+cd client-brski/
+
+# - Finally, invoke the estclient test app with the additional BRSKI calls to 
+#   - Issue a voucher request to obtain a voucher
+#   - Send the voucher status
+#   - Issue an EST /simpleenroll to enroll another new key into the domain
+#   - Send the enroll status
+./estclient_brski -s 127.0.0.1 -p 9231 -c est_client_mfg_cert.pem  -k est_client_mfg_privkey.pem 
+
 
