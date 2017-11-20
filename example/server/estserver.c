@@ -83,9 +83,11 @@ static int disable_forced_http_auth = 0;
 static int set_fips_return = 0;
 static unsigned long set_fips_error = 0;
 static int test_app_data = 0xDEADBEEF;
+#if ENABLE_BRSKI
 static int brski_mode = 0;
 static int  brski_ca_certs_len;
 static unsigned char   *brski_ca_certs;
+#endif
 
 char certfile[EST_MAX_FILE_LEN];
 char keyfile[EST_MAX_FILE_LEN];
@@ -198,7 +200,9 @@ static void show_usage_and_exit (void)
         "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
         "  --enforce-csr  Enable CSR attributes enforcement. The client must provide all the attributes in the CSR.\n"
         "  --token <value> Use HTTP Bearer Token auth.\n"
+#if ENABLE_BRSKI            
         "  --enable-brski Enable BRSKI bootstrapping support.\n"
+#endif            
             "\n");
     exit(255);
 }
@@ -757,6 +761,7 @@ unsigned char * process_csrattrs_request (int *csr_len, char *path_seg, X509 *pe
     return (csr_data);
 }
 
+#if ENABLE_BRSKI
 static int jsoneq(const char *json, jsmntok_t *tok, const char *s) {
 	if (tok->type == JSMN_STRING && (int) strlen(s) == tok->end - tok->start &&
 			strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
@@ -801,7 +806,6 @@ static int dump(const char *js, jsmntok_t *t, size_t count, int indent) {
         }
         return 0;
 }
-
 
 /*   { */
 /*      "ietf-voucher:voucher": { */
@@ -1085,7 +1089,6 @@ process_brski_enroll_status (char *enroll_status, int enroll_status_len, X509 *p
     return EST_BRSKI_CB_SUCCESS;    
 }
 
-
 /*
  * This function is used to read the CERTS in a BIO and build a
  * stack of X509* pointers.  This is used during the PEM to
@@ -1247,7 +1250,7 @@ EST_ERROR est_load_ca_certs (unsigned char *raw, int size)
     BIO *cacerts = NULL;
     BIO *in;
     unsigned char *retval;
-
+    
     in = BIO_new_mem_buf(raw, size);
     if (in == NULL) {
         printf("Unable to open the raw cert buffer");
@@ -1265,7 +1268,7 @@ EST_ERROR est_load_ca_certs (unsigned char *raw, int size)
         BIO_free(in);
         return (EST_ERR_LOAD_CACERTS);
     }
-
+    
     brski_ca_certs_len = (int) BIO_get_mem_data(cacerts, (char**)&retval);
     if (brski_ca_certs_len <= 0) {
         printf("Failed to copy PKCS7 data");
@@ -1273,11 +1276,12 @@ EST_ERROR est_load_ca_certs (unsigned char *raw, int size)
         BIO_free(in);
         return (EST_ERR_LOAD_CACERTS);
     }
-
+    
     brski_ca_certs = malloc(brski_ca_certs_len);
     if (!brski_ca_certs) {
         printf("malloc failed");
         BIO_free_all(cacerts);
+
         BIO_free(in);
         return (EST_ERR_LOAD_CACERTS);
     }
@@ -1286,6 +1290,7 @@ EST_ERROR est_load_ca_certs (unsigned char *raw, int size)
     BIO_free(in);
     return (EST_ERR_NONE);
 }
+#endif
 
 static char digest_user[3][34] = { "estuser", "estrealm", ""};
 
@@ -1505,7 +1510,9 @@ int main (int argc, char **argv)
         {"srp", 1, NULL, 0},
         {"enforce-csr", 0, NULL, 0},
         {"token", 1, 0, 0},
+#if ENABLE_BRSKI        
         {"enable-brski", 0, 0, 0},
+#endif
         {"keypass", 1, 0, 0},
         {"keypass_stdin", 1, 0, 0 },
         {"keypass_arg", 1, 0, 0 },
@@ -1556,10 +1563,12 @@ int main (int argc, char **argv)
                 strncpy(priv_key_pwd, optarg, MAX_PWD_LEN);
                 priv_key_cb = string_password_cb;
             }
+#if ENABLE_BRSKI            
             if (!strncmp(long_options[option_index].name, "enable-brski",
                 strlen("enable-brski"))) {
                 brski_mode = 1;
             }
+#endif            
             break;
         case 'm':
             manual_enroll = 1;
@@ -1785,6 +1794,7 @@ int main (int argc, char **argv)
         printf("\nUnable to set EST CSR Attributes callback.  Aborting!!!\n");
         exit(1);
     }
+#if ENABLE_BRSKI    
     if (brski_mode) {
         /*
          * register the brski call backs.
@@ -1818,7 +1828,8 @@ int main (int argc, char **argv)
         if (est_load_ca_certs(cacerts_raw, cacerts_len)) {
             printf("Failed to load CA certificates response buffer");
         }
-    }    
+    }
+#endif    
     if (!http_auth_disable) {
         if (est_set_http_auth_cb(ectx, &process_http_auth)) {
             printf("\nUnable to set EST HTTP AUTH callback.  Aborting!!!\n");

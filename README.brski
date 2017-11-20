@@ -80,8 +80,11 @@ following command,
 2. The estclient example with BRSKI support is invoked with the following
 commands,
 
-# Point to the CA Cert for the test CA over in the server example app
+cd ../client-brski/
+
+# Point to the test CA Cert in the server example app
 export EST_OPENSSL_CACERT=../server/estCA/cacert.crt
+
 # Generate a test manufacturing identity for this test node.
 # - First, generate a key pair and a Certificate Signing Request (CSR)
 openssl req -nodes -days 365 -sha256 -newkey rsa:2048 -subj '/CN=www.iotrus.com/O=IOT-R-US, Inc./C=US/ST=NC/L=RTP/serialNumber=IOTRUS-0123456789'  -keyout ./est_client_mfg_privkey.pem -out ./est_client_mfg_csr.pem
