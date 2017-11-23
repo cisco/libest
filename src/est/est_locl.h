@@ -154,8 +154,8 @@
 #define EST_BRSKI_VOUCHER_STATUS_URI EST_PATH_PREFIX"/"EST_BRSKI_VOUCHER_STATUS
 #define EST_BRSKI_ENROLL_STATUS_URI EST_PATH_PREFIX"/"EST_BRSKI_ENROLL_STATUS
 
-#define EST_BRSKI_CT_VREQ_SIGNED "application/voucherrequest"
-#define EST_BRSKI_CT_VREQ "application/unsignedvoucherrequest"
+#define EST_BRSKI_CT_VREQ_SIGNED "application/pkcs7-mime; smime-type=voucher-request"
+#define EST_BRSKI_CT_VREQ "application/json"
 #define EST_BRSKI_CT_VRSP "application/voucher+cms"
 #define EST_BRSKI_CT_STATUS "application/json"
 

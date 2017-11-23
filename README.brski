@@ -23,6 +23,15 @@ available as they are completed,
 - Support for unprintable ASCII characters in JSON based payloads
 - Support for Registrar Discovery
 
+Current BRSKI Pledge Assumptions
+================================
+
+1. The BRSKI pledge support is integrated into libEST and is therefore
+dependent upon OpenSSL and assumes that OpenSSL is available for use.
+
+2. The BRSKI pledge support assumes that a valid realtime clock is available
+in the system, specifically through the use of the Linux time() function.
+
 Building libEST
 =================
 

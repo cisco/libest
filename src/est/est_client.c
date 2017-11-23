@@ -5189,11 +5189,11 @@ void est_brski_build_voucher_req (char *voucher_req, int *voucher_req_len,
      * create the voucher request
      */
     snprintf(voucher_req, EST_BRSKI_MAX_VOUCHER_REQ_LEN, "{\r\n"
-             "\"ietf-voucher:voucher\": {\r\n"
+             "\"ietf-voucher-request:voucher\": {\r\n"
              "\"nonce\": \"%s\",\r\n"
              "\"created-on\": \"%s\",\r\n"
              "\"assertion\": \"%s\",\r\n"
-             "\"pinned-domain-cert\": \"%s\"\r\n"
+             "\"proximity-registrar-cert\": \"%s\"\r\n"
              "}}",nonce_str, time_str, assertion, server_cert);
     *voucher_req_len = strnlen_s(voucher_req, EST_BRSKI_MAX_VOUCHER_REQ_LEN);
 
