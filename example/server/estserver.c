@@ -890,16 +890,16 @@ process_brski_voucher_request (char *voucher_req, int voucher_req_len,
      * Now look for the Registrar's cert
      */
     for (i = 1; i < parser_resp; i++) {
-        if (jsoneq(voucher_req, &tok[i], "pinned-domain-cert") == 0) {
+        if (jsoneq(voucher_req, &tok[i], "proximity-registrar-cert") == 0) {
             sprintf(incoming_server_cert, "%.*s", tok[i+1].end-tok[i+1].start,
                     voucher_req + tok[i+1].start);            
-            printf("Found pinned domain cert %s\n", incoming_server_cert);
+            printf("Found proximity registrar cert %s\n", incoming_server_cert);
             incoming_server_cert_found = 1;
             break;
         }
     }
     if (!incoming_server_cert_found) {
-        printf("Pinned domain cert missing from voucher request\n");
+        printf("Proximity registrar cert missing from voucher request\n");
         return (EST_BRSKI_CB_FAILURE);
     }
 
