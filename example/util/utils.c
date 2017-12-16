@@ -181,7 +181,9 @@ char *generate_private_EC_key (int curve_nid, pem_password_cb *cb)
     group = EC_GROUP_new_by_curve_name(curve_nid);
     EC_GROUP_set_asn1_flag(group, asn1_flag);
     EC_GROUP_set_point_conversion_form(group, form);
-    EC_KEY_set_group(eckey, group);
+    if (EC_KEY_set_group(eckey, group) == 0) {
+        return NULL;
+    }
     if (!EC_KEY_generate_key(eckey)) {
         return (NULL);
     }
