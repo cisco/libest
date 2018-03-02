@@ -1274,6 +1274,11 @@ static int est_client_build_cacerts_header (EST_CTX *ctx, char *hdr)
         EST_LOG_WARN("CA Certs header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
     }
+
+    if(hdr_len > EST_HTTP_HDR_MAX) {
+        EST_LOG_ERR("CA Certs header is too big (%d) > (%d)", hdr_len, EST_HTTP_HDR_MAX);
+        return 0;
+    }
     
     return (hdr_len);
 }
@@ -1307,6 +1312,12 @@ static int est_client_build_csr_header (EST_CTX *ctx, char *hdr)
         EST_LOG_WARN("CSR attributes request header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
     }
+
+    if(hdr_len > EST_HTTP_HDR_MAX) {
+        EST_LOG_ERR("CSR attributes header is too big (%d) > (%d)", hdr_len, EST_HTTP_HDR_MAX);
+        return 0;
+    }
+
     return (hdr_len);
 }
 
@@ -1435,6 +1446,11 @@ static int est_client_build_enroll_header (EST_CTX *ctx, char *hdr, int pkcs10_l
         EST_LOG_WARN("Client enroll request header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
     }
+
+    if(hdr_len > EST_HTTP_HDR_MAX) {
+        EST_LOG_ERR("Client enroll request header is too big (%d) > (%d)", hdr_len, EST_HTTP_HDR_MAX);
+        return 0;
+    }
     
     return (hdr_len);
 }
@@ -1471,6 +1487,12 @@ static int est_client_build_reenroll_header (EST_CTX *ctx, char *hdr, int pkcs10
         EST_LOG_WARN("Client reenroll request header took up the maximum amount in buffer (%d)",
                      EST_HTTP_REQ_TOTAL_LEN);
     }
+
+    if(hdr_len > EST_HTTP_HDR_MAX) {
+        EST_LOG_ERR("Client reenroll request header is too big (%d) > (%d)", hdr_len, EST_HTTP_HDR_MAX);
+        return 0;
+    }
+
     return (hdr_len);
 }
 
@@ -2615,6 +2637,12 @@ static int est_client_send_cacerts_request (EST_CTX *ctx, SSL *ssl,
     }
     
     hdr_len = est_client_build_cacerts_header(ctx, http_data);
+    if(hdr_len == 0) {
+        EST_LOG_ERR("Unable to build CA Cert header");
+        free(http_data);
+        return (EST_ERR_HTTP_CANNOT_BUILD_HEADER);
+    }
+
     /*
      * terminate the HTTP header
      */
