@@ -25,8 +25,10 @@
 #   include <netdb.h>
 #   include <unistd.h>
 #   include <arpa/inet.h>
-#   include <netinet/in.h>
 #endif /* WIN32 */
+#ifdef __FreeBSD__
+#   include <netinet/in.h>
+#endif /* __FreeBSD__ */
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>

@@ -719,7 +719,7 @@ static void cleanup()
      * manual cert approval
      */
     if (lookup_root) {
-       /* tdestroy() if a GNU C extension.
+       /* tdestroy() is a GNU C extension.
         * If we are not using GNU C, skip it and let memory leak. */
 #if defined(__GNUC__) && !defined(__clang__)
         tdestroy((void *)lookup_root, free_lookup);
