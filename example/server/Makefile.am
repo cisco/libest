@@ -14,6 +14,6 @@ else
 PTHREAD=-lpthread
 endif
 
-estserver_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto
+estserver_LDFLAGS = -L$(abs_top_builddir)/src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto
 
 EXTRA_DIST = ossl_srv.h apps.h createCA.sh ext.cnf ESTcommon.sh runserver.sh estExampleCA.cnf extExampleCA.cnf

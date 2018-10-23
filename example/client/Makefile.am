@@ -14,4 +14,4 @@ else
 PTHREAD=-lpthread
 endif
 
-estclient_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto
+estclient_LDFLAGS = -L$(abs_top_builddir)/src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto
