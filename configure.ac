@@ -128,15 +128,17 @@ AC_ARG_WITH([uriparser-dir],
         ]
        )
 
-SAFEC_STUB_DIR='$(abs_top_builddir)/safe_c_stub'
-AC_SUBST(SAFEC_STUB_DIR)
-safecdir="$SAFEC_STUB_DIR" 
-AC_SUBST([SAFEC_DIR], "$safecdir")
-AC_SUBST([SAFEC_CFLAGS], "$safecdir/include")
-AC_SUBST([SAFEC_LDFLAGS], "$safecdir/lib")
+SAFEC_STUB_SRCDIR='$(abs_top_srcdir)/safe_c_stub'
+SAFEC_STUB_BLDDIR='$(abs_top_builddir)/safe_c_stub'
+AC_SUBST(SAFEC_STUB_SRCDIR)
+safecsrcdir="$SAFEC_STUB_SRCDIR"
+safecblddir="$SAFEC_STUB_BLDDIR" 
+AC_SUBST([SAFEC_DIR], "$safecsrcdir")
+AC_SUBST([SAFEC_CFLAGS], "$safecsrcdir/include")
+AC_SUBST([SAFEC_LDFLAGS], "$safecblddir/lib")
 
-CFLAGS="$CFLAGS -Wall -I$safecdir/include"
-LDFLAGS="$LDFLAGS -L$safecdir/lib"
+CFLAGS="$CFLAGS -Wall -I$safecsrcdir/include"
+LDFLAGS="$LDFLAGS -L$safecblddir/lib"
 LIBS="$LIBS -lsafe_lib"
 
 AC_PREFIX_DEFAULT([/usr/local/est])

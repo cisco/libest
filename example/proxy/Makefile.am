@@ -13,6 +13,6 @@ else
 PTHREAD=-lpthread
 endif
 
-estproxy_LDFLAGS = -L../../src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto
+estproxy_LDFLAGS = -L$(abs_top_builddir)/src/est/.libs $(DL) $(PTHREAD) -lest -lssl -lcrypto
 
 EXTRA_DIST = createRA.sh runproxy.sh estExampleCA.cnf

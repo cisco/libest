@@ -7,4 +7,4 @@ DL=
 else
 DL=-ldl
 endif
-estclient_simple_LDFLAGS = -L../../src/est/.libs $(DL) -lest -lssl -lcrypto
+estclient_simple_LDFLAGS = -L$(abs_top_builddir)/src/est/.libs $(DL) -lest -lssl -lcrypto
