@@ -576,6 +576,7 @@ int est_tls_uid_auth (EST_CTX *ctx, SSL *ssl, X509_REQ *req)
                 j = 0;
                 at = sk_ASN1_TYPE_value(attr->value.set, j);
                 bs = at->value.asn1_string;
+            }
 #else
 		ASN1_TYPE   *value;
 		value  = X509_ATTRIBUTE_get0_type(attr, 0);
