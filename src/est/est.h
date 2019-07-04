@@ -511,12 +511,21 @@ LIBEST_API int est_convert_p7b64_to_pem(unsigned char *certs_p7, int certs_len, 
  
     @return void.
  */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 #define est_apps_startup() \
     do { CRYPTO_malloc_init(); \
          ERR_load_crypto_strings(); OpenSSL_add_all_algorithms(); \
          ENGINE_load_builtin_engines(); \
          SSL_library_init(); \
          SSL_load_error_strings(); } while (0)
+#else
+#define est_apps_startup() \
+	    do { OPENSSL_malloc_init(); \
+		             ERR_load_crypto_strings(); OpenSSL_add_all_algorithms(); \
+		             ENGINE_load_builtin_engines(); \
+		             SSL_library_init(); \
+		             SSL_load_error_strings(); } while (0)
+#endif
 
 /*! @brief est_apps_shutdown() is used by an application to de-initialize 
     the OpenSSL library.  This should be called to prevent memory
@@ -524,15 +533,22 @@ LIBEST_API int est_convert_p7b64_to_pem(unsigned char *certs_p7, int certs_len, 
     CONF_modules_unload(), OBJ_cleanup(), EVP_cleanup(), ENGINE_cleanup(),
     CRYPTO_cleanup_all_ex_data(), ERR_remove_thread_state(), and
     ERR_free_strings().
- 
+    ERR_remove_thread_state is deprecated in versions greater than 0x10100000L
     @return void.
  */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 #define est_apps_shutdown() \
     do { CONF_modules_unload(1); \
          OBJ_cleanup(); EVP_cleanup(); ENGINE_cleanup(); \
          CRYPTO_cleanup_all_ex_data(); ERR_remove_thread_state(NULL); \
          ERR_free_strings(); } while (0)
-
+#else
+#define est_apps_shutdown() \
+    do { CONF_modules_unload(1); \
+         OBJ_cleanup(); EVP_cleanup(); ENGINE_cleanup(); \
+         CRYPTO_cleanup_all_ex_data();  \
+         ERR_free_strings(); } while (0)
+#endif
 #ifdef __cplusplus
 }
 #endif
