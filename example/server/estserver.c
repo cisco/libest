@@ -144,6 +144,7 @@ static DH *get_dh1024dsa ()
     if ((dh = DH_new()) == NULL) {
         return (NULL);
     }
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
     dh->p = BN_bin2bn(dh1024_p, sizeof(dh1024_p), NULL);
     dh->g = BN_bin2bn(dh1024_g, sizeof(dh1024_g), NULL);
     if ((dh->p == NULL) || (dh->g == NULL)) {
@@ -151,6 +152,18 @@ static DH *get_dh1024dsa ()
         return (NULL);
     }
     dh->length = 160;
+#else
+    BIGNUM * const dh_p = BN_bin2bn(dh1024_p, sizeof(dh1024_p), NULL);
+    BIGNUM * const dh_g = BN_bin2bn(dh1024_g, sizeof(dh1024_g), NULL);
+    if ((dh_p == NULL) || (dh_g == NULL) || !DH_set0_pqg(dh, dh_p, NULL, dh_g)) {
+	    DH_free(dh);
+	    return (NULL);
+    }
+    long bits =160;
+    if (DH_get_length(dh) > 0) {
+	    DH_set_length(dh, bits);
+    }
+#endif
     return (dh);
 }
 
@@ -276,7 +289,11 @@ int lookup_pkcs10_request (unsigned char *pkcs10, int p10_len)
      * would do this lookup.  But this should be good enough for
      * testing the retry-after logic.
      */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
     pkey = X509_PUBKEY_get(req->req_info->pubkey);
+#else
+    pkey = X509_PUBKEY_get(X509_REQ_get_X509_PUBKEY(req));
+#endif
     if (!pkey) {
         rv = 1;
         goto DONE;
@@ -859,7 +876,11 @@ static int process_ssl_srp_auth (SSL *s, int *ad, void *arg)
     if (!login)
         return (-1);
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
     user = SRP_VBASE_get_by_user(srp_db, login);
+#else
+    user = SRP_VBASE_get1_by_user(srp_db, login);
+#endif
 
     if (user == NULL) {
         printf("User doesn't exist in SRP database\n");
@@ -1138,7 +1159,12 @@ int main (int argc, char **argv)
     /*
      * Read in the local server certificate
      */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
     certin = BIO_new(BIO_s_file_internal());
+#else
+   certin = BIO_new(BIO_s_file());
+#endif
+
     if (BIO_read_filename(certin, certfile) <= 0) {
         printf("\nUnable to read server certificate file %s\n", certfile);
         exit(1);

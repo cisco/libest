@@ -1128,7 +1128,11 @@ EST_ERROR est_asn1_sanity_test (const unsigned char *string, long out_len,
 	switch (tag)
 	{
 	case V_ASN1_OBJECT:
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
             a_object = c2i_ASN1_OBJECT(NULL, &string, len);
+#else
+            a_object = d2i_ASN1_OBJECT(NULL, &string, len);
+#endif
 	    if (a_object != NULL) {
 	        nid = OBJ_obj2nid(a_object);
 		EST_LOG_INFO("NID=%d", nid);
@@ -1485,7 +1489,11 @@ EST_ERROR est_get_attributes_helper (unsigned char **der_ptr, int *der_len, int 
 	switch (tag) {
 
 	case V_ASN1_OBJECT:
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
             a_object = c2i_ASN1_OBJECT(NULL, &string, len);
+#else
+            a_object = d2i_ASN1_OBJECT(NULL, &string, len);
+#endif
 	    if (a_object != NULL) {
 	        nid = OBJ_obj2nid(a_object);
 		EST_LOG_INFO("NID=%d", nid);

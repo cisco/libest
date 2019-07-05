@@ -368,7 +368,14 @@ static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
      * This fingerprint can be checked against the anticipated value to determine
      * whether or not the server's cert should be approved.
      */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
     X509_signature_print(bio_err, cur_cert->sig_alg, cur_cert->signature);
+#else
+    const ASN1_BIT_STRING *asn1_sig = NULL;
+    const X509_ALGOR      *sig_type = NULL;
+    X509_get0_signature(&asn1_sig, &sig_type, cur_cert);
+    X509_signature_print(bio_err, sig_type, asn1_sig);
+#endif
 
     BIO_free(bio_err);
 
@@ -398,7 +405,11 @@ static X509_REQ *read_csr (char *csr_file)
     /*
      * Read in the csr
      */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
     csrin = BIO_new(BIO_s_file_internal());
+#else
+    csrin = BIO_new(BIO_s_file());
+#endif
     if (BIO_read_filename(csrin, csr_file) <= 0) {
         printf("\nUnable to read CSR file %s\n", csr_file);
         return (NULL);
@@ -758,7 +769,6 @@ static void worker_thread (void *ptr)
 	    exit(1);
 	}
 
-
 	if (srp) {
 	    rv = est_client_enable_srp(ectx, 1024, est_srp_uid, est_srp_pwd);
 	    if (rv != EST_ERR_NONE) {
@@ -766,7 +776,6 @@ static void worker_thread (void *ptr)
 	        exit(1);
 	    }
 	}
-
         if (token_auth_mode) {
             rv = est_client_set_auth_cred_cb(ectx, auth_credentials_token_cb);
 	    if (rv != EST_ERR_NONE) {
@@ -935,7 +944,9 @@ static void worker_thread (void *ptr)
     if (verbose) printf("\nEnding thread %d", tctx->thread_id);
     free(tctx);
     ERR_clear_error();
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
     ERR_remove_thread_state(NULL);
+#endif
 }
 
 
@@ -1275,7 +1286,11 @@ int main (int argc, char **argv)
      * Read in the current client certificate
      */
     if (client_cert_file[0]) {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
         certin = BIO_new(BIO_s_file_internal());
+#else
+        certin = BIO_new(BIO_s_file());
+#endif
         if (BIO_read_filename(certin, client_cert_file) <= 0) {
             printf("\nUnable to read client certificate file %s\n", client_cert_file);
             exit(1);

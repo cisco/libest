@@ -269,8 +269,11 @@ static int process_ssl_srp_auth (SSL *s, int *ad, void *arg)
 
     if (!login)
         return (-1);
-
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
     user = SRP_VBASE_get_by_user(srp_db, login);
+#else
+    user = SRP_VBASE_get1_by_user(srp_db, login);
+#endif
 
     if (user == NULL) {
         printf("User doesn't exist in SRP database\n");
@@ -494,7 +497,11 @@ int main (int argc, char **argv)
     /*
      * Read in the local server certificate 
      */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
     certin = BIO_new(BIO_s_file_internal());
+#else
+    certin = BIO_new(BIO_s_file());
+#endif
     if (BIO_read_filename(certin, certfile) <= 0) {
         printf("\nUnable to read server certificate file %s\n", certfile);
         exit(1);
@@ -514,7 +521,11 @@ int main (int argc, char **argv)
     /* 
      * Read in the server's private key
      */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
     keyin = BIO_new(BIO_s_file_internal());
+#else
+    keyin = BIO_new(BIO_s_file());
+#endif
     if (BIO_read_filename(keyin, keyfile) <= 0) {
         printf("\nUnable to read server private key file %s\n", keyfile);
         exit(1);

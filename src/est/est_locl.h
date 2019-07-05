@@ -43,7 +43,13 @@
 #define EST_URI_MAX_LEN     (EST_URI_PATH_PREFIX_MAX_LEN+EST_MAX_PATH_SEGMENT_LEN+EST_MAX_PATH_SEGMENT_LEN)
 #define EST_BODY_MAX_LEN    16384
 #define EST_CA_MAX	    2000000
+/*Value which comes after the read in BIO_get_mem_ptr is 
+64 in openssl 1.1.1 as compared to 16 in older versions*/
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 #define EST_TLS_UID_LEN     17
+#else
+#define EST_TLS_UID_LEN     65
+#endif
 #define EST_RAW_CSR_LEN_MAX 8192
 
 #define EST_MAX_CONTENT_LEN 8192
