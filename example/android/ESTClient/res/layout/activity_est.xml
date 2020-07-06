@@ -20,7 +20,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="left|top"
         android:ems="10"
-        android:text="testrfc7030.cisco.com" >
+        android:text="testrfc7030.com" >
 
     </EditText>
     <TextView

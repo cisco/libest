@@ -7,18 +7,18 @@ model {
                 headers.srcDir System.getenv().SSL_DIR + "\\include"
                         binaries.withType(SharedLibraryBinary) {
                     sharedLibraryFile =
-                            file(System.getenv().SSL_DIR + "\\bin\\libeay32.dll")
-                            sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\libeay32.lib")
+                            file(System.getenv().SSL_DIR + "\\bin\\libcrypto-1_1.dll")
+                            sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\libcrypto.lib")
                 }
             }
             libssl {
                 headers.srcDir System.getenv().SSL_DIR + "\\include"
                         binaries.withType(SharedLibraryBinary) {
                     sharedLibraryFile =
-                            file(System.getenv().SSL_DIR + "\\bin\\ssleay32.dll")
-                            sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\ssleay32.lib")
+                            file(System.getenv().SSL_DIR + "\\bin\\libssl-1_1.dll")
+                            sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\libssl.lib")
                 }
-            }            
+            }                  
             est {
                 headers.srcDir "../src/est"
                         binaries.withType(SharedLibraryBinary) {
@@ -42,6 +42,7 @@ model {
                         include "*.c"
                         exclude "simple_server.c"
                         srcDir "util"
+                        srcDir "windows_util"
                     }
                     exportedHeaders {
                         srcDir "util"
@@ -62,6 +63,7 @@ model {
                         include "*.c"
                         exclude "simple_server.c"
                         srcDir "util"
+                        srcDir "windows_util"
                     }
                     exportedHeaders {
                         srcDir "util"
@@ -82,7 +84,8 @@ model {
                         include "*.c"
                         exclude "simple_server.c"
                         srcDir "util"
-                    }
+                        srcDir "windows_util"
+                   }
                     exportedHeaders {
                         srcDir "util"
                     }
@@ -102,6 +105,7 @@ model {
                         include "*.c"
                         exclude "simple_server.c"
                         srcDir "util"
+                        srcDir "windows_util"
                     }
                     exportedHeaders {
                         srcDir "util"

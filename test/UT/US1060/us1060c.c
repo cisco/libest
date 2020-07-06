@@ -711,7 +711,7 @@ static int us1060_srp_cb (SSL *s, int *ad, void *arg)
 
     printf("SRP username = %s\n", login);
 
-    user = SRP_VBASE_get_by_user(srpdb, login); 
+    user = SRP_VBASE_get1_by_user(srpdb, login);
 
     if (user == NULL) {
 	printf("User %s doesn't exist in SRP database\n", login);
@@ -724,6 +724,7 @@ static int us1060_srp_cb (SSL *s, int *ad, void *arg)
      */
     if (SSL_set_srp_server_param(s, user->N, user->g, user->s, user->v, user->info) < 0) {
 	*ad = SSL_AD_INTERNAL_ERROR;
+        SRP_user_pwd_free(user);
 	return SSL3_AL_FATAL;
     }
 		
@@ -732,6 +733,7 @@ static int us1060_srp_cb (SSL *s, int *ad, void *arg)
     user = NULL;
     login = NULL;
     fflush(stdout);
+    SRP_user_pwd_free(user);
     return SSL_ERROR_NONE;
 }
 
@@ -755,7 +757,11 @@ static void us1060c_start_tls_server (char *cipherstring)
 
     berr = BIO_new_fp(stderr, BIO_NOCLOSE);
 
+#ifdef HAVE_OLD_OPENSSL        
     ssl_ctx = SSL_CTX_new(SSLv23_server_method());
+#else
+    ssl_ctx = SSL_CTX_new(TLS_server_method());
+#endif            
     if (!ssl_ctx) {
 	printf("Failed to create SSL context\n");
 	ERR_print_errors(berr);
@@ -785,7 +791,7 @@ static void us1060c_start_tls_server (char *cipherstring)
     nid = OBJ_sn2nid("prime256v1");
     ecdh = EC_KEY_new_by_curve_name(nid);
     if (ecdh == NULL) {
-	printf("Failed to retreive ECDH curve\n");
+	printf("Failed to retrieve ECDH curve\n");
 	ERR_print_errors(berr);
 	return;
     }

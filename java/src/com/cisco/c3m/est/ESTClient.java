@@ -97,7 +97,7 @@ public class ESTClient {
 		 * Enables SRP authentication at the TLS layer.  The setSRPCredentials()
 		 * method must be invoked prior to enrolling.  HTTP authentication is optional in this mode.
 		 * Use setHTTPCredentials() to enable HTTP auth when using this mode.  Please
-		 * note that SRP is not allowed in FIPS mode, which is a constraint imposed by OpenSSL/OpenSSL.
+		 * note that SRP is not allowed in FIPS mode, which is a constraint imposed by OpenSSL.
 		 */
 		authSRP,
 		/**
@@ -140,7 +140,14 @@ public class ESTClient {
 	
 	/**
 	 * This method enables FIPS mode in the underlying crypto module. Be aware
-	 * that FIPS mode may already be enabled. 
+	 * that FIPS mode may already be enabled if your JVM is using the CiscoJ JCA
+	 * crypto provider. This class leverages OpenSSL for crypto operations and
+	 * FIPS compliance. CiscoJ leverages OpenSSL as well. When linked as a
+	 * shared library, only one copy of OpenSSL will be resident in memory
+	 * under the JVM. Once OpenSSL is put into FIPS mode, it will impact all
+	 * users within the process address space. This may impact crypto operations outside
+	 * the scope of EST since FIPS mode disallows certain algorithms, such as
+	 * MD5, RC4, SRP, and others.
 	 */
 	public void enableFIPS() throws Exception {
 		int rv;

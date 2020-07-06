@@ -1,0 +1,56 @@
+############################
+# Autotools
+###########################
+Makefile
+
+/stamp-h?
+.deps/
+.dirstamp
+.libs/
+/libtool
+/autom4te.cache/
+
+/config.h
+/config.log
+/config.status
+
+############################
+# Generated est_config.h file
+############################
+/est_config.h
+/version
+
+############################
+# Compiled obj files
+############################
+*.lo
+*.o
+
+############################
+# Compiled dynamic libraries
+############################
+*.so
+
+############################
+# Compiled static libraries
+############################
+*.la
+*.a
+
+
+############################
+# Project executables
+############################
+/example/client-simple/estclient_simple
+/example/client/estclient
+/example/proxy/estproxy
+/example/server/estserver
+/example/server/estCA
+/example/server/extCA
+/test/UT/runtest
+/test/DT/runtest
+
+############################
+# Python generated files
+############################
+*.pyc

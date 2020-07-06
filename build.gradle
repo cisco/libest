@@ -8,16 +8,16 @@ model {
                 headers.srcDir System.getenv().SSL_DIR + "\\include"
                         binaries.withType(SharedLibraryBinary) {
                     sharedLibraryFile =
-                            file(System.getenv().SSL_DIR + "\\bin\\libeay32.dll")
-                            sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\libeay32.lib")
+                            file(System.getenv().SSL_DIR + "\\bin\\libcrypto-1_1.dll")
+                            sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\libcrypto.lib")
                 }
             }
             libssl {
                 headers.srcDir System.getenv().SSL_DIR + "\\include"
                         binaries.withType(SharedLibraryBinary) {
                     sharedLibraryFile =
-                            file(System.getenv().SSL_DIR + "\\bin\\ssleay32.dll")
-                            sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\ssleay32.lib")
+                            file(System.getenv().SSL_DIR + "\\bin\\libssl-1_1.dll")
+                            sharedLibraryLinkFile = file(System.getenv().SSL_DIR + "\\lib\\libssl.lib")
                 }
             }
             if(file(System.getenv().URIPARSER_DIR +"\\lib\\uriparser.lib").exists()) {
@@ -48,11 +48,8 @@ model {
 model {
     visualStudio {
         projects.all {
-            projectFile.location = "vs/${name}.vcxproj"
-                    filtersFile.location = "vs/${name}.vcxproj.filters"
-        }
-        solutions.all {
-            solutionFile.location = "vs/${name}.sln"
+            projectFile.location = "${name}.vcxproj"
+                    filtersFile.location = "${name}.vcxproj.filters"
         }
     }
 }
@@ -131,11 +128,20 @@ model {
                 cCompiler.define "LIBEST_EXPORTS", "1"
                 cCompiler.define "DISABLE_BACKTRACE"
                 cCompiler.define "__STDC_WANT_SECURE_LIB__" , "0"
-                cCompiler.define "PACKAGE_STRING", "\"libest 2.1.0\""               
+                cCompiler.define "PACKAGE_STRING", "\"libest 2.0.0\""               
                 cCompiler.define "DISABLE_PTHREADS", "1"
                 cCompiler.args "/GS", "/GL", "/analyze-", "/W3", "/Gy", "/Zc:wchar_t", "/Zi", "/Gm-", "/fp:precise", "/errorReport:prompt", "/WX-", "/Zc:forScope", "/Gd", "/Oy-","/Oi","/MD", "/EHsc", "/nologo", "/FS"
                 linker.args "/DYNAMICBASE","/SAFESEH", "/LTCG", "/NXCOMPAT"
             }
         }
     }
+}
+
+task gatherInstall (type: Copy) {
+    from "$buildDir\\libs\\est\\shared\\release\\est.dll", "$buildDir\\libs\\est\\shared\\release\\est.lib"
+    into "$buildDir\\install"
+    from ("$buildDir\\libs\\est\\shared\\release\\") {
+        include "include\\**"
+    }
+    into "$buildDir\\install"
 }

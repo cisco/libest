@@ -14,6 +14,7 @@
 #define MAX_UID_LEN 255
 #define MAX_PWD_LEN 255
 
+void ossl_dump_ssl_errors ();
 int read_binary_file(char *filename, unsigned char **contents);
 void write_binary_file(char *filename, unsigned char *contents, int len); 
 void dumpbin(unsigned char *buf, int len);

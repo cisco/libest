@@ -49,6 +49,7 @@ static int cacerts_len = 0;
 static char *attrs;
 
 static unsigned char * handle_csrattrs_request (int *csr_len, char *path_seg,
+                                                X509 *peer_cert,
                                                 void *app_data)
 {
     unsigned char *csr_data;
@@ -455,7 +456,10 @@ static int sign_X509_REQ(X509_REQ *x, EVP_PKEY *pkey, const EVP_MD *md)
      * cases.  Setting this flag tells OpenSSL to run the ASN
      * encoding again rather than using the cached copy.
      */
-    x->req_info->enc.modified = 1;
+#ifdef HAVE_OLD_OPENSSL
+    
+    x->req_info->enc.modified = 1; 
+#endif
     rv = X509_REQ_sign_ctx(x, &mctx);
 
     EVP_MD_CTX_cleanup(&mctx);
@@ -783,7 +787,7 @@ static void us1159_test10 (void)
  * This test attempts does a simple enroll with the
  * client providing all the required CSR attributes in
  * the CSR. The client also provides a large
- * quantity of additional attriutes.
+ * quantity of additional attributes.
  */
 static void us1159_test20 (void)
 {

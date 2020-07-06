@@ -1,0 +1,50 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 2 (0x2)
+        Signature Algorithm: ecdsa-with-SHA256
+        Issuer: CN=estExampleTestMfg2CA1-0
+        Validity
+            Not Before: Jan 21 17:04:29 2020 GMT
+            Not After : Jan 21 17:04:29 2040 GMT
+        Subject: CN=127.0.0.1, O=ToysRUsKnockOff
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub:
+                    04:fb:33:69:ab:99:44:09:82:c9:b7:fd:b8:1d:59:
+                    ca:06:3b:97:b1:e4:6e:81:6e:fd:86:e2:0d:ae:71:
+                    38:88:9b:81:15:d5:58:45:34:43:76:2c:c3:d3:68:
+                    ac:9c:35:a1:f6:08:d0:7a:80:29:f5:ba:b8:a7:aa:
+                    ea:74:bf:4e:29
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:FALSE
+            X509v3 Key Usage: 
+                Digital Signature, Non Repudiation, Key Encipherment
+            X509v3 Subject Alternative Name: 
+                DNS:localhost, DNS:ip6-localhost, IP Address:127.0.0.1, IP Address:0:0:0:0:0:0:0:1
+            X509v3 CRL Distribution Points: 
+
+                Full Name:
+                  URI:http://example.com/crl.pem
+
+    Signature Algorithm: ecdsa-with-SHA256
+         30:45:02:20:6d:c4:62:45:b2:00:0f:2a:7a:52:b5:2b:89:b9:
+         e7:39:e8:a6:b0:d3:f2:e5:14:d4:ce:94:f0:d8:e0:18:1c:4e:
+         02:21:00:ee:cf:0f:12:53:61:73:bb:d1:62:ed:8e:12:49:2c:
+         ce:a4:7b:21:15:e2:5f:38:d9:2f:4f:26:e2:da:77:5e:65
+-----BEGIN CERTIFICATE-----
+MIIBxTCCAWugAwIBAgIBAjAKBggqhkjOPQQDAjAiMSAwHgYDVQQDDBdlc3RFeGFt
+cGxlVGVzdE1mZzJDQTEtMDAeFw0yMDAxMjExNzA0MjlaFw00MDAxMjExNzA0Mjla
+MC4xEjAQBgNVBAMMCTEyNy4wLjAuMTEYMBYGA1UECgwPVG95c1JVc0tub2NrT2Zm
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE+zNpq5lECYLJt/24HVnKBjuXseRu
+gW79huINrnE4iJuBFdVYRTRDdizD02isnDWh9gjQeoAp9bq4p6rqdL9OKaOBhTCB
+gjAJBgNVHRMEAjAAMAsGA1UdDwQEAwIF4DA7BgNVHREENDAygglsb2NhbGhvc3SC
+DWlwNi1sb2NhbGhvc3SHBH8AAAGHEAAAAAAAAAAAAAAAAAAAAAEwKwYDVR0fBCQw
+IjAgoB6gHIYaaHR0cDovL2V4YW1wbGUuY29tL2NybC5wZW0wCgYIKoZIzj0EAwID
+SAAwRQIgbcRiRbIADyp6UrUribnnOeimsNPy5RTUzpTw2OAYHE4CIQDuzw8SU2Fz
+u9Fi7Y4SSSzOpHshFeJfONkvTybi2ndeZQ==
+-----END CERTIFICATE-----

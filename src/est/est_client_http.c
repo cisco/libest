@@ -3,7 +3,7 @@
  *
  * November, 2012
  *
- * Copyright (c) 2013, 2016, 2017 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016, 2017, 2018 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -15,7 +15,7 @@
 
 ** This document and translations of it may be copied and furnished to
 ** others, and derivative works that comment on or otherwise explain it or
-** assist in its implmentation may be prepared, copied, published and
+** assist in its implementation may be prepared, copied, published and
 ** distributed, in whole or in part, without restriction of any kind,
 ** provided that the above copyright notice and this paragraph are included
 ** on all such copies and derivative works. However, this document itself
@@ -45,12 +45,15 @@
 #include <sys/poll.h>
 #endif
 #include <openssl/ssl.h>
+#include <openssl/bio.h>
 #include <assert.h>
 #include "est.h"
 #include "est_locl.h"
 #include "est_server_http.h"
 #include "safe_mem_lib.h"
 #include "safe_str_lib.h"
+#include "multipart_parser.h"
+
 #ifdef WIN32
 #define snprintf _snprintf
 #define vsnprintf _vsnprintf
@@ -608,12 +611,28 @@ static int parsedate(const char *date, time_t *output)
  * the response from the server meets the EST draft.  This
  * table is implicitly tied to EST_OPERATION.  If that ENUM
  * changes, this table must change.
+ *
+ * NOTE: BRSKI voucher status and enroll status deviate from the rest of the
+ *       EST and BRSKI primitives in that the response to these two do not
+ *       contain any content.  est_op_map is used to verify the responses,
+ *       specifically, the content headers, which are not applicable when
+ *       there is no content.  These two are being left in to this matrix to
+ *       maintain parity with EST_OPERATION in case other operations are added
+ *       later.
+ *       
  */
 EST_OP_DEF est_op_map [EST_OP_MAX] = {
     { EST_OP_SIMPLE_ENROLL,   EST_SIMPLE_ENROLL_URI, EST_HTTP_CT_PKCS7_CO, sizeof(EST_HTTP_CT_PKCS7_CO) },
     { EST_OP_SIMPLE_REENROLL, EST_RE_ENROLL_URI,     EST_HTTP_CT_PKCS7_CO, sizeof(EST_HTTP_CT_PKCS7_CO) },
     { EST_OP_CACERTS,         EST_CACERTS_URI,       EST_HTTP_CT_PKCS7,    sizeof(EST_HTTP_CT_PKCS7)    },
-    { EST_OP_CSRATTRS,        EST_CSR_ATTRS_URI,     EST_HTTP_CT_CSRATTRS, sizeof(EST_HTTP_CT_CSRATTRS) }
+    { EST_OP_CSRATTRS,        EST_CSR_ATTRS_URI,     EST_HTTP_CT_CSRATTRS, sizeof(EST_HTTP_CT_CSRATTRS) },
+    { EST_OP_SERVER_KEYGEN,   EST_KEYGEN_URI,        EST_HTTP_CT_PKCS8, sizeof(EST_HTTP_CT_PKCS8) },
+    { EST_OP_SERVER_KEYGEN,   EST_KEYGEN_URI,        EST_HTTP_CT_PKCS7,    sizeof(EST_HTTP_CT_PKCS7) },
+#if ENABLE_BRSKI
+    { EST_OP_BRSKI_REQ_VOUCHER,    EST_BRSKI_GET_VOUCHER_URI,    EST_BRSKI_CT_VRSP,    sizeof(EST_BRSKI_CT_VRSP)},
+    { EST_OP_BRSKI_VOUCHER_STATUS, EST_BRSKI_VOUCHER_STATUS_URI, EST_BRSKI_CT_STATUS,  sizeof(EST_BRSKI_CT_STATUS)},
+    { EST_OP_BRSKI_ENROLL_STATUS,  EST_BRSKI_ENROLL_STATUS_URI,  EST_BRSKI_CT_STATUS,  sizeof(EST_BRSKI_CT_STATUS)},
+#endif
 };
 
 /**********************************************************************
@@ -737,7 +756,7 @@ static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
     while ((token = HTNextField(&p))) {
         if (!est_strcasecmp_s(token, "realm")) {
             if ((value = HTNextField(&p))) {
-                if (EOK != strncpy_s(ctx->realm, MAX_REALM, value, MAX_REALM)) {
+                if (EOK != strcpy_s(ctx->realm, MAX_REALM, value)) {
                     rv = EST_ERR_INVALID_TOKEN;
                 }
             } else {
@@ -745,7 +764,7 @@ static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
             }
         } else if (!est_strcasecmp_s(token, "nonce")) {
             if ((value = HTNextField(&p))) {
-                if (EOK != strncpy_s(ctx->s_nonce, MAX_NONCE, value, MAX_NONCE)) {
+                if (EOK != strcpy_s(ctx->s_nonce, MAX_NONCE, value)) {
                     rv = EST_ERR_INVALID_TOKEN;
                 }                
             } else {
@@ -778,7 +797,7 @@ static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
             }
         } else if (!est_strcasecmp_s(token, "error")) {
             if ((value = HTNextField(&p))) {
-                if (EOK != strncpy_s(ctx->token_error, MAX_TOKEN_ERROR, value, MAX_TOKEN_ERROR)) {
+                if (EOK != strcpy_s(ctx->token_error, MAX_TOKEN_ERROR, value)) {
                     rv = EST_ERR_INVALID_TOKEN;
                 }
             } else {
@@ -786,7 +805,7 @@ static EST_ERROR est_io_parse_auth_tokens (EST_CTX *ctx, char *hdr)
             }
         } else if (!est_strcasecmp_s(token, "error_description")) {
             if ((value = HTNextField(&p))) {
-                if (EOK != strncpy_s(ctx->token_error_desc, MAX_TOKEN_ERROR_DESC, value, MAX_TOKEN_ERROR_DESC)) {
+                if (EOK != strcpy_s(ctx->token_error_desc, MAX_TOKEN_ERROR_DESC, value)) {
                     rv = EST_ERR_INVALID_TOKEN;
                 }
             } else {
@@ -853,13 +872,13 @@ static HTTP_HEADER * parse_http_headers (unsigned char **buf, int *num_headers)
     }
 
     /*
-     * Find offset of header deliminter
+     * Find offset of header delimiter
      */
     safec_rc = strstr_s((char *) *buf, strnlen_s((char *) *buf, RSIZE_MAX_STR),
             "\r\n\r\n", MAX_HEADER_DELIMITER_LEN, &hdr_end);
 
     if (safec_rc != EOK) {
-        EST_LOG_INFO("strstr_s error 0x%xO\n", safec_rc);
+        EST_LOG_INFO("strstr_s error 0x%xO. Response is missing HTTP heading delimiter (2*CR/LF).\n", safec_rc);
     }
 
     /*
@@ -886,6 +905,296 @@ static HTTP_HEADER * parse_http_headers (unsigned char **buf, int *num_headers)
 }
 
 
+static void parse_single_header (HTTP_HEADER *hdrs, int *i, unsigned char **buf) {
+    while ((*buf)[0] == '\n') {
+        (*buf)++;
+    }
+    hdrs[*i].name = skip_quoted((char **)buf, ":", " ", 0);
+    hdrs[*i].value = skip((char **)buf, "\r\n");
+    fflush(stdout);
+    EST_LOG_INFO("Found HTTP header -> %s:%s", hdrs[*i].name, hdrs[*i].value);
+    fflush(stdout);
+}
+
+int read_header_name (multipart_parser* p, const char *at, size_t length) {
+    char *name = malloc(length+1);
+    memcpy_s(name, length, at, length);
+    name[length] = '\0';
+    multipart_parser_set_hdr_name(p, name);
+    return 0;
+}
+
+int read_header_value (multipart_parser* p, const char *at, size_t length) {
+    char *value = malloc(length+1);
+    memcpy_s(value, length, at, length);
+    if (!multipart_parser_set_hdr_value(p, value)) {
+        EST_LOG_INFO("Invalid header value");
+    }
+    return 0;
+}
+
+/*
+ * The multipart parser stops parsing if any of the callbacks return
+ * a value other than 0. If we have all the data we need or run into
+ * an error, we should return a value other than 0.
+ */
+int part_data_cb (multipart_parser* p, const char *at, size_t length) {
+
+    int only_whitespace = 1, i = 0;
+
+    char *ct = multipart_get_data_ct(p);
+    char *cte = multipart_get_data_cte(p);
+
+    if (ct == NULL || cte == NULL) {
+        EST_LOG_INFO("No Content-Type header OR no Content-Transfer-Encoding header");
+        return 0;
+    }
+
+    if (strncmp(cte, "base64", 6)) {
+        EST_LOG_ERR("Invalid Content-Transfer-Encoding value");
+        return 0;
+    }
+
+    while (only_whitespace && i < length) {
+        if (at[i] != ' ' && at[i] != '\r' && at[i] != '\n') {
+            only_whitespace = 0;
+        }
+        i++;
+    }
+
+    if (length > MULTIPART_PARSE_DATA_MAX) {
+        EST_LOG_ERR("Private key size limit exceeded; data too long to parse");
+        return -1;
+    }
+
+    if (!strncmp(ct, "application/pkcs8", 17)) {
+        EST_LOG_INFO("key data received, %d bytes", length);
+        if (only_whitespace) {
+            return -1;
+        }
+        multipart_set_key_data(p, at, length);
+    } else if (!strncmp(ct, "application/pkcs7-mime; smime-type=certs-only", 45)) {
+        EST_LOG_INFO("cert data received, %d bytes", length);
+        if (only_whitespace) {
+            return -1;
+        }
+        multipart_set_cert_data(p, at, length);
+    } else {
+        EST_LOG_ERR("Invalid Content-Type value");
+    }
+
+    if (multipart_parser_both_key_and_cert_populated(p)) {
+        return 1;
+    }
+    multipart_reset_hdrs(p);
+    return 0;
+}
+
+static EST_ERROR parse_remaining_multipart_payload (unsigned char **buf, unsigned char **key_data, int *key_data_len,
+                                                    unsigned char **cert_data, int *cert_data_len, char *boundary) {
+
+    int rv = EST_ERR_NONE;
+
+    multipart_parser_settings callbacks;
+    memset(&callbacks, 0, sizeof(multipart_parser_settings));
+
+    callbacks.on_header_field = read_header_name;
+    callbacks.on_header_value = read_header_value;
+    callbacks.on_part_data = part_data_cb;
+
+    multipart_parser* parser = multipart_parser_init(boundary, &callbacks);
+    int length = (int)strlen((const char *)(*buf));
+    /*
+     * The parser returns the number of bytes it has successfully parsed.
+     * If we haven't parsed the entire payload and don't yet have the data
+     * we need, something went wrong.
+     */
+    int parsed = multipart_parser_execute(parser, (const char *)(*buf), (size_t) length);
+    if (!multipart_parser_both_key_and_cert_populated(parser)) {
+        rv = EST_ERR_ZERO_LENGTH_BUF;
+        if (parsed < length) {
+            EST_LOG_ERR("Unable to parse full payload. Parser logs may have more info");
+            rv = EST_ERR_MULTIPART_PARSE;
+        }
+    }
+
+    *key_data_len = multipart_get_key_data(parser, key_data);
+    *cert_data_len = multipart_get_cert_data(parser, cert_data);
+
+    multipart_parser_free(parser);
+    return rv;
+}
+
+static int validate_boundary_string (char *boundary, int bound_len) {
+    int i;
+    for (i = 0; i < bound_len; i++) {
+        if (!(boundary[i] >= 43 && boundary[i] <= 58) && // + , - . / 0-9 :
+            !(boundary[i] >= 'A' && boundary[i] <= 'Z') &&
+            !(boundary[i] >= 'a' && boundary[i] <= 'z') &&
+            !(boundary[i] >= 39 && boundary[i] <= 41) && // ' ( )
+            boundary[i] != '_' &&
+            boundary[i] != '=' &&
+            boundary[i] != '?' &&
+            boundary[i] != ' ') {
+            EST_LOG_ERR("Invalid boundary characters");
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void sanitize_boundary (char **boundary, int *bound_len) {
+    int j, k;
+
+    for (k = 0; k < (*bound_len); k++) {
+        if ((*boundary)[k] == ';') {
+            (*bound_len) = k;
+            (*boundary)[k] = '\0';
+            break;
+        }
+    }
+
+    if ((*bound_len) < 1) {
+        goto end;
+    }
+    while ((*boundary)[*bound_len - 1] == ' ') {
+        (*boundary)[(*bound_len) - 1] = '\0';
+        (*bound_len)--;
+    }
+    if (*bound_len < 1) {
+        goto end;
+    }
+    if ((*boundary)[0] == '"' && (*boundary)[*bound_len - 1] == '"') {
+        for (j = 1; j < *bound_len; j++) {
+            (*boundary)[j - 1] = (*boundary)[j];
+        }
+        *bound_len -= 2;
+        (*boundary)[*bound_len] = '\0';
+    }
+    if (*bound_len < 1) {
+        goto end;
+    }
+    if (((*boundary)[*bound_len - 1]) == ';') {
+        (*bound_len)--;
+        (*boundary)[*bound_len] = '\0';
+    }
+    end:
+    return;
+}
+
+/*
+ * This function is adapted from the function above (which is a derivation of the Mongoose parse_http_headers
+ * method. It handles parsing the headers as well as splitting the buffers for each chunk
+ * of the multipart response.
+ */
+#define MAX_MULTI_BOUNDARY_LEN 70
+#define MULTI_BOUND_DEF_STR "boundary="
+#define MULTI_BOUND_DEF_STR_LEN 9
+static HTTP_HEADER *parse_and_split_keygen_rsp (unsigned char **buf, int *num_headers, char **boundary)
+{
+    int i, bound_len, current_len;
+    HTTP_HEADER *hdrs;
+    char *hdr_end;
+    errno_t safec_rc;
+    char *bound_ptr, *strstr_ptr = NULL, *strstr_ptr2 = NULL, *current_hdr;
+
+    *num_headers = 0;
+    hdrs = malloc(sizeof(HTTP_HEADER) * MAX_HEADERS);
+    if (!hdrs) {
+        EST_LOG_ERR("malloc failure");
+        return (NULL);
+    }
+    /*
+     * Find offset of header delimiter
+     */
+    safec_rc = strstr_s((char *) *buf, strnlen_s((char *) *buf, RSIZE_MAX_STR),
+                        "\r\n\r\n", MAX_HEADER_DELIMITER_LEN, &hdr_end);
+
+    if (safec_rc != EOK) {
+        EST_LOG_WARN("strstr_s error 0x%xO\n", safec_rc);
+    }
+
+    /*
+     * Skip the first line
+     */
+    skip((char **)buf, "\r\n");
+
+    for (i = 0; i < MAX_HEADERS; i++) {
+        parse_single_header(hdrs, &i, buf);
+        current_hdr = hdrs[i].value;
+        /*
+         * Check to see if the current header is multipart/mixed
+         */
+        current_len = strnlen_s(current_hdr, RSIZE_MAX_STR);
+        if (strstr_s(current_hdr, current_len, EST_HTTP_CT_MULTI, EST_HTTP_CT_MULTI_LEN, &strstr_ptr2) == EOK) {
+            if (strstr_ptr2 != NULL) {
+                if (strstr_s(current_hdr, current_len, EST_HTTP_CT_MULTI_MIXED, EST_HTTP_CT_MULTI_MIXED_LEN,
+                             &strstr_ptr) == EOK) {
+                    if (strstr_ptr != NULL) {
+                        /*
+                         * Find the boundary definition and skip past it to the boundary string
+                         */
+                        safec_rc = strstr_s(hdrs[i].value, current_len + 1, MULTI_BOUND_DEF_STR,
+                                            MULTI_BOUND_DEF_STR_LEN + 1,
+                                            &bound_ptr);
+                        if (safec_rc != EOK) {
+                            EST_LOG_WARN("strstr_s error 0x%xO\n", safec_rc);
+                        }
+                        if (!bound_ptr) {
+                            EST_LOG_ERR("multipart/mixed response has no boundary string defined");
+                            free (hdrs);
+                            return NULL;
+                        }
+                        bound_ptr += MULTI_BOUND_DEF_STR_LEN;
+
+                        /*
+                         * Copy boundary string
+                         */
+                        *boundary = skip(&bound_ptr, "\n");
+                        bound_len = strnlen_s(*boundary, MAX_MULTI_BOUNDARY_LEN + 2);
+
+                        sanitize_boundary(boundary, &bound_len);
+                        if (bound_len > MAX_MULTI_BOUNDARY_LEN) {
+                            EST_LOG_ERR("multipart/mixed response boundary string too long");
+                            free (hdrs);
+                            return NULL;
+                        }
+                        if (bound_len <= 0 || !(*boundary)) {
+                            EST_LOG_ERR("multipart/mixed response boundary string missing");
+                            free (hdrs);
+                            return NULL;
+                        }
+                        if (!validate_boundary_string((*boundary), bound_len)) {
+                            EST_LOG_ERR("Invalid boundary string");
+                            free (hdrs);
+                            return NULL;
+                        }
+                        EST_LOG_INFO("boundary with length %d: %s", bound_len, *boundary);
+
+                    }
+                } else {
+                    EST_LOG_ERR("No multipart/mixed header found; invalid subtype");
+                    char *temp = "*";
+                    *boundary = temp;
+                    free (hdrs);
+                    return NULL;
+                }
+            }
+        }
+        if (hdrs[i].name[0] == '\0') {
+            break;
+        }
+        *num_headers = i + 1;
+        if ((*buf) > (unsigned char *)hdr_end) {
+            break;
+        }
+    }
+
+    EST_LOG_INFO("Found %d HTTP headers\n", *num_headers);
+    return (hdrs);
+}
+
+
 /*
  * This function parses the HTTP status code
  * in the first header.  Only a handful of codes are
@@ -893,13 +1202,16 @@ static HTTP_HEADER * parse_http_headers (unsigned char **buf, int *num_headers)
  * unrecognized codes will result in an error.
  * Note that HTTP 1.1 is expected.
  */
-static int est_io_parse_response_status_code (unsigned char *buf)
+static int est_io_parse_response_status_code (unsigned char *buf, char *reason_phrase)
 {
     if (!strncmp((const char *)buf, EST_HTTP_HDR_200,
                         strnlen_s(EST_HTTP_HDR_200, EST_HTTP_HDR_MAX))) {
         return 200;
     } else if (!strncmp((const char *)buf, EST_HTTP_HDR_202,
                         strnlen_s(EST_HTTP_HDR_202, EST_HTTP_HDR_MAX))) {
+        buf = buf + strnlen_s(EST_HTTP_HDR_202, EST_HTTP_HDR_MAX);
+        memcpy_s(reason_phrase, EST_HTTP_MAX_REASON_PHRASE, buf,
+                 strnlen_s((const char *)buf, EST_HTTP_MAX_REASON_PHRASE));
         return 202;
     } else if (!strncmp((const char *)buf, EST_HTTP_HDR_204,
                         strnlen_s(EST_HTTP_HDR_204, EST_HTTP_HDR_MAX))) {
@@ -916,7 +1228,16 @@ static int est_io_parse_response_status_code (unsigned char *buf)
     } else if (!strncmp((const char *)buf, EST_HTTP_HDR_423,
                         strnlen_s(EST_HTTP_HDR_423, EST_HTTP_HDR_MAX))) {
         return 423;
-    } else {
+    } else if (!strncmp((const char *)buf, EST_HTTP_HDR_500,
+                        strnlen_s(EST_HTTP_HDR_500, EST_HTTP_HDR_MAX))) {
+        return 500;
+    } else if (!strncmp((const char *)buf, EST_HTTP_HDR_502,
+                        strnlen_s(EST_HTTP_HDR_502, EST_HTTP_HDR_MAX))) {
+        return 502;
+    } else if (!strncmp((const char *)buf, EST_HTTP_HDR_504,
+                        strnlen_s(EST_HTTP_HDR_504, EST_HTTP_HDR_MAX))) {
+        return 504;
+    }  else {
         EST_LOG_ERR("Unhandled HTTP response %s", buf);
         return -1;
     }
@@ -1084,13 +1405,13 @@ static EST_ERROR est_io_parse_http_retry_after_resp (EST_CTX *ctx,
  * content type is important.  For example, the content
  * type is expected to be pkcs7 on a simple enrollment.
  */
-static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
-                                   EST_OPERATION op)
+static EST_ERROR est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
+                                   EST_OPERATION op, int *cl)
 {
     int i;
-    int cl = 0;
     int content_type_present = 0, content_length_present = 0;
     int cmp_result;
+    *cl = -1;
 
     /*
      * Traverse all the http headers and process the ones that need to be
@@ -1101,7 +1422,7 @@ static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
          * Content type
          */
         memcmp_s(hdrs[i].name, sizeof(EST_HTTP_HDR_CT), EST_HTTP_HDR_CT,
-            sizeof(EST_HTTP_HDR_CT), &cmp_result);
+                 sizeof(EST_HTTP_HDR_CT), &cmp_result);
         if (!cmp_result) {
             content_type_present = 1;
             /*
@@ -1110,20 +1431,20 @@ static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
             memcmp_s(hdrs[i].value,
                      strnlen_s(est_op_map[op].content_type, est_op_map[op].length),
                      est_op_map[op].content_type, strnlen_s(est_op_map[op].content_type, est_op_map[op].length),
-                      &cmp_result);
+                     &cmp_result);
             if (cmp_result) {
-                EST_LOG_ERR("HTTP content type is %s", hdrs[i].value);
-                return 0;
-                }
+                EST_LOG_ERR("HTTP content type is %s and expected %s", hdrs[i].value, est_op_map[op].content_type);
+                return EST_ERR_HTTP_UNSUPPORTED;
+            }
         } else {
             /*
              * Content Length
              */
             memcmp_s(hdrs[i].name, sizeof(EST_HTTP_HDR_CL), EST_HTTP_HDR_CL,
-                sizeof(EST_HTTP_HDR_CL), &cmp_result);
+                     sizeof(EST_HTTP_HDR_CL), &cmp_result);
             if (!cmp_result) {
                 content_length_present = 1;
-                cl = atoi(hdrs[i].value);
+                *cl = atoi(hdrs[i].value);
             }
         }
     }
@@ -1131,15 +1452,16 @@ static int est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
     /*
      * Make sure all the necessary headers were present.
      */
-    if (content_type_present == 0 ) {
-        EST_LOG_ERR("Missing HTTP content type  header");
-        return 0;
-    } else if (content_length_present == 0 ) {
+    if (content_type_present == 0) {
+        EST_LOG_ERR("Missing HTTP content type header");
+        return EST_ERR_HTTP_UNSUPPORTED;
+    }
+    if (content_length_present == 0) {
         EST_LOG_ERR("Missing HTTP content length header");
-        return 0;
-    } 
-    
-    return cl;
+        return EST_ERR_HTTP_UNSUPPORTED;
+    }
+
+    return EST_ERR_NONE;
 }
 
 
@@ -1218,24 +1540,25 @@ static int est_io_read_raw (SSL *ssl, unsigned char *buf, int buf_max,
 }
 
 /*
- * This function provides the primary entry point into
- * this module.  It's used by the EST client to read the
- * HTTP response from the server.  The data is read from
- * the SSL context and HTTP parsing is invoked.
- *
- * If EST_ERR_NONE is returned then the raw_buf buffer must
- * be freed by the caller, otherwise, it is freed here.
+ * The internal method for the module entry point - handles operations that are
+ * expecting just a cert payload as well as those that are expecting a cert
+ * and a key payload
  */
-EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
-                               unsigned char **buf, int *payload_len)
+EST_ERROR est_io_get_response_internal (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
+                                        unsigned char **key_buf,  int *key_buf_len,
+                                        unsigned char **cert_buf, int *cert_buf_len)
 {
-    int rv = EST_ERR_NONE;
-    HTTP_HEADER *hdrs;
+    EST_ERROR rv = EST_ERR_NONE;
+    HTTP_HEADER *hdrs = NULL;
     int hdr_cnt;
     int http_status;
-    unsigned char *raw_buf, *payload_buf, *payload;    
+    char reason_phrase[EST_HTTP_MAX_REASON_PHRASE];
+    char *boundary = NULL;
+    unsigned char *raw_buf = NULL, *payload_skip_extra = NULL;
+    unsigned char *payload, *payload_buf;
     int raw_len = 0;
-    
+    errno_t safec_rc;
+
 
     raw_buf = malloc(EST_CA_MAX);
     if (raw_buf == NULL) {
@@ -1244,30 +1567,46 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
     }
     memzero_s(raw_buf, EST_CA_MAX);
     payload = raw_buf;
-    
+
     /*
      * Read the raw data from the SSL connection
      */
     rv = est_io_read_raw(ssl, raw_buf, EST_CA_MAX, &raw_len, ctx->read_timeout);
     if (rv != EST_ERR_NONE) {
         EST_LOG_INFO("No valid response to process");
-        free(raw_buf);
+        if (raw_buf) {
+            free(raw_buf);
+        }
         return (rv);
     }
     if (raw_len <= 0) {
         EST_LOG_WARN("Received empty HTTP response from server");
-        free(raw_buf);
+        if (raw_buf) {
+            free(raw_buf);
+        }
         return (EST_ERR_HTTP_NOT_FOUND);
     }
     EST_LOG_INFO("Read %d bytes of HTTP data", raw_len);
-    
+
     /*
      * Parse the HTTP header to get the status
      * Look for status 200 for success
      */
-    http_status = est_io_parse_response_status_code(raw_buf);
+    http_status = est_io_parse_response_status_code(raw_buf, &(reason_phrase[0]));
     ctx->last_http_status = http_status;
-    hdrs = parse_http_headers(&payload, &hdr_cnt);
+
+    if (op == EST_OP_SERVER_KEYGEN) {
+        boundary = NULL;
+        hdrs = parse_and_split_keygen_rsp(&payload, &hdr_cnt, &boundary);
+        if (hdrs == NULL) {
+            EST_LOG_ERR("Headers not found");
+            rv = EST_ERR_MULTIPART_PARSE;
+            goto end;
+        }
+
+    } else {
+        hdrs = parse_http_headers(&payload, &hdr_cnt);
+    }
     EST_LOG_INFO("HTTP status %d received", http_status);
 
     /*
@@ -1275,97 +1614,204 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
      * if the server accepted our request.
      */
     switch (http_status) {
-    case 200:
-        /* Server reported OK, nothing to do */
-        break;
-    case 204:
-    case 404:
-        EST_LOG_ERR("Server responded with 204/404, no content or not found");
-        if (op == EST_OP_CSRATTRS) {
-	    rv = EST_ERR_NONE;
-        } else if (http_status == 404) {
-            rv = EST_ERR_HTTP_NOT_FOUND;            
-        } else {
-            rv = EST_ERR_UNKNOWN;
-        }
-        break;
-    case 202:
-        /* Server is asking for a retry */
-        EST_LOG_INFO("EST server responded with retry-after");
-        rv = est_io_parse_http_retry_after_resp(ctx, hdrs, hdr_cnt);
-        break;
-    case 400:
-        EST_LOG_ERR("HTTP response from EST server was BAD REQUEST");
-        rv = EST_ERR_HTTP_BAD_REQ;
-	break;
-    case 401:
-        /* Server is requesting user auth credentials */
-        EST_LOG_INFO("EST server requesting user authentication");
+        case 200:
+            /* Server reported OK, nothing to do */
+            break;
+        case 204:
+            EST_LOG_ERR("Server responded with no content");
+            rv = EST_ERR_HTTP_NO_CONTENT;
+            break;
+        case 404:
+            EST_LOG_ERR("Server responded with not found");
+            rv = EST_ERR_HTTP_NOT_FOUND;
+            break;
+        case 202:
+            /* Server is asking for a retry */
+            EST_LOG_INFO("EST server responded with retry-after");
+            rv = est_io_parse_http_retry_after_resp(ctx, hdrs, hdr_cnt);
+            break;
+        case 400:
+            EST_LOG_ERR("HTTP response from EST server was BAD REQUEST");
+            rv = EST_ERR_HTTP_BAD_REQ;
+            break;
+        case 401:
+            /* Server is requesting user auth credentials */
+            EST_LOG_INFO("EST server requesting user authentication");
 
-        /* Check if we've already tried authenticating, if so, then bail
-         * First time through, auth_mode will be set to NONE
-         */
-        if (ctx->auth_mode == AUTH_DIGEST ||
-            ctx->auth_mode == AUTH_BASIC ||
-            ctx->auth_mode == AUTH_TOKEN) {
-            ctx->auth_mode = AUTH_FAIL;
+            /* Check if we've already tried authenticating, if so, then bail
+             * First time through, auth_mode will be set to NONE
+             */
+            if (ctx->auth_mode == AUTH_DIGEST ||
+                ctx->auth_mode == AUTH_BASIC ||
+                ctx->auth_mode == AUTH_TOKEN) {
+                ctx->auth_mode = AUTH_FAIL;
+                rv = EST_ERR_AUTH_FAIL;
+                break;
+            }
+            est_io_parse_http_auth_request(ctx, hdrs, hdr_cnt);
             rv = EST_ERR_AUTH_FAIL;
             break;
-        }
-        est_io_parse_http_auth_request(ctx, hdrs, hdr_cnt);
-        rv = EST_ERR_AUTH_FAIL;
-        break;
-            
-    case 423:
-        EST_LOG_ERR("Server responded with 423, the content we are attempting to access is locked");
-        rv = EST_ERR_HTTP_LOCKED;
-        break;
-    case -1:
-        /* Unsupported HTTP response */
-        EST_LOG_ERR("Unsupported HTTP response from EST server (%d)", http_status);
-        rv = EST_ERR_UNKNOWN;
-        break;
-    default:
-        /* Some other HTTP response was given, do we want to handle these? */
-        EST_LOG_ERR("HTTP response from EST server was %d", http_status);
-        rv = EST_ERR_HTTP_UNSUPPORTED;
-        break;
+
+        case 423:
+            EST_LOG_ERR("Server responded with 423, the content we are attempting to access is locked");
+            rv = EST_ERR_HTTP_LOCKED;
+            break;
+        case 500:
+            EST_LOG_ERR("EST server indicated it failed to complete the request due to an internal error");
+            rv = EST_ERR_UNKNOWN;
+            break;
+        case 502:
+            EST_LOG_ERR("EST proxy indicated an internal error occurred on the upstream server.");
+            rv = EST_ERR_UNKNOWN;
+            break;
+        case 504:
+            EST_LOG_ERR("EST proxy indicated it was unable to communicate with the upstream server.");
+            rv = EST_ERR_UNKNOWN;
+            break;
+        case -1:
+            /* Unsupported HTTP response */
+            EST_LOG_ERR("Unsupported HTTP response from EST server (%d)", http_status);
+            rv = EST_ERR_UNKNOWN;
+            break;
+        default:
+            /* Some other HTTP response was given, do we want to handle these? */
+            EST_LOG_ERR("HTTP response from EST server was %d", http_status);
+            rv = EST_ERR_HTTP_UNSUPPORTED;
+            break;
     }
 
     if (rv == EST_ERR_NONE) {
-        /*
-         * Get the Content-Type and Content-Length headers
-         * and verify the HTTP response contains the correct amount
-         * of data.
-         */
-        *payload_len = est_io_check_http_hdrs(hdrs, hdr_cnt, op);
-        EST_LOG_INFO("HTTP Content len=%d", *payload_len);
-
-        if (*payload_len > EST_CA_MAX) {
-            EST_LOG_ERR("Content Length larger than maximum value of %d.",
-                        EST_CA_MAX);
-            rv = EST_ERR_UNKNOWN;
-            *payload_len = 0;
-            *buf = NULL;
-        } else if (*payload_len == 0) {
-            *payload_len = 0;
-            *buf = NULL;
-        } else {
+        if (op == EST_OP_SERVER_KEYGEN) {
             /*
-             * Allocate the buffer to hold the payload to be passed back
+             * If we successfully found a boundary for the multi/mixed response and finished parsing
+             * the multi/mixed header, we continue looking through the payload for key and cert
+             * headers and parse the those parts of the payload
              */
-            payload_buf = malloc(*payload_len);   
-            if (!payload_buf) {
-                EST_LOG_ERR("Unable to allocate memory");
-                free(raw_buf);
-                free(hdrs);
-                return EST_ERR_MALLOC;
+            if (boundary) {
+                if (!strncmp(boundary, "*", 1)) {
+                    EST_LOG_ERR("No multipart/mixed Content-Type found");
+                    rv = EST_ERR_MULTIPART_PARSE;
+                    goto end;
+                }
+
+                /*
+                 * Find the first boundary and start parsing the payload there
+                 */
+                safec_rc = strstr_s((char *) payload, strnlen_s((char *) payload, RSIZE_MAX_STR),
+                                    boundary, strnlen_s(boundary, MAX_MULTI_BOUNDARY_LEN), (char **)&payload_skip_extra);
+                if (safec_rc != EOK) {
+                    EST_LOG_WARN("strstr_s error 0x%xO\n", safec_rc);
+                }
+                payload_skip_extra -= 2; // leave the "--"
+
+                /*
+                 * This method populates the buffers at this point -
+                 * for the regular enroll or simple enroll, the buffers
+                 * are populated after HTTP response codes are checked
+                 */
+                rv = parse_remaining_multipart_payload(&payload_skip_extra, key_buf, key_buf_len,
+                                                        cert_buf, cert_buf_len, boundary);
+                if (rv != EST_ERR_NONE) {
+                    EST_LOG_ERR("Malformed multipart payload");
+                    *key_buf_len = 0;
+                    *cert_buf_len = 0;
+                    goto end;
+                }
+            } else {
+                EST_LOG_INFO("No multipart/mixed header found; No boundary string found");
             }
-            memcpy_s(payload_buf, *payload_len, payload, *payload_len);
-            *buf = payload_buf;
+            /*
+             * Error checking on the pair of payloads
+             */
+            if ((*cert_buf != NULL && *key_buf == NULL) ||
+                (*cert_buf == NULL && *key_buf != NULL)) {
+                EST_LOG_ERR("Only received part of the expected multipart response");
+                key_buf_len = 0;
+                cert_buf_len = 0;
+                if (*key_buf) {
+                    free(*key_buf);
+                }
+                if (*cert_buf) {
+                    free(*cert_buf);
+                }
+                rv = EST_ERR_MULTIPART_PARSE;
+                goto end;
+            }
+
+            if (*key_buf && *cert_buf) {
+                if (*key_buf_len < EST_MIN_CLIENT_PKEY_LEN || *cert_buf_len < EST_MIN_CLIENT_CERT_LEN) {
+                    EST_LOG_ERR("Malformed payload; data too short");
+                    (*key_buf_len) = 0;
+                    (*cert_buf_len) = 0;
+                    rv = EST_ERR_ZERO_LENGTH_BUF;
+                    goto end;
+                }
+            }
+        } else {
+#if (ENABLE_BRSKI)
+            /*
+             * Voucher status and enroll status responses do not contain
+             * any content so no need to check the content related headers
+             */
+            if (op != EST_OP_BRSKI_VOUCHER_STATUS &&
+                op != EST_OP_BRSKI_ENROLL_STATUS) {
+#endif
+            /*
+             * Get the Content-Type and Content-Length headers
+             * and verify the HTTP response contains the correct amount
+             * of data.
+             */
+            rv = est_io_check_http_hdrs(hdrs, hdr_cnt, op, cert_buf_len);
+            if (rv == EST_ERR_NONE) {
+
+                EST_LOG_INFO("HTTP Content len=%d", *cert_buf_len);
+
+                if (*cert_buf_len > EST_CA_MAX) {
+                    EST_LOG_ERR(
+                        "Content Length larger than maximum value of %d.",
+                        EST_CA_MAX);
+                    rv = EST_ERR_HTTP_UNSUPPORTED;
+                    *cert_buf_len = 0;
+                    *cert_buf = NULL;
+                } else if (*cert_buf_len < 0) {
+                    EST_LOG_ERR("Content Length is less than 0.");
+                    rv = EST_ERR_HTTP_UNSUPPORTED;
+                    *cert_buf_len = 0;
+                    *cert_buf = NULL;
+                } else if (*cert_buf_len != (raw_len + raw_buf) - payload) {
+                    EST_LOG_ERR(
+                        "Content Length (%d) and body length (%d) mismatch.",
+                        *cert_buf_len, (raw_len + raw_buf) - payload);
+                    rv = EST_ERR_HTTP_UNSUPPORTED;
+                    *cert_buf_len = 0;
+                    *cert_buf = NULL;
+                } else if (*cert_buf_len == 0) {
+                    *cert_buf = NULL;
+                } else {
+                    /*
+                     * Allocate the buffer to hold the payload to be passed back
+                     */
+                    payload_buf = malloc(*cert_buf_len);
+                    if (!payload_buf) {
+                        EST_LOG_ERR("Unable to allocate memory");
+                        rv = EST_ERR_MALLOC;
+                        goto end;
+                    }
+                    memcpy_s(payload_buf, *cert_buf_len, payload,
+                             *cert_buf_len);
+                    *cert_buf = payload_buf;
+                }
+            } else {
+                EST_LOG_ERR("HTTP response was not formatted properly");
+                *cert_buf_len = 0;
+                *cert_buf = NULL;
+            }
+#if (ENABLE_BRSKI)
+            }
+#endif
         }
     }
-    
+    end:
     if (raw_buf) {
         free(raw_buf);
     }
@@ -1373,4 +1819,37 @@ EST_ERROR est_io_get_response (EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
         free(hdrs);
     }
     return (rv);
+}
+
+
+/*
+ * This function provides the primary entry point into
+ * this module.  It's used by the EST client to read the
+ * HTTP response from the server.  The data is read from
+ * the SSL context and HTTP parsing is invoked.
+ *
+ * If EST_ERR_NONE is returned then the raw_buf buffer must
+ * be freed by the caller, otherwise, it is freed here.
+ */
+EST_ERROR est_io_get_response(EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
+                               unsigned char **buf, int *payload_len)
+{
+    return est_io_get_response_internal (ctx, ssl, op, NULL, NULL, buf, payload_len);
+}
+
+/*
+ * This function provides the primary entry point into
+ * this module.  It's used by the EST client to read the
+ * HTTP response from the server when we are expecting a
+ * multipart/mixed content-type
+ *
+ * If EST_ERR_NONE is returned then the raw_buf buffer must
+ * be freed by the caller, otherwise, it is freed here.
+ */
+EST_ERROR est_io_get_multipart_response(EST_CTX *ctx, SSL *ssl, EST_OPERATION op,
+                                         unsigned char **key_buf,  int *key_buf_len,
+                                         unsigned char **cert_buf, int *cert_buf_len)
+{
+    return est_io_get_response_internal (ctx, ssl, op, key_buf, key_buf_len,
+                                         cert_buf, cert_buf_len);
 }

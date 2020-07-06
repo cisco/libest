@@ -8,7 +8,7 @@
  *
  * May, 2013
  *
- * Copyright (c) 2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016, 2018, 2019 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -36,7 +36,7 @@
 #include "../util/simple_server.h"
 
 /*
- * Abstract OpenSSL threading platfrom callbacks
+ * Abstract OpenSSL threading platform callbacks
  */
 #ifdef WIN32
 #define MUTEX_TYPE            HANDLE
@@ -55,8 +55,16 @@
 #endif
 
 #define MAX_SERVER_LEN 32
-#define PROXY_PORT 8086  
+#define PROXY_PORT 8086
+#define DEFAULT_ENHCD_CERT_PWD "cisco"
+#define DEFAULT_ENHCD_CERT_LOCAL_PKI_NID NID_commonName
 
+int coap_mode = 0;
+#if HAVE_LIBCOAP
+static int dtls_handshake_timeout = EST_DTLS_HANDSHAKE_TIMEOUT_DEF;
+static int dtls_handshake_mtu = EST_DTLS_HANDSHAKE_MTU_DEF;
+static int dtls_session_max = EST_DTLS_SESSION_MAX_DEF;
+#endif
 static char est_server[MAX_SERVER_LEN];
 static char est_auth_token[MAX_AUTH_TOKEN_LEN + 1];
 static int est_server_port;
@@ -70,17 +78,37 @@ static int http_auth_disable = 0;
 static int http_digest_auth = 0;
 static int http_basic_auth = 0;
 static int server_http_token_auth = 0;
+static int enable_enhcd_cert_auth = 0;
+static int set_cert_auth_ah_pwd = 0;
+static EST_ECA_CSR_CHECK_FLAG enhcd_cert_csr_check_on = ECA_CSR_CHECK_OFF;
+static int set_cert_auth_local_nid= 0;
+static int set_cert_auth_mfg_name = 0;
+static int set_enhcd_cert_truststore = 0;
+static int set_cert_auth_mfg_nid = 0;
+static int set_path_seg = 0;
 static int set_fips_return = 0;
 static unsigned long set_fips_error = 0;
+static int server_set = 0;
+static int read_timeout = EST_SSL_READ_TIMEOUT_DEF;
+static int perf_timers_on = 0;
 
 EST_CTX *ectx;
 char certfile[EST_MAX_FILE_LEN];
 char keyfile[EST_MAX_FILE_LEN];
+char enhcd_cert_truststore_file[EST_MAX_FILE_LEN];
+char cert_auth_ah_pwd[MAX_PWD_LEN + 1];
+char local_nid[MAX_PWD_LEN + 1];
+char mfg_name[MFG_NAME_MAX_LEN + 1];
+char mfg_truststore_file[EST_MAX_FILE_LEN];
+char mfg_nid[MAX_PWD_LEN + 1];
 char realm[MAX_REALM];
 unsigned char *cacerts_raw = NULL;
 int cacerts_len = 0;
 unsigned char *trustcerts = NULL;
 int trustcerts_len = 0;
+unsigned char *enhcd_cert_truststore = NULL;
+int enhcd_cert_truststore_len = 0;
+char path_seg[EST_MAX_PATH_SEGMENT_LEN + 1];
 
 SRP_VBASE *srp_db = NULL;
 
@@ -109,7 +137,34 @@ static void show_usage_and_exit (void)
 #endif
             "  -f           Runs EST Proxy in FIPS MODE = ON\n"
             "  -6           Enable IPv6\n"
+            "  -w <count>   Timeout in seconds to wait for server response (default=10)\n" //EST_SSL_READ_TIMEOUT_DEF            
             "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
+            "  --enhcd_cert_auth        Enable Enhanced Certificate Auth mode\n"
+            "  --cert_auth_ah_pwd <value> Specify the auth header password to use\n"
+            "                             in Enhanced Certificate Auth mode\n"
+            "  --cert_auth_csr_check_on     Enable the CSR check during Enhanced Cert Auth\n"
+            "  --enhcd_cert_local_nid <nid> Sets the local PKI domain subject field NID to \n"
+            "                               grab from the peer cert. If not set the\n"
+            "                               commonName NID will be used\n"
+            "  --enhcd_cert_mfg_name <name> Sets name of the manufacturer to be registered\n"
+            "                               This name is required when registering a manufacturer\n"
+            "  --enhcd_cert_mfg_truststore <file> Specifies a truststore file for an Enhanced\n"
+            "                                     Certificate Auth manufacturer to select the\n"
+            "                                     subject filed based upon. This truststore is\n"
+            "                                     required when registering a manufacturer\n"
+            "  --enhcd_cert_mfg_nid <nid> Sets the subject field NID to\n"
+            "                             grab from the peer cert when that cert came\n"
+            "                             from the manufacturer. If not set the\n"
+            "                             commonName NID will be used\n"
+            "  --path-seg <value> Sets the value of the path segment to\n"
+            "                     be injected into the proxy context\n"
+#ifdef HAVE_LIBCOAP
+            "  --enable-coap Enable EST over CoAP support.\n"
+            "  --dtls-handshake-timeout Set the intial value of the DTLS handshake timeout.\n"
+            "  --dtls-handshake-mtu Set the MTU used during DTLS handshake phase.\n"
+            "  --dtls-session-max Set the maximum number of DTLS sessions.\n"
+#endif
+            "  --perf-timers-on  Enable the performace timers in proxy\n"
             "\n");
     exit(255);
 }
@@ -118,7 +173,7 @@ static char digest_user[3][32] =
 {
         "estuser",
         "estrealm",
-        "36807fa200741bb0e8fb04fcf08e2de6" //This is the HA1 precaculated value
+        "36807fa200741bb0e8fb04fcf08e2de6" //This is the HA1 precalculated value
 };
 
 int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
@@ -126,6 +181,8 @@ int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
 {
     int user_valid = 0;
     char *digest;
+    char *user = "estuser";
+    char *pass = "estpwd";
 
     if (path_seg) {
         printf("\n %s: Path segment in the authenticate callback is: %s\n",
@@ -141,7 +198,11 @@ int process_http_auth (EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, X509 *peer_cert,
          * we just hard-code a local user for testing
          * the libEST API.
          */
-        if (!strcmp(ah->user, "estuser") && !strcmp(ah->pwd, "estpwd")) {
+        if (enable_enhcd_cert_auth) {
+            user = "127.0.0.1";
+            pass = set_cert_auth_ah_pwd ? cert_auth_ah_pwd : DEFAULT_ENHCD_CERT_PWD;
+        }
+        if (!strcmp(ah->user, user) && !strcmp(ah->pwd, pass)) {
             /* The user is valid */
             user_valid = 1;
         }
@@ -270,7 +331,7 @@ static int process_ssl_srp_auth (SSL *s, int *ad, void *arg)
     if (!login)
         return (-1);
 
-    user = SRP_VBASE_get_by_user(srp_db, login);
+    user = SRP_VBASE_get1_by_user(srp_db, login);
 
     if (user == NULL) {
         printf("User doesn't exist in SRP database\n");
@@ -290,12 +351,14 @@ static int process_ssl_srp_auth (SSL *s, int *ad, void *arg)
     printf("SRP parameters set: username = \"%s\" info=\"%s\" \n", login,
             user->info);
 
+    SRP_user_pwd_free(user);
     user = NULL;
     login = NULL;
     fflush(stdout);
     return SSL_ERROR_NONE;
 }
 
+#ifdef HAVE_OLD_OPENSSL
 /*
  * We're using OpenSSL, both as the CA and libest
  * requires it.  OpenSSL requires these platform specific
@@ -315,9 +378,11 @@ static unsigned long id_function (void)
 {
     return ((unsigned long) THREAD_ID);
 }
+#endif
 
 void cleanup (void)
 {
+#ifdef HAVE_OLD_OPENSSL    
     int i;
 
     /*
@@ -331,7 +396,8 @@ void cleanup (void)
         MUTEX_CLEANUP(mutex_buf[i]);
     free(mutex_buf);
     mutex_buf = NULL;
-
+#endif
+    
     est_proxy_stop(ectx);
     est_destroy(ectx);
     if (srp_db) {
@@ -339,22 +405,49 @@ void cleanup (void)
     }
     free(cacerts_raw);
     free(trustcerts);
+    free(enhcd_cert_truststore);
     est_apps_shutdown();
 }
 
 int main (int argc, char **argv)
 {
     char c;
+#ifdef HAVE_OLD_OPENSSL
     int i;
+#endif
     EVP_PKEY * priv_key;
     BIO *certin, *keyin;
     X509 *x;
     EST_ERROR rv;
+    int nid;
+#ifdef HAVE_LIBCOAP    
+    int coap_rc = 0;
+#endif
     int sleep_delay = 0;
     char vfile[255];
     int option_index = 0;
-    static struct option long_options[] = { { "srp", 1, NULL, 0 }, { "token", 1,
-            0, 0 }, { "auth-token", 1, 0, 0 }, { NULL, 0, NULL, 0 } };
+    static struct option long_options[] = {
+        { "srp", 1, NULL, 0 },
+        { "token", 1, 0, 0 },
+        { "auth-token", 1, 0, 0 },
+        {"enhcd_cert_auth", 0, 0, 0},
+        {"enhcd_cert_truststore", 1, 0, 0},
+        {"cert_auth_ah_pwd", 1, 0, 0},
+        {"cert_auth_csr_check_on", 0, 0, 0},
+        {"enhcd_cert_local_nid", 1, 0, 0},
+        {"enhcd_cert_mfg_name", 1, 0, 0},
+        {"enhcd_cert_mfg_truststore", 1, 0, 0},
+        {"enhcd_cert_mfg_nid", 1, 0, 0},
+        {"path-seg", 1, 0, 0},
+#ifdef HAVE_LIBCOAP
+        {"enable-coap", 0, 0, 0},
+        {"dtls-handshake-timeout", 1, 0, 0},
+        {"dtls-handshake-mtu", 1, 0, 0},
+        {"dtls-session-max", 1, 0, 0},
+#endif  
+        {"perf-timers-on", 0, 0, 0},
+        { NULL, 0, NULL, 0 }
+    };
 
     /* Show usage if -h or --help options are specified or if no parameters have
      * been specified.  Upstream server and port are required.
@@ -365,7 +458,7 @@ int main (int argc, char **argv)
         show_usage_and_exit();
     }
 
-    while ((c = getopt_long(argc, argv, "vt6nhfr:c:k:s:p:l:d:", long_options,
+    while ((c = getopt_long(argc, argv, "vt6nhfr:c:k:s:p:l:d:w:", long_options,
             &option_index)) != -1) {
         switch (c) {
         case 0:
@@ -383,6 +476,66 @@ int main (int argc, char **argv)
                     strlen("auth-token"))) {
                 strncpy(est_auth_token, optarg, MAX_AUTH_TOKEN_LEN);
                 client_token_auth_mode = 1;
+            }
+            if (!strncmp(long_options[option_index].name,"enhcd_cert_auth",
+                         strlen("enhcd_cert_auth"))) {
+                enable_enhcd_cert_auth = 1;
+            }
+            if (!strncmp(long_options[option_index].name,"cert_auth_ah_pwd",
+                         strlen("cert_auth_ah_pwd"))) {
+                strncpy(cert_auth_ah_pwd, optarg, MAX_PWD_LEN + 1);
+                set_cert_auth_ah_pwd = 1;
+            }
+            if (!strncmp(long_options[option_index].name,"cert_auth_csr_check_on",
+                         strlen("cert_auth_csr_check_on"))) {
+                enhcd_cert_csr_check_on = ECA_CSR_CHECK_ON;
+            }
+            if (!strncmp(long_options[option_index].name,"enhcd_cert_local_nid",
+                         strlen("enhcd_cert_local_nid"))) {
+                strncpy(local_nid, optarg, MAX_PWD_LEN + 1);
+                set_cert_auth_local_nid = 1;
+            }
+            if (!strncmp(long_options[option_index].name,"enhcd_cert_mfg_name",
+                         strlen("enhcd_cert_mfg_name"))) {
+                strncpy(mfg_name, optarg, MFG_NAME_MAX_LEN + 1);
+                set_cert_auth_mfg_name = 1;
+            }
+            if (!strncmp(long_options[option_index].name,"enhcd_cert_mfg_truststore",
+                         strlen("enhcd_cert_mfg_truststore"))) {
+                strncpy(mfg_truststore_file, optarg, EST_MAX_FILE_LEN);
+                set_enhcd_cert_truststore = 1;
+            }
+            if (!strncmp(long_options[option_index].name,"enhcd_cert_mfg_nid",
+                         strlen("enhcd_cert_mfg_nid"))) {
+                strncpy(mfg_nid, optarg, MAX_PWD_LEN + 1);
+                set_cert_auth_mfg_nid = 1;
+            }
+            if (!strncmp(long_options[option_index].name,"path-seg",
+                         strlen("path-seg"))) {
+                strncpy(path_seg, optarg, EST_MAX_PATH_SEGMENT_LEN + 1);
+                set_path_seg = 1;
+            }
+#ifdef HAVE_LIBCOAP
+            if (!strncmp(long_options[option_index].name, "enable-coap",
+                         strlen("enable-coap"))) {
+                coap_mode = 1;
+            }
+            if (!strncmp(long_options[option_index].name, "dtls-handshake-timeout",
+                         strlen("dtls-handshake-timeout"))) {
+                dtls_handshake_timeout = atoi(optarg);
+            }
+            if (!strncmp(long_options[option_index].name, "dtls-handshake-mtu",
+                         strlen("dtls-handshake-mtu"))) {
+                dtls_handshake_mtu = atoi(optarg);
+            }
+            if (!strncmp(long_options[option_index].name, "dtls-session-max",
+                         strlen("dtls-session-max"))) {
+                dtls_session_max = atoi(optarg);
+            }
+#endif
+            if (!strncmp(long_options[option_index].name,"perf-timers-on",
+                         strlen("perf-timers-on"))) {
+                perf_timers_on = 1;
             }
             break;
         case 'v':
@@ -414,7 +567,17 @@ int main (int argc, char **argv)
             break;
         case 's':
             strncpy(est_server, optarg, MAX_SERVER_LEN);
+            server_set = 1;
             break;
+        case 'w':
+            read_timeout = atoi(optarg);
+            if (read_timeout > EST_SSL_READ_TIMEOUT_MAX) {
+                printf("\nMaximum number of seconds to wait is %d, ", EST_SSL_READ_TIMEOUT_MAX);
+                printf("please use a lower value with the -w option\n");
+                exit(1);
+            }
+            break;
+            
 #ifndef DISABLE_PTHREADS
         case 'd':
             sleep_delay = atoi(optarg);
@@ -489,12 +652,17 @@ int main (int argc, char **argv)
         }
     }
 
+    if (!server_set) {
+        printf("\nServer IP was not set\n");
+        exit(1);
+    }
+
     est_apps_startup();
 
     /*
      * Read in the local server certificate 
      */
-    certin = BIO_new(BIO_s_file_internal());
+    certin = BIO_new(BIO_s_file());
     if (BIO_read_filename(certin, certfile) <= 0) {
         printf("\nUnable to read server certificate file %s\n", certfile);
         exit(1);
@@ -514,7 +682,7 @@ int main (int argc, char **argv)
     /* 
      * Read in the server's private key
      */
-    keyin = BIO_new(BIO_s_file_internal());
+    keyin = BIO_new(BIO_s_file());
     if (BIO_read_filename(keyin, keyfile) <= 0) {
         printf("\nUnable to read server private key file %s\n", keyfile);
         exit(1);
@@ -533,9 +701,11 @@ int main (int argc, char **argv)
     }
     BIO_free(keyin);
 
-    est_init_logger(EST_LOG_LVL_INFO, NULL);
     if (verbose) {
+        est_init_logger(EST_LOG_LVL_INFO, NULL);
         est_enable_backtrace(1);
+    } else {
+        est_init_logger(EST_LOG_LVL_ERR, NULL);
     }
     ectx = est_proxy_init(trustcerts, trustcerts_len, cacerts_raw, cacerts_len,
             EST_CERT_FORMAT_PEM, realm, x, priv_key, "estuser", "estpwd");
@@ -577,6 +747,113 @@ int main (int argc, char **argv)
         }
     }
 
+    if (enable_enhcd_cert_auth) {
+        if (!set_cert_auth_ah_pwd) {
+            strncpy(cert_auth_ah_pwd, DEFAULT_ENHCD_CERT_PWD, MAX_PWD_LEN);
+        }
+        if (set_cert_auth_local_nid) {
+            nid = OBJ_txt2nid(local_nid);
+            if (nid != NID_undef) {
+                rv = est_server_enable_enhanced_cert_auth(
+                    ectx, nid, (const char *)cert_auth_ah_pwd,
+                    enhcd_cert_csr_check_on);
+            } else {
+                printf(
+                    "\nUnknown subject field NID specified. See ASN1_OBJECT \n"
+                    "long and short names that can be specified.\n");
+                exit(1);
+            }
+        } else {
+            rv = est_server_enable_enhanced_cert_auth(
+                ectx, DEFAULT_ENHCD_CERT_LOCAL_PKI_NID,
+                (const char *)cert_auth_ah_pwd, enhcd_cert_csr_check_on);
+        }
+        if (rv != EST_ERR_NONE) {
+            printf("\nUnable to enable Enhanced Cert Authentication. "
+                   "Aborting!!!\n");
+            exit(1);
+        }
+        if (set_enhcd_cert_truststore || set_cert_auth_mfg_name) {
+            /*
+             * One cannot be present without the other to register a
+             * manufacturer
+             */
+            if (!set_enhcd_cert_truststore || !set_cert_auth_mfg_name) {
+                printf("\nBoth the manufacturer name and truststore file must\n"
+                       "be provided to register a manufacturer\n");
+                exit(1);
+            }
+            enhcd_cert_truststore_len =
+                read_binary_file(mfg_truststore_file, &enhcd_cert_truststore);
+            if (enhcd_cert_truststore_len <= 0) {
+                printf("\nCould not read the Enhanced Cert Auth truststore "
+                       "file\n");
+                exit(1);
+            }
+            if (set_cert_auth_mfg_nid) {
+                nid = OBJ_txt2nid(mfg_nid);
+                if (nid != NID_undef) {
+                    rv = est_server_enhanced_cert_auth_add_mfg_info(
+                        ectx, mfg_name, nid, enhcd_cert_truststore,
+                        enhcd_cert_truststore_len);
+                } else {
+                    printf("\nUnknown subject field NID specified. See "
+                           "ASN1_OBJECT \n"
+                           "long and short names that can be specified.\n");
+                    exit(1);
+                }
+            } else {
+                rv = est_server_enhanced_cert_auth_add_mfg_info(
+                    ectx, mfg_name, DEFAULT_ENHCD_CERT_LOCAL_PKI_NID,
+                    enhcd_cert_truststore, enhcd_cert_truststore_len);
+            }
+            if (rv != EST_ERR_NONE) {
+                printf("\nUnable to register Enhanced Cert Auth manufacturer. "
+                       "Aborting!!!\n");
+                exit(1);
+            }
+        }
+    } else {
+        if (set_cert_auth_ah_pwd || set_cert_auth_local_nid ||
+            set_cert_auth_mfg_name || set_enhcd_cert_truststore ||
+            set_cert_auth_mfg_nid) {
+            printf("Enhanced Cert Auth must be enabled to specify the following"
+                   "parameters:\n");
+            if (set_cert_auth_ah_pwd) {
+                printf("- cert_auth_ah_pwd\n");
+            }
+            if (set_cert_auth_local_nid) {
+                printf("- enhcd_cert_local_nid\n");
+            }
+            if (set_cert_auth_mfg_name) {
+                printf("- enhcd_cert_mfg_name\n");
+            }
+            if (set_enhcd_cert_truststore) {
+                printf("- enhcd_cert_mfg_truststore\n");
+            }
+            if (set_cert_auth_mfg_nid) {
+                printf("- enhcd_cert_mfg_nid\n");
+            }
+            printf("\n");
+            show_usage_and_exit();
+        }
+    }
+
+    if (set_path_seg) {
+        rv = est_proxy_store_path_segment(ectx, path_seg);
+        if (rv != EST_ERR_NONE) {
+            printf("\nUnable to store proxy path segment.  Aborting!!!\n");
+            exit(1);
+        }
+    }
+
+    rv = est_proxy_set_read_timeout(ectx, read_timeout);
+    if (rv != EST_ERR_NONE) {
+        printf("\nUnable to configure client read timeout.  Aborting!!!\n");
+        printf("EST error code %d (%s)\n", rv, EST_ERR_NUM_TO_STR(rv));
+        exit(1);
+    }    
+    
     if (!pop) {
         printf("\nDisabling PoP check");
         est_server_disable_pop(ectx);
@@ -608,7 +885,11 @@ int main (int argc, char **argv)
             exit(1);
         }
     }
+    if (perf_timers_on) {
+        est_enable_performance_timers(ectx);
+    }
 
+#ifdef HAVE_OLD_OPENSSL    
     /*
      * Install thread locking mechanism for OpenSSL
      */
@@ -621,19 +902,70 @@ int main (int argc, char **argv)
         MUTEX_SETUP(mutex_buf[i]);
     CRYPTO_set_id_callback(id_function);
     CRYPTO_set_locking_callback(locking_function);
-
+#endif
+    
     printf("\nLaunching EST proxy...\n");
 
-    rv = est_proxy_start(ectx);
-    if (rv != EST_ERR_NONE) {
-        printf("\nFailed to init mg (rv=%d)\n", rv);
+    if (coap_mode) {        
+#if !(HAVE_LIBCOAP)
+        printf("\nestserver not built with coap support and --enable-coap has been specified.\n");
         exit(1);
+#else
+        if (dtls_handshake_timeout != 0) {
+            printf("\nSetting the DTLS handshake initial timeout value to: %d\n",  dtls_handshake_timeout);
+            
+            rv = est_server_set_dtls_handshake_timeout(ectx, dtls_handshake_timeout);
+            if (rv != EST_ERR_NONE) {
+                printf("\nUnable to set the DTLS handshake initial timeout value. "
+                       "Aborting!!!\n");
+                exit(1);
+            }
+        }
+        
+        if (dtls_handshake_mtu != 0) {
+            printf("\nSetting the DTLS handshake MTU value to: %d\n",  dtls_handshake_mtu);
+            
+            rv = est_server_set_dtls_handshake_mtu(ectx, dtls_handshake_mtu);
+            if (rv != EST_ERR_NONE) {
+                printf("\nUnable to set the DTLS handshake MTU value. "
+                       "Aborting!!!\n");
+                exit(1);
+            }
+        }
+        
+        if (dtls_session_max != 0) {
+            printf("\nSetting the DTLS session max value to: %d\n",  dtls_session_max);
+            
+            rv = est_server_set_dtls_session_max(ectx, dtls_session_max);
+            if (rv != EST_ERR_NONE) {
+                printf("\nUnable to set the DTLS session max value. "
+                       "Aborting!!!\n");
+                exit(1);
+            }
+        }
+        
+        coap_rc = est_proxy_coap_init_start(ectx, listen_port);
+        if (coap_rc != 0) {
+            printf("\nFailed to init the coap library into proxy mode\n");
+            exit(1);
+        }
+#endif
+    } else {
+        rv = est_proxy_start(ectx);
+        if (rv != EST_ERR_NONE) {
+            printf("\nFailed to init mg (rv=%d)\n", rv);
+            exit(1);
+        }
     }
+
 
     /*
      * Start the simple server, which opens a TCP
      * socket, waits for incoming connections, and
      * invokes the EST handler for each connection.
+     * 
+     * If CoAP is enabled, then the master thread will
+     * turn over control of the socket to the coap library
      */
     start_simple_server(ectx, listen_port, sleep_delay, v6);
 

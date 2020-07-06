@@ -132,6 +132,9 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
     BIO * bio_err;
     bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
     int approve = 0;
+    const ASN1_BIT_STRING *cur_cert_sig;
+    const X509_ALGOR *cur_cert_sig_alg;
+    
 
     /*
      * Print out the specifics of this cert
@@ -148,7 +151,15 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
      * This fingerprint can be checked against the anticipated value to determine
      * whether or not the server's cert should be approved.
      */
-    X509_signature_print(bio_err, cur_cert->sig_alg, cur_cert->signature);
+#ifdef HAVE_OLD_OPENSSL    
+    X509_get0_signature((ASN1_BIT_STRING **)&cur_cert_sig,
+                        (X509_ALGOR **)&cur_cert_sig_alg, cur_cert);
+    X509_signature_print(bio_err, (X509_ALGOR *)cur_cert_sig_alg,
+                         (ASN1_BIT_STRING *)cur_cert_sig);
+#else    
+    X509_get0_signature(&cur_cert_sig, &cur_cert_sig_alg, cur_cert);
+    X509_signature_print(bio_err, cur_cert_sig_alg, cur_cert_sig);
+#endif    
 
     if (openssl_cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
         approve = 1;
@@ -337,7 +348,7 @@ static void us748_test3 (void)
  * Simple enroll - Corrupted PKCS10
  *
  * This test case uses libcurl to test simple
- * enrollment usinga corrupted CSR.  HTTP Basic
+ * enrollment using a corrupted CSR.  HTTP Basic
  * authentication is used.
  */
 static void us748_test4 (void)
@@ -449,7 +460,7 @@ static void us748_test6 (void)
     /*
      * The server should respond with a failure code
      */
-    CU_ASSERT(rv == 400);
+    CU_ASSERT(rv == 401);
 
     st_disable_pop();
 }
@@ -640,9 +651,9 @@ static void us748_test10 (void)
     US748_UIDPWD_GOOD, US748_CACERTS, CURLAUTH_BASIC, NULL, NULL, NULL);
     /*
      * The enroll request should fail since the PoP was invalid
-     * We expect a 400 response.
+     * We expect a 401 response.
      */
-    CU_ASSERT(rv == 400);
+    CU_ASSERT(rv == 401);
 }
 
 /* The main() function for setting up and running the tests.

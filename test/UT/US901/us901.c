@@ -66,7 +66,7 @@ static char test5_outfile[FILENAME_MAX] = "US901\\test5.crt";
 
 static void us901_clean(void) {
     char cmd[200];
-    sprintf(cmd, "rm %s", test5_outfile);
+    sprintf(cmd, "rm -f %s", test5_outfile);
     system(cmd);
 }
 
@@ -119,17 +119,15 @@ static int us901_start_server(char server_type) {
         st_enable_http_digest_auth();
         break;
     case 'C':
-        system(
-                "openssl ca -config CA/estExampleCA.cnf -gencrl -out CA/estCA/crl.pem");
+        system("openssl ca -config CA/estExampleCA.cnf -gencrl -out CA/estCA/crl.pem");
         SLEEP(1);
         system(
                 "cat CA/trustedcerts.crt CA/estCA/crl.pem > US901/trustedcertsandcrl.crt");
         SLEEP(1);
-        rv = st_start(US901_SERVER_PORT,
+        rv = st_start_crl(US901_SERVER_PORT,
         US901_SERVER_CERTKEY,
         US901_SERVER_CERTKEY, "estrealm", "CA/estCA/cacert.crt",
                 "US901/trustedcertsandcrl.crt", "CA/estExampleCA.cnf", 0, 0, 0);
-        st_enable_crl();
         st_disable_http_auth();
         break;
     case 'N':
@@ -342,7 +340,14 @@ static void us901_test5(void) {
     SLEEP(1);
 }
 
-static void us901_test_sslversion(const SSL_METHOD *m, int expect_fail) {
+#ifdef HAVE_OLD_OPENSSL
+static void us901_test_sslversion(const SSL_METHOD *m, int expect_fail)
+#else
+static void us901_test_sslversion (const SSL_METHOD *m,
+                                   int min_version, int max_version,
+                                   int expect_fail)
+#endif    
+{
     BIO *conn;
     SSL *ssl;
     SSL_CTX *ssl_ctx = NULL;
@@ -360,6 +365,12 @@ static void us901_test_sslversion(const SSL_METHOD *m, int expect_fail) {
     ssl_ctx = SSL_CTX_new(m);
     CU_ASSERT(ssl_ctx != NULL);
 
+#ifndef HAVE_OLD_OPENSSL    
+    rv = SSL_CTX_set_min_proto_version(ssl_ctx, min_version);
+    CU_ASSERT(rv != 0);
+    rv = SSL_CTX_set_max_proto_version(ssl_ctx, max_version);
+    CU_ASSERT(rv != 0);
+#endif
     /*
      * Now that the SSL context is ready, open a socket
      * with the server and bind that socket to the context.
@@ -403,7 +414,13 @@ static void us901_test6(void) {
     LOG_FUNC_NM
     ;
 
+#ifdef HAVE_OLD_OPENSSL    
     us901_test_sslversion(SSLv3_client_method(), 1);
+#else    
+    us901_test_sslversion(TLS_client_method(),
+                          SSL3_VERSION, SSL3_VERSION,
+                          1);
+#endif    
 }
 
 /*
@@ -415,7 +432,13 @@ static void us901_test7(void) {
     LOG_FUNC_NM
     ;
 
+#ifdef HAVE_OLD_OPENSSL    
     us901_test_sslversion(TLSv1_client_method(), 1);
+#else    
+    us901_test_sslversion(TLS_client_method(),
+                          TLS1_VERSION, TLS1_VERSION,
+                          1);
+#endif    
 }
 
 /*
@@ -426,7 +449,13 @@ static void us901_test8(void) {
     LOG_FUNC_NM
     ;
 
+#ifdef HAVE_OLD_OPENSSL    
     us901_test_sslversion(TLSv1_1_client_method(), 0);
+#else    
+    us901_test_sslversion(TLS_client_method(),
+                          TLS1_1_VERSION, TLS1_1_VERSION,
+                          0);
+#endif    
 }
 
 /*
@@ -437,12 +466,18 @@ static void us901_test9(void) {
     LOG_FUNC_NM
     ;
 
+#ifdef HAVE_OLD_OPENSSL    
     us901_test_sslversion(TLSv1_2_client_method(), 0);
+#else    
+    us901_test_sslversion(TLS_client_method(),
+                          TLS1_2_VERSION, TLS1_2_VERSION,
+                          0);
+#endif    
 }
 
 /*
  * This test attempts to use a client certificate to
- * verify the TLS client authentiaiton is working.
+ * verify the TLS client authentication is working.
  * The certificate used is signed by the explicit cert
  * chain. This should succeed.
  */
@@ -519,7 +554,7 @@ static void us901_test12(void) {
     long rv;
     int st_rv;
 
-    st_rv = us901_start_server('R');
+    st_rv = us901_start_server('C');
     if (st_rv) {
         return;
     }
@@ -637,7 +672,7 @@ static void us901_test15(void) {
     /*
      * Read the server cert
      */
-    certin = BIO_new(BIO_s_file_internal());
+    certin = BIO_new(BIO_s_file());
     rv = BIO_read_filename(certin, US901_SERVER_CERT);
     CU_ASSERT(rv > 0);
     x = PEM_read_bio_X509(certin, NULL, NULL, NULL);
@@ -647,7 +682,7 @@ static void us901_test15(void) {
     /*
      * Read the server key
      */
-    keyin = BIO_new(BIO_s_file_internal());
+    keyin = BIO_new(BIO_s_file());
     rv = BIO_read_filename(keyin, US901_SERVER_KEY);
     CU_ASSERT(rv > 0);
     priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
@@ -690,7 +725,7 @@ static void us901_test16(void) {
     /*
      * Read the server key
      */
-    keyin = BIO_new(BIO_s_file_internal());
+    keyin = BIO_new(BIO_s_file());
     rv = BIO_read_filename(keyin, US901_SERVER_KEY);
     CU_ASSERT(rv > 0);
     priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
@@ -731,7 +766,7 @@ static void us901_test17(void) {
     /*
      * Read the server cert
      */
-    certin = BIO_new(BIO_s_file_internal());
+    certin = BIO_new(BIO_s_file());
     rv = BIO_read_filename(certin, US901_SERVER_CERT);
     CU_ASSERT(rv > 0);
     x = PEM_read_bio_X509(certin, NULL, NULL, NULL);
@@ -765,7 +800,7 @@ static void us901_test18(void) {
     /*
      * Read the server cert
      */
-    certin = BIO_new(BIO_s_file_internal());
+    certin = BIO_new(BIO_s_file());
     rv = BIO_read_filename(certin, US901_SERVER_CERT);
     CU_ASSERT(rv > 0);
     x = PEM_read_bio_X509(certin, NULL, NULL, NULL);
@@ -775,7 +810,7 @@ static void us901_test18(void) {
     /*
      * Read the server key
      */
-    keyin = BIO_new(BIO_s_file_internal());
+    keyin = BIO_new(BIO_s_file());
     rv = BIO_read_filename(keyin, US901_SERVER_KEY);
     CU_ASSERT(rv > 0);
     priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
@@ -810,7 +845,7 @@ static void us901_test19(void) {
     /*
      * Read the server cert
      */
-    certin = BIO_new(BIO_s_file_internal());
+    certin = BIO_new(BIO_s_file());
     rv = BIO_read_filename(certin, US901_SERVER_CERT);
     CU_ASSERT(rv > 0);
     x = PEM_read_bio_X509(certin, NULL, NULL, NULL);
@@ -820,7 +855,7 @@ static void us901_test19(void) {
     /*
      * Read the server key
      */
-    keyin = BIO_new(BIO_s_file_internal());
+    keyin = BIO_new(BIO_s_file());
     rv = BIO_read_filename(keyin, US901_SERVER_KEY);
     CU_ASSERT(rv > 0);
     priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);

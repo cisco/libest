@@ -33,6 +33,7 @@
 #include "est_client_proxy.h"
 #include "est.h"
 #include "est_locl.h"
+#include "safe_str_lib.h"
 
 #ifdef WIN32
     /* _snprintf on Windows does not NULL-terminate when the output is
@@ -69,7 +70,7 @@ static int addr_to_str (struct sockaddr *addr, char *str, size_t str_size,
     }
     dw_str_size = str_size;
     if (addr_len != 0 &&
-            WSAAddressToStringW(addr, addr_len, NULL, (LPWSTR)str, &dw_str_size) == 0) {
+        WSAAddressToStringW(addr, addr_len, NULL, (wchar_t*)str, &dw_str_size) == 0) {
         ret = 0;
     }
 #else
@@ -100,16 +101,36 @@ static int addr_to_str (struct sockaddr *addr, char *str, size_t str_size,
     return ret;
 }
 
+static int fd_is_valid(int fd)
+{
+#ifdef WIN32
+    /* Check is not needed in Windows */
+    return 1;
+#else
+    return (fcntl(fd, F_GETFD) != -1 || errno != EBADF);
+#endif
+}
+
 static tcw_err_t tcw_direct_close (tcw_sock_t *sock)
 {
     tcw_err_t ret = TCW_OK;
 
-    if (CLOSE_SOCKET(sock->sock_fd) != 0) {
-        EST_LOG_ERR("close failed: %d", GET_SOCK_ERR());
-        ret = TCW_ERR_CLOSE;
-        /* SOCK_ERR already set */
-        goto done;
+    /*
+     * Make sure that the socket is still valid.  If it is, then go ahead and
+     * attempt to close it.  This is not fool proof.  The server may close
+     * their side between when checking to see if it's valid and actually
+     * performing the close, but this at least reduces the output of the error
+     * log message.
+     */
+    if (fd_is_valid(sock->sock_fd)) {
+        if (CLOSE_SOCKET(sock->sock_fd) != 0) {
+            EST_LOG_ERR("close failed: %d", GET_SOCK_ERR());
+            ret = TCW_ERR_CLOSE;
+            /* SOCK_ERR already set */
+            goto done;
+        }
     }
+    
     sock->sock_fd = SOCK_INVALID;
 
 done:
@@ -281,6 +302,8 @@ static tcw_err_t tcw_curl_connect (tcw_sock_t *sock, tcw_opts_t *opts,
     tcw_err_t ret = TCW_OK;
     size_t url_size;
     char *url = NULL;
+    char *found_colon = NULL;
+    int safec_err;
     CURLcode curlcode;
     long curl_socket;
     long auth_bits;
@@ -318,10 +341,25 @@ static tcw_err_t tcw_curl_connect (tcw_sock_t *sock, tcw_opts_t *opts,
         goto done;
     }
     /*
+     * Search for ':' indicating the address is an IPv6 address.
+     */
+    safec_err = strstr_s(url, EST_MAX_SERVERNAME_LEN + 1, ":", 1, &found_colon);
+    if (safec_err != 0 && safec_err != ESRCH) {
+        EST_LOG_ERR("strstr_s returned %d (%s) during IPv6 address check",
+                    safec_err,  strerror(safec_err));
+        errno = safec_err;
+        ret = TCW_ERR_OTHER;
+        goto done;
+    }
+    /*
      * "http" here is telling libcurl not to wrap whatever data we send in
      *  SSL. 
      */
-    n = snprintf(url, url_size-1, "http://%s:%hu", host, port);
+    if (!safec_err && found_colon != NULL) {
+        n = snprintf(url, url_size - 1, "http://[%s]:%hu", host, port);
+    } else {
+        n = snprintf(url, url_size - 1, "http://%s:%hu", host, port);
+    }
     if (n < 0 || n >= (int)url_size) {
         errno = ENOMEM;
         ret = TCW_ERR_ALLOC;

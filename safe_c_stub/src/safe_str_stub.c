@@ -36,6 +36,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <ctype.h>
+#include <errno.h>
 
 #include "safe_lib.h"
 
@@ -420,6 +421,9 @@ errno_t strncpy_s (char *dest, rsize_t dmax, const char *src, rsize_t slen)
  * Emulate subset of the functionality of strnlen_s() with strnlen_s()
  */
 rsize_t strnlen_s (const char *s, rsize_t smax) {
+    if (s == NULL) {
+        return (0);
+    }
     return (strnlen(s, smax));
 }
 
@@ -433,7 +437,7 @@ errno_t strstr_s (char *dest, rsize_t dmax,
     SAFEC_STUB_UNUSED(dmax);
     SAFEC_STUB_UNUSED(slen);
     *substring = strstr(dest, src);
-    return (*substring ? EOK : ESNOTFND);
+    return (*substring ? EOK : ESRCH);
 }
 
 /*

@@ -1,0 +1,63 @@
+-----BEGIN CERTIFICATE-----
+MIIBbzCCARWgAwIBAgIUJAXNCgD+Pdsp9anrDXIiRzNy4f4wCgYIKoZIzj0EAwIw
+HzEdMBsGA1UEAwwUZXN0RXhhbXBsZVRlc3RNZmcwQ0EwHhcNMjAwMTIxMTcwNDI4
+WhcNNDAwMTIxMTcwNDI4WjAfMR0wGwYDVQQDDBRlc3RFeGFtcGxlVGVzdE1mZzBD
+QTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABNn0FiXlCp97K8j7Z0gGidS1RtST
+A3FQTbhyBQGIUoIkLK19Sk1qxIM3Rl8RjPmZigrQgerwhIB2FVUhSnlKj7GjLzAt
+MAwGA1UdEwQFMAMBAf8wHQYDVR0OBBYEFIDSjbn4NSw9VWuAsngKWEwtM02/MAoG
+CCqGSM49BAMCA0gAMEUCIQCYxD8DHsrR5j7Aq+3QDeNPSJH0vMRGTDhSfSE9rzkL
+ugIgHTZ8K2uO81x0TU6IPitJjz7vrEGXnDEZ6gZaOAdropI=
+-----END CERTIFICATE-----
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 1 (0x1)
+        Signature Algorithm: ecdsa-with-SHA256
+        Issuer: CN=estExampleTestMfg0CA
+        Validity
+            Not Before: Jan 21 17:04:29 2020 GMT
+            Not After : Jan 21 17:04:29 2040 GMT
+        Subject: CN=estExampleTestMfg0CA1-0
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub:
+                    04:e0:a1:82:f5:cf:72:08:9f:f8:90:08:ec:a6:5d:
+                    45:74:f1:36:10:f2:27:d4:e0:53:90:85:25:8e:f3:
+                    d2:8c:f7:d2:47:7d:47:dd:55:6c:e1:93:24:99:d8:
+                    71:83:1f:b8:76:c0:e6:f1:e9:86:70:49:3d:d1:d5:
+                    f7:b1:cd:34:9e
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:TRUE
+            X509v3 Key Usage: 
+                Certificate Sign
+            X509v3 CRL Distribution Points: 
+
+                Full Name:
+                  URI:http://example.com/crl.pem
+
+            X509v3 Subject Key Identifier: 
+                E6:E2:4A:7A:DB:A9:FC:E3:EB:93:82:E2:73:E4:CD:C9:F9:71:14:1F
+            X509v3 Authority Key Identifier: 
+                keyid:80:D2:8D:B9:F8:35:2C:3D:55:6B:80:B2:78:0A:58:4C:2D:33:4D:BF
+
+    Signature Algorithm: ecdsa-with-SHA256
+         30:46:02:21:00:98:17:7b:4e:eb:81:ac:7e:00:69:de:0f:49:
+         40:74:04:1a:7b:08:3b:24:39:7a:70:bb:de:62:5c:aa:76:ff:
+         1c:02:21:00:b7:4e:3d:38:97:12:46:9f:34:99:77:b4:22:fb:
+         d4:40:64:39:27:f5:5c:67:52:5a:0a:50:87:37:64:40:e8:6e
+-----BEGIN CERTIFICATE-----
+MIIBvTCCAWKgAwIBAgIBATAKBggqhkjOPQQDAjAfMR0wGwYDVQQDDBRlc3RFeGFt
+cGxlVGVzdE1mZzBDQTAeFw0yMDAxMjExNzA0MjlaFw00MDAxMjExNzA0MjlaMCIx
+IDAeBgNVBAMMF2VzdEV4YW1wbGVUZXN0TWZnMENBMS0wMFkwEwYHKoZIzj0CAQYI
+KoZIzj0DAQcDQgAE4KGC9c9yCJ/4kAjspl1FdPE2EPIn1OBTkIUljvPSjPfSR31H
+3VVs4ZMkmdhxgx+4dsDm8emGcEk90dX3sc00nqOBizCBiDAMBgNVHRMEBTADAQH/
+MAsGA1UdDwQEAwICBDArBgNVHR8EJDAiMCCgHqAchhpodHRwOi8vZXhhbXBsZS5j
+b20vY3JsLnBlbTAdBgNVHQ4EFgQU5uJKetup/OPrk4Lic+TNyflxFB8wHwYDVR0j
+BBgwFoAUgNKNufg1LD1Va4CyeApYTC0zTb8wCgYIKoZIzj0EAwIDSQAwRgIhAJgX
+e07rgax+AGneD0lAdAQaewg7JDl6cLveYlyqdv8cAiEAt049OJcSRp80mXe0IvvU
+QGQ5J/VcZ1JaClCHN2RA6G4=
+-----END CERTIFICATE-----

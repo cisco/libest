@@ -30,7 +30,7 @@ static int cacerts_len = 0;
 #define US1864_TCP_PORT     29001
 
 /*
- * The following CSR was generated using the following openssl command and theng
+ * The following CSR was generated using the following openssl command and then
  * using cat on the rsa.req file:
  *
  * openssl req -newkey rsa:2048 -keyout rsakey.pem -keyform PEM -out rsa.req -outform PEM
@@ -178,7 +178,7 @@ static void us1864_test1 (void)
     /*
      * Read the server cert
      */
-    certin = BIO_new(BIO_s_file_internal());
+    certin = BIO_new(BIO_s_file());
     rv = BIO_read_filename(certin, US1864_SERVER_CERT);
     CU_ASSERT(rv > 0);
     x = PEM_read_bio_X509(certin, NULL, NULL, NULL);
@@ -188,7 +188,7 @@ static void us1864_test1 (void)
     /*
      * Read the server key
      */
-    keyin = BIO_new(BIO_s_file_internal());
+    keyin = BIO_new(BIO_s_file());
     rv = BIO_read_filename(keyin, US1864_SERVER_KEY);
     CU_ASSERT(rv > 0);
     priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
@@ -218,10 +218,13 @@ static void us1864_test1 (void)
     /*
      * Make sure we don't allow DIGEST mode when in FIPS mode
      */
-    FIPS_mode_set(1);
-    est_rv = est_server_set_auth_mode(ctx, AUTH_DIGEST);
-    CU_ASSERT(est_rv == EST_ERR_BAD_MODE);
-    FIPS_mode_set(0);
+    if (!FIPS_mode_set(1)) {
+        printf("FIPS mode not supported, skipping test to prevent digest auth when in FIPS mode");
+    } else {
+        est_rv = est_server_set_auth_mode(ctx, AUTH_DIGEST);
+        CU_ASSERT(est_rv == EST_ERR_BAD_MODE);
+        FIPS_mode_set(0);
+    }
 
     X509_free(x);
     EVP_PKEY_free(priv_key);

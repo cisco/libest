@@ -3,7 +3,7 @@
  *
  * June, 2013
  *
- * Copyright (c) 2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016, 2018 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -13,6 +13,7 @@
 #endif 
 #include <string.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <openssl/bio.h>
 #include <openssl/x509.h>
 #include <openssl/pem.h>
@@ -212,7 +213,7 @@ EVP_PKEY *read_private_key(char *key_file)
     /* 
      * Read in the private key
      */
-    keyin = BIO_new(BIO_s_file_internal());
+    keyin = BIO_new(BIO_s_file());
     if (BIO_read_filename(keyin, key_file) <= 0) {
 	printf("\nUnable to read private key file %s\n", key_file);
 	return(NULL);
@@ -355,7 +356,7 @@ EVP_PKEY *read_protected_private_key(const char *key_file, pem_password_cb *cb)
     /*
      * Read in the private key
      */
-    keyin = BIO_new(BIO_s_file_internal());
+    keyin = BIO_new(BIO_s_file());
     if (BIO_read_filename(keyin, key_file) <= 0) {
     printf("\nUnable to read private key file %s\n", key_file);
     return(NULL);
@@ -374,3 +375,265 @@ EVP_PKEY *read_protected_private_key(const char *key_file, pem_password_cb *cb)
     return (priv_key);
 }
 
+int get_subj_fld_from_cert (void *cert_csr, int cert_or_csr,
+                            char *name, int len)
+{
+    X509_NAME *subject_nm;
+    BIO *out;
+    BUF_MEM *bm;
+    int src_len;
+
+    /*
+     * cert = 0; csr = 1
+     */
+    if (cert_or_csr == 1) {
+        subject_nm = X509_REQ_get_subject_name((X509_REQ *)cert_csr);
+    } else {
+        subject_nm = X509_get_subject_name((X509*) cert_csr);
+    }
+    
+    out = BIO_new(BIO_s_mem());
+    if (out == NULL) {
+        printf("BIO_new failed");
+        return(-1);
+    }
+
+    X509_NAME_print_ex(out, subject_nm, 0,
+                       XN_FLAG_ONELINE & ~ASN1_STRFLGS_ESC_MSB);
+
+    /*
+     * copy out the subject field buffer to be returned
+     */
+    BIO_get_mem_ptr(out, &bm);
+    if (bm->length > len) {
+        src_len = len;
+    } else {
+        src_len = bm->length;
+    }
+    memcpy(name, bm->data, src_len);
+
+    if (bm->length < len) {
+        name[bm->length] = 0;
+    } else {
+        name[len] = 0;
+    }
+
+    BIO_free(out);
+    return 0;
+}
+
+/*
+ * Function for checking to see if coap mode is supported with the current
+ * build of CiscoEST.
+ */
+int coap_mode_supported (char *cert_key_file, char *trusted_certs_file,
+                         char *cacerts_file, int test_port)
+{
+    EST_CTX *ectx;
+    BIO *certin, *keyin;
+    X509 *x;
+    EVP_PKEY *priv_key;
+    int rv;
+    int coap_rc;
+
+    unsigned char *trustcerts = NULL;
+    int trustcerts_len = 0;
+
+    unsigned char *cacerts = NULL;
+    int cacerts_len = 0;
+
+    /*
+     * Set up the EST library in server mode.  This requires a number
+     * of values to be passed to est_server_init()
+     */
+
+    /*
+     * The server's ID certificate.
+     */
+    certin = BIO_new(BIO_s_file());
+    if (BIO_read_filename(certin, cert_key_file) <= 0) {
+        printf("Unable to read server certificate file %s\n", cert_key_file);
+        rv = 0;
+        goto end;
+    }
+    /*
+     * Read the file, which is expected to be PEM encoded.
+     */
+    x = PEM_read_bio_X509(certin, NULL, NULL, NULL);
+    if (x == NULL) {
+        printf("Error while reading PEM encoded server certificate file %s\n",
+               cert_key_file);
+        rv = 0;
+        goto end;
+    }
+    BIO_free(certin);
+    certin = NULL;
+
+    /*
+     * Read in the server's private key
+     */
+    keyin = BIO_new(BIO_s_file());
+    if (BIO_read_filename(keyin, cert_key_file) <= 0) {
+        printf("Unable to read server private key file %s\n", cert_key_file);
+        rv = 0;
+        goto end;
+    }
+    /*
+     * Read in the private key file, which is expected to be a PEM
+     * encoded private key.
+     */
+    priv_key = PEM_read_bio_PrivateKey(keyin, NULL, NULL, NULL);
+    if (priv_key == NULL) {
+        printf("Error while reading PEM encoded private key file %s\n",
+               cert_key_file);
+        rv = 0;
+        goto end;
+    }
+    BIO_free(keyin);
+    keyin = NULL;
+
+    /*
+     * CA certs to use as the trust store
+     */
+    trustcerts_len = read_binary_file(trusted_certs_file, &trustcerts);
+    if (trustcerts_len <= 0) {
+        printf("Trusted certs file %s could not be read\n", trusted_certs_file);
+        rv = 0;
+        goto end;
+    }
+
+    /*
+     * Read in the CA certs to use as response to /cacerts responses
+     */
+    cacerts_len = read_binary_file(cacerts_file, &cacerts);
+    if (cacerts_len <= 0) {
+        printf("CA chain file %s file could not be read\n", cacerts_file);
+        rv = 0;
+        goto end;
+    }
+
+    /*
+     * Initialize the library and get an EST context
+     */
+    ectx = est_server_init(trustcerts, trustcerts_len, cacerts, cacerts_len,
+                           EST_CERT_FORMAT_PEM, "estrealm", x, priv_key);
+    if (!ectx) {
+        printf("Unable to initialize EST context.  Aborting!!!\n");
+        rv = 0;
+        goto end;
+    }
+
+    /*
+     * Attempt to set up CoAP mode just to see if it's supported.
+     * Immediately free up the context and then check the return code
+     * to see what the library indicated.
+     */
+    coap_rc = est_server_coap_init_start(NULL, test_port);
+
+    if (ectx)
+        est_destroy(ectx);
+
+    if (coap_rc == EST_ERR_CLIENT_COAP_MODE_NOT_SUPPORTED) {
+        rv = 0;
+    } else {
+        rv = 1;
+    }
+end:
+    if (certin)
+        BIO_free(certin);
+    if (x)
+        X509_free(x);
+    if (keyin)
+        BIO_free(keyin);
+    if (priv_key)
+        EVP_PKEY_free(priv_key);
+    if (trustcerts)
+        free(trustcerts);
+    if (cacerts)
+        free(cacerts);
+    return rv;
+}
+
+/*
+ * This function sends the kill signal to the pid specified and polls the
+ * process waiting for it to die. The parameters are the pid to kill, the
+ * maximum amount of time to wait for the process to die and the time to sleep
+ * between polls. The function will return 0 on success, -1 on failure to send
+ * the kill signal, and -2 when the poll for waiting for the process to die
+ * times out.
+ */
+int kill_process (pid_t pid, int max_time_msec, int time_to_sleep_msec) {
+    int rv;
+    int kill_timeout;
+    int i;
+
+    kill_timeout = max_time_msec / time_to_sleep_msec;
+    rv = kill(pid, SIGKILL);
+    if (rv) {
+        return -1;
+    }
+    /*
+     * Kill with signal 0 will send a no-op signal to the process while still
+     * checking the error codes during the send. This allows us to check whether
+     * the process has died via a kill(pid, 0) and checking that the returned
+     * error is ESRCH indicating that pid couldn't be found.
+     */
+    rv = kill(pid, 0);
+    for(i = 0; !rv && i < kill_timeout; i++) {
+        rv = kill(pid, 0);
+        usleep(time_to_sleep_msec * 1000);
+    }
+    if (rv && errno == ESRCH) {
+        return 0;
+    } else {
+        return -2;
+    }
+}
+
+/* 
+ * This function reads a certificate and private key file and fills a X509
+ * (certificate) struct and EVP_PKEY (private key) struct with the data
+ * contained with the files
+ */
+int read_x509_cert_and_key_file (char *cert_file_path, char *pkey_file_path,
+                                 X509 **cert, EVP_PKEY **pkey)
+{
+    int failed = 0;
+    BIO *certin = NULL;
+    if (cert_file_path == NULL) {
+        printf("\nCert file %s doesn't exist\n", cert_file_path);
+        return 1;
+    }
+    if (pkey_file_path == NULL) {
+        printf("\nKey file %s doesn't exist\n", pkey_file_path);
+        return 1;
+    }
+    certin = BIO_new(BIO_s_file());
+    if (BIO_read_filename(certin, cert_file_path) <= 0) {
+        printf("\nUnable to read client certificate file %s\n", cert_file_path);
+        failed = 1;
+        goto end;
+    }
+    /*
+     * This reads the file, which is expected to be PEM encoded.  If you're
+     * using DER encoded certs, you would invoke d2i_X509_bio() instead.
+     */
+    *cert = PEM_read_bio_X509(certin, NULL, NULL, NULL);
+    if (cert == NULL) {
+        printf("\nError while reading PEM encoded client certificate file %s\n",
+               cert_file_path);
+        failed = 1;
+        goto end;
+    }
+    *pkey = read_private_key(cert_file_path);
+    if (pkey == NULL) {
+        printf("\nError while reading PEM encoded client key file %s\n",
+               pkey_file_path);
+        X509_free(*cert);
+        failed = 1;
+        goto end;
+    }
+end:
+    BIO_free(certin);
+    return failed;
+}

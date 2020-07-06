@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/CiscoJEST"/>
+	<classpathentry exported="true" kind="lib" path="/home/foleyj/Iron/sprint2/US1119/iron_ciscoest/java/lib/bcpkix-jdk15on-151.jar"/>
+	<classpathentry exported="true" kind="lib" path="/home/foleyj/Iron/sprint2/US1119/iron_ciscoest/java/lib/bcprov-ext-jdk15on-151.jar"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>

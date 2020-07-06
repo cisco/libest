@@ -3,7 +3,7 @@
  *
  * June, 2013
  *
- * Copyright (c) 2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016, 2018, 2019 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -17,6 +17,7 @@
 #include "CUnit/Automated.h"
 #include "CUnit/Console.h"
 #endif
+#include "cdets.h"
 #ifndef WIN32
 #include <pthread.h>
 #include <signal.h>
@@ -35,6 +36,12 @@ extern int us1005_add_suite(void);
 extern int us1883_add_suite(void);
 extern int us1060c_add_suite(void);
 extern int us3496_add_suite(void);
+#ifdef ENABLE_BRSKI
+extern int us3646_add_suite(void);
+extern int us4710_add_suite(void);
+extern int us4778_add_suite(void);
+extern int us4784_add_suite(void);
+#endif
 extern int us748_add_suite(void);
 extern int us893_add_suite(void);
 extern int us894_add_suite(void);
@@ -51,9 +58,42 @@ extern int us2174_add_suite(void);
 extern int us3512_add_suite(void);
 extern int us3612_add_suite(void);
 extern int us4020_add_suite(void);
+extern int us4752_add_suite(void);
+extern int us4747_add_suite(void);
+extern int us4880_add_suite(void);
+extern int us5121_add_suite(void);
+#ifdef HAVE_LIBCOAP
+extern int us5052_add_suite(void);
+extern int us5139_add_suite(void);
+extern int us5184_add_suite(void);
+extern int us5213_add_suite(void);
+extern int us5226_add_suite(void);
+extern int us5230_add_suite(void);
+extern int us5237_add_suite(void);
+extern int us5240_add_suite(void);
+extern int us5244_add_suite(void);
+extern int us5246_add_suite(void);
+extern int us5248coap_add_suite(void);
+extern int us5255_add_suite(void);
+extern int us5282_add_suite(void);
+extern int us5367_add_suite(void);
+extern int us5394_add_suite(void);
+extern int us5418c_add_suite(void);
+#endif
+extern int us5241_add_suite(void);
+extern int us5248http_add_suite(void);
+extern int us5331_add_suite(void);
+extern int us5357_add_suite(void);
+extern int us5399_add_suite(void);
+#ifdef ENABLE_BRSKI
+extern int us5418h_add_suite(void);
+#endif
+
 #if (DISABLE_SUITE != 0)
 extern int us1060_add_suite(void);
 #endif
+
+extern CU_pSuite coap_sanity_psuite;
 
 /*
  * Abstract OpenSSL threading platfrom callbacks
@@ -74,6 +114,7 @@ extern int us1060_add_suite(void);
 #define THREAD_ID             pthread_self()
 #endif
 
+#ifdef HAVE_OLD_OPENSSL
 /*
  * We're using OpenSSL, both as the CA and libest
  * requires it.  OpenSSL requires these platform specific
@@ -92,6 +133,7 @@ static void locking_function(int mode, int n, const char * file, int line) {
 static unsigned long id_function(void) {
     return ((unsigned long) THREAD_ID);
 }
+#endif
 
 /* The main() function for setting up and running the tests.
  * Returns a CUE_SUCCESS on successful running, another
@@ -100,13 +142,20 @@ static unsigned long id_function(void) {
 int main(int argc, char *argv[]) {
     int xml = 0;
     int con = 0;
+    int coap_sanity = 0;
     CU_pFailureRecord fr;
+    int run_cnt;
+    int fail_cnt;
+#ifdef HAVE_OLD_OPENSSL
     int i;
+#endif
 
     if (argc >= 2 && !strcmp(argv[1], "-xml")) {
         xml = 1;
     } else if (argc >= 2 && !strcmp(argv[1], "-con")) {
         con = 1;
+    } else if (argc >=2 && !strcmp(argv[1], "-coap-sanity")) {
+        coap_sanity = 1;
     }
 #ifdef HAVE_CUNIT
     int rv;
@@ -127,6 +176,7 @@ int main(int argc, char *argv[]) {
 
     est_apps_startup();
 
+#ifdef HAVE_OLD_OPENSSL    
     /*
      * Install thread locking mechanism for OpenSSL
      */
@@ -139,7 +189,8 @@ int main(int argc, char *argv[]) {
     MUTEX_SETUP(mutex_buf[i]);
     CRYPTO_set_id_callback(id_function);
     CRYPTO_set_locking_callback(locking_function);
-
+#endif
+    
     /* initialize the CUnit test registry */
     if (CUE_SUCCESS != CU_initialize_registry()) {
         return CU_get_error();
@@ -313,23 +364,277 @@ int main(int argc, char *argv[]) {
     }
 #endif
 #ifdef ENABLE_ALL_SUITES
+#ifdef ENABLE_BRSKI
+    rv = us3646_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US3646 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
     rv = us4020_add_suite();
     if (rv != CUE_SUCCESS) {
         printf("\nFailed to add test suite for US4020 (%d)", rv);
         exit(1);
     }
 #endif
-
+#ifdef ENABLE_ALL_SUITES
+#ifdef ENABLE_BRSKI
+    rv = us4710_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US4710 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef ENABLE_BRSKI
+    rv = us4778_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US4778 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef ENABLE_BRSKI
+    rv = us4784_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US4784 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+    rv = us4752_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US4752 (%d)", rv);
+        exit(1);
+    }
+#endif
+#ifdef ENABLE_ALL_SUITES
+    rv = us4880_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US4880 (%d)", rv);
+        exit(1);
+    }
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5052_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5052 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+    rv = us5121_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5121 (%d)", rv);
+        exit(1);
+    }
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5139_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5139 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5184_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5184 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5213_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5213 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5226_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5226 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5230_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5230 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5237_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5237 (%d)", rv);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5240_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5240 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+    rv = us5241_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5241 (%d)", rv);
+        exit(1);
+    }
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5244_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5244 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5246_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5246 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5248coap_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5248 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+    rv = us5248http_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5248 (%d)", rv);
+        exit(1);
+    }
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5255_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5255 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5282_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5282 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5331_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5331 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5357_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5357 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5367_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5367 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5394_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5394 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5399_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5399 (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef ENABLE_BRSKI
+    rv = us5418h_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5418h (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+#ifdef ENABLE_ALL_SUITES
+#ifdef HAVE_LIBCOAP
+    rv = us5418c_add_suite();
+    if (rv != CUE_SUCCESS) {
+        printf("\nFailed to add test suite for US5418c (%d)", rv);
+        exit(1);
+    }
+#endif
+#endif
+    
     if (xml) {
         /* Run all test using automated interface, which
          * generates XML output */
         CU_list_tests_to_file();
         CU_automated_run_tests();
-    }
-    else if (con) {
+    } else if (con) {
         CU_console_run_tests();
-    }
-    else {
+    } else if (coap_sanity) {
+        /*
+         * Run just a couple of CoAP based tests to ensure that EST Server
+         * over CoAP is working correctly
+         */
+        CU_basic_run_suite(coap_sanity_psuite);
+    } else {
         /* Run all tests using the CUnit Basic interface,
          * which generates text output */
         CU_basic_set_mode(CU_BRM_VERBOSE);
@@ -338,9 +643,16 @@ int main(int argc, char *argv[]) {
         if (fr) {
             printf("\n\nHere is a summary of the failed test cases:\n");
             CU_basic_show_failures(fr);
+            printf("\n\nCDETS attachment was not generated");
+        }
+        else {
+            run_cnt = CU_get_number_of_tests_run();
+            fail_cnt = CU_get_number_of_tests_failed();
+            cdets_gen_ut_attachment(run_cnt, (run_cnt - fail_cnt));
         }
     }
 
+#ifdef HAVE_OLD_OPENSSL
     /*
      * Tear down the mutexes used by OpenSSL
      */
@@ -352,7 +664,8 @@ int main(int argc, char *argv[]) {
     MUTEX_CLEANUP(mutex_buf[i]);
     free(mutex_buf);
     mutex_buf = NULL;
-
+#endif
+    
     CU_cleanup_registry();
     est_apps_shutdown();
 
@@ -361,5 +674,4 @@ int main(int argc, char *argv[]) {
     printf("\nlibcunit not installed, unit test are not enabled\n");
 #endif
 }
-
 

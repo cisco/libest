@@ -14,6 +14,7 @@
 #define HEADER_EST_SOCK_COMPAT_H
 
 #ifdef WIN32
+#include <winsock.h>
     /*
      * Winsock defines a different function for closing sockets because not all
      * versions of Windows have file descriptor and socket descriptor

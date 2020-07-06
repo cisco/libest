@@ -4,7 +4,7 @@
  *
  * March, 2016
  *
- * Copyright (c) 2016 by cisco Systems, Inc.
+ * Copyright (c) 2016, 2017, 2018 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -109,7 +109,11 @@ static DH *get_dh1024dsa()
             0x07, 0xE7, 0x68, 0x1A, 0x82, 0x5D, 0x32, 0xA2,
     };
     DH *dh;
+#ifndef HAVE_OLD_OPENSSL
+    BIGNUM *p, *g;
+#endif
 
+#ifdef HAVE_OLD_OPENSSL    
     if ((dh = DH_new()) == NULL) {
         return(NULL);
     }
@@ -120,6 +124,16 @@ static DH *get_dh1024dsa()
     }
     dh->length = 160;
     return(dh);
+#else    
+    p = BN_bin2bn(dh1024_p, sizeof(dh1024_p), NULL);
+    g = BN_bin2bn(dh1024_g, sizeof(dh1024_g), NULL);
+    if ((p == NULL) || (g == NULL)) {
+        DH_free(dh);
+        return (NULL);
+    }
+    DH_set0_pqg(dh, p, NULL, g);
+    return (dh);
+#endif    
 }
 
 
@@ -349,12 +363,480 @@ static int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
     return (rv);
 }
 
+/*
+ * Trivial utility function to extract the string
+ * value of the subject name from a cert.
+ */
+static void extract_sub_name (X509 *cert, char *name, int len)
+{
+    X509_NAME *subject_nm;
+    BIO *out;
+    BUF_MEM *bm;
+
+    subject_nm = X509_get_subject_name(cert);
+
+    out = BIO_new(BIO_s_mem());
+
+    X509_NAME_print_ex(out, subject_nm, 0, XN_FLAG_SEP_SPLUS_SPC);
+    BIO_get_mem_ptr(out, &bm);
+    strncpy(name, bm->data, len);
+    if (bm->length < len) {
+        name[bm->length] = 0;
+    } else {
+        name[len] = 0;
+    }
+
+    BIO_free(out);
+}
+
+#ifndef WIN32
+pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+#endif
+/*
+ * Callback function used by EST to generate a private key
+ *
+ * priv_key  contains a pointer to the key we will populate
+ * priv_key_len  contains a pointer to an integer for the
+ *               length of the new key
+ */
+static int generate_private_key(EVP_PKEY **p_priv_key)
+{
+    EVP_PKEY *priv_key = NULL;
+    RSA *rsa = NULL;
+    BIGNUM *bn = NULL;
+    BIO *out = NULL;
+    int rv = EST_ERR_NONE;
+
+    if (!p_priv_key) {
+        rv = EST_ERR_INVALID_PARAMETERS;
+        goto end;
+    }
+
+    rsa = RSA_new();
+    if (!rsa) {
+        rv = EST_ERR_MALLOC;
+        printf("***ESTCLIENT [ERROR][generate_private_key]--> Failed to allocate RSA struct");
+        goto end;
+    }
+    bn = BN_new();
+    if (!bn) {
+        rv = EST_ERR_MALLOC;
+        printf("***ESTCLIENT [ERROR][generate_private_key]--> Failed to allocate BN struct");
+        goto end;
+    }
+
+    BN_set_word(bn, 0x10001);
+
+    RSA_generate_key_ex(rsa, 4096, bn, NULL);
+    out = BIO_new(BIO_s_mem());
+    PEM_write_bio_RSAPrivateKey(out,rsa,NULL,NULL,0,NULL,NULL);
+
+    priv_key = PEM_read_bio_PrivateKey(out, NULL, NULL, NULL);
+    if (priv_key == NULL) {
+        rv = EST_ERR_PEM_READ;
+        printf("Error while reading PEM encoded private key BIO: ");
+        goto end;
+    }
+    *p_priv_key = priv_key;
+
+    end:
+    if (out) {
+        BIO_free(out);
+    }
+    if (rsa) {
+        RSA_free(rsa);
+    }
+    if (bn) {
+        BN_free(bn);
+    }
+    return rv;
+}
+
+static void st_notify_est_err_cb(char *format, ...) {
+    va_list arg_list;
+
+    va_start(arg_list, format);
+
+    /*
+     * Print the incoming EST error message.
+     */
+    fprintf(stderr, "***EVENT [%s]--> EST Internal Error-> ",
+                    __FUNCTION__);
+
+    vfprintf(stderr, format, arg_list);
+
+    va_end(arg_list);
+    return;
+}
+
+static void st_notify_ssl_proto_err_cb(char *err_msg) {
+
+    /*
+     * Print the incoming SSL protocol error message.
+     */
+    fprintf(stderr, "***EVENT [%s]--> SSL Protocol Error-> %s\n",
+                    __FUNCTION__, err_msg);
+
+    return;
+}
+
+static void st_notify_enroll_req_cb(EST_CTX *ctx, void *http_ctx, SSL *ssl,
+                                   const char *ct, char *body, int body_len,
+                                   char *path_seg, EST_ENROLL_REQ_TYPE enroll_req) {
+
+    char *req;
+
+    /*
+     * Display information about this enroll request event.
+     */
+    if (enroll_req == SIMPLE_ENROLL_REQ) {
+        req = "Enroll";
+    } else if (enroll_req == REENROLL_REQ) {
+        req = "Re-enroll";
+    } else if (enroll_req == SERVERKEYGEN_REQ) {
+        req = "Server-Side KeyGen";
+    } else {
+        req = "Unknown request";
+    }
+    fprintf(stderr, "***EVENT [%s]--> EST %s Request-> ", __FUNCTION__, req);
+    fprintf(stderr, "EST_CTX: %p, http_ctx: %p, SSL: %p, path_seq: %p, "
+                    "ct: %s, body: %p, body_len: %d\n",
+                    ctx, http_ctx, ssl, path_seg, ct, body, body_len);
+    return;
+}
+
+static void st_notify_enroll_rsp_cb(EST_CTX *ctx, void *http_ctx, SSL *ssl,
+                                    const char *ct, char *body, int body_len,
+                                    char *path_seg, EST_ENROLL_REQ_TYPE enroll_req,
+                                    EST_AUTH_STATE rv,
+                                    unsigned char **returned_cert,
+                                    int *returned_cert_len) {
+
+    char *rsp;
+
+    /*
+     * Display information about this enroll response event.
+     */
+    if (enroll_req == SIMPLE_ENROLL_REQ) {
+        rsp = "Enroll";
+    } else if (enroll_req == REENROLL_REQ) {
+        rsp = "Re-enroll";
+    } else if (enroll_req == SERVERKEYGEN_REQ) {
+        rsp = "Server-Side KeyGen";
+    } else {
+        rsp = "Unknown request";
+    }
+    fprintf(stderr, "***EVENT [%s]--> EST %s Response-> ", __FUNCTION__, rsp);
+    fprintf(stderr, "EST_CTX: %p, http_ctx: %p, SSL: %p, path_seq: %p, "
+                    "auth-state: %d, ct: %s, body: %p, body_len: %d\n",
+                    ctx, http_ctx, ssl, path_seg, rv, ct, body, body_len);
+    return;
+}
+
+static void st_notify_enroll_auth_result_cb(EST_CTX *ctx, void *http_ctx,
+                                            SSL *ssl, char *path_seg,
+                                            EST_ENROLL_REQ_TYPE enroll_req,
+                                            EST_AUTH_STATE rv) {
+
+    char *rsp;
+
+    /*
+     * Display information about this enroll authentication response event.
+     */
+    if (enroll_req == SIMPLE_ENROLL_REQ) {
+        rsp = "Enroll";
+    } else if (enroll_req == REENROLL_REQ) {
+        rsp = "Re-enroll";
+    } else if (enroll_req == SERVERKEYGEN_REQ) {
+        rsp = "Server-Side KeyGen";
+    } else {
+        rsp = "Unknown request";
+    }
+    fprintf(stderr, "***EVENT [%s]--> EST %s Authentication Response-> ",
+                    __FUNCTION__, rsp);
+    fprintf(stderr, "EST_CTX: %p, http_ctx: %p, SSL: %p, path_seq: %p, "
+                    "auth-state: %d\n",
+                    ctx, http_ctx, ssl, path_seg, rv);
+    return;
+}
+
+static void st_notify_endpoint_req_cb (char *id_cert_subj, X509 *peer_cert,
+                                       const char *uri, char *ip_addr, int port,
+                                       EST_ENDPOINT_EVENT_TYPE event_type)
+{
+    unisnged long tid = GetCurrentThreadId();
+    
+    /*
+     * Display information about this endpoint request event.  Note that
+     * the assumption is that uri is printable if not null.
+     */
+    if (uri == NULL) {
+        uri = "<URI null>";
+    }
+
+    fprintf(stderr, "***SRVR EVENT [%s]--> EST Endpoint Request-> %s %lu ", __FUNCTION__,
+            (event_type == EST_ENDPOINT_REQ_START?"start of request":"end of request"),
+            tid);
+    fprintf(stderr, "TLS ID cert subject: \"%s\", "
+                    "uri: \"%s\", "
+                    "IP address: \"%s\",  Port: %d\n",
+                    id_cert_subj, uri, ip_addr, port);
+
+    return;
+}
+
+
+/*
+ * st_notify_event_plugin_config
+ *
+ * This data structure contains the notify-specific event plugin module
+ * data.
+ */
+static st_est_event_cb_table_t  st_est_default_event_cb_table = {
+
+    /*
+     * Address of the notify-specific event callback function that
+     * is registered with EST and called when EST errors occur.
+     */
+    st_notify_est_err_cb,
+
+    /*
+     * Address of the notify-specific event callback function that
+     * is registered with EST and called when SSL protocol errors occur.
+     */
+   st_notify_ssl_proto_err_cb,
+
+   /*
+    * Address of the notify-specific event callback function that
+    * is registered with EST and called when EST enroll or re-enroll
+    * requests are made.
+    */
+   st_notify_enroll_req_cb,
+
+   /*
+    * Address of the notify-specific event callback function that
+    * is registered with EST and called when EST enroll or re-enroll
+    * responses are received.
+    */
+   st_notify_enroll_rsp_cb,
+
+   /*
+    * Address of the notify-specific event callback function that
+    * is registered with EST and called when EST enroll or re-enroll
+    * authentication results are received.
+    */
+   st_notify_enroll_auth_result_cb,
+
+   /*
+    * Address of the notify-specific event callback function that
+    * is registered with EST and called when EST endpoint requests
+    * are received.
+    */
+   st_notify_endpoint_req_cb
+};
+
+/*
+ * st_set_est_event_callbacks
+ *
+ * Sets callbacks for all of the EST event callbacks for
+ * the specified EST_CTX to the callback functions
+ * pointed to by event_cb_ptr.
+ */
+static
+void st_internal_set_est_event_callbacks (EST_CTX * libest_ctx,
+                                          st_est_event_cb_table_t *event_cb_ptr) {
+
+    if (event_cb_ptr != NULL) {
+
+        est_set_est_err_event_cb(event_cb_ptr->est_err_event_cb);
+        est_set_ssl_proto_err_event_cb(event_cb_ptr->ssl_proto_err_event_cb);
+        est_set_enroll_req_event_cb(libest_ctx,
+                                    event_cb_ptr->enroll_req_event_cb);
+        est_set_enroll_rsp_event_cb(libest_ctx,
+                                    event_cb_ptr->enroll_rsp_event_cb);
+        est_set_enroll_auth_result_event_cb(libest_ctx,
+                                            event_cb_ptr->enroll_auth_result_event_cb);
+        est_set_endpoint_req_event_cb(libest_ctx,
+                                      event_cb_ptr->endpoint_req_event_cb);
+    } else {
+
+        est_set_est_err_event_cb(NULL);
+        est_set_ssl_proto_err_event_cb(NULL);
+        est_set_enroll_req_event_cb(libest_ctx, NULL);
+        est_set_enroll_rsp_event_cb(libest_ctx, NULL);
+        est_set_enroll_auth_result_event_cb(libest_ctx, NULL);
+        est_set_endpoint_req_event_cb(libest_ctx, NULL);
+    }
+
+    return;
+}
+
+/*
+ * st_set_default_est_event_callbacks
+ *
+ * Sets callbacks for all of the EST event callbacks for
+ * the specified EST_CTX to the callback functions
+ * specified in st_est_default_event_cb_table.
+ */
+void st_set_est_event_callbacks (st_est_event_cb_table_t *event_callbacks) {
+
+    st_internal_set_est_event_callbacks(ectx, event_callbacks);
+
+    return;
+}
+
+/*
+ * st_set_default_est_event_callbacks
+ *
+ * Sets callbacks for all of the EST event callbacks for
+ * the specified EST_CTX to the callback functions
+ * specified in st_est_default_event_cb_table.
+ */
+void st_set_default_est_event_callbacks () {
+
+    st_internal_set_est_event_callbacks(ectx, &st_est_default_event_cb_table);
+
+    return;
+}
+
+/*
+ * st_disable_est_event_callbacks
+ *
+ * Disable callbacks for all of the EST event callbacks for
+ * the specified EST_CTX to the callback functions.
+ */
+void st_disable_est_event_callbacks() {
+    st_internal_set_est_event_callbacks(ectx, NULL);
+
+    return;
+}
+
+/*
+ * Callback function used by EST stack to process a PKCS10
+ * enrollment request with the CA.  The parameters are:
+ *
+ *   pkcs10  Contains the CSR that should be sent to
+ *              the CA to be signed.
+ *   pkcs10_len Length of the CSR char array
+ *   pcks7   Should contain the signed PKCS7 certificate
+ *              from the CA server.  You'll need allocate
+ *              space and copy the cert into this char array.
+ *   pkcs7_len  Length of the pkcs7 char array, you will set this.
+ *   user_id    If HTTP authentication was used to identify the
+ *              EST client, this will contain the user ID supplied
+ *              by the client.
+ *   peer_cert  If the EST client presented a certificate to identify
+ *              itself during the TLS handshake, this parameter will
+ *              contain that certificate.
+ *   path_seg   If the incoming request contains a path segment it
+ *              is extracted from the URI and passed here.  Typically
+ *              used to mux between multiple CAs or to identify a
+ *              specific profile to use by the CA.
+ *   app_data   an optional pointer to information that is to be
+ *              used by the application layer.
+ *
+ */
+int process_srvr_side_keygen_pkcs10_enrollment (unsigned char * pkcs10, int p10_len,
+                                                unsigned char **pkcs7, int *pkcs7_len,
+                                                unsigned char **pkcs8, int *pkcs8_len,
+                                                char *user_id, X509 *peer_cert, char *path_seg,
+                                                void *app_data)
+{
+    BIO *result = NULL;
+    char *buf;
+    int rc;
+    char sn[64];
+    char file_name[MAX_FILENAME_LEN];
+
+    /*
+     * Informational only
+     */
+    if (user_id) {
+        /*
+         * Should be safe to log the user ID here since HTTP auth
+         * has succeeded at this point.
+         */
+        printf("\n%s - User ID is %s\n", __FUNCTION__, user_id);
+    }
+    if (peer_cert) {
+        memset(sn, 0, 64);
+        extract_sub_name(peer_cert, sn, 64);
+        printf("\n%s - Peer cert CN is %s\n", __FUNCTION__, sn);
+    }
+    if (app_data) {
+        printf("ex_data value is %x\n", *((unsigned int *) app_data));
+    }
+    if (path_seg) {
+        printf("\nPath segment was included in enrollment URI. "
+                       "Path Segment = %s\n", path_seg);
+    }
+
+    /*
+     * If we're simulating manual certificate enrollment,
+     * the CA will not automatically sign the cert request.
+     * We'll attempt to lookup in our local table if this
+     * cert has already been sent to us, if not, add it
+     * to the table and send the 'retry' message back to the
+     * client.  But if this cert request has been seen in the
+     * past, then we'll continue with the enrollment.
+     * To summarize, we're simulating manual enrollment by
+     * forcing the client to request twice, and we'll automatically
+     * enroll on the second request.
+     */
+    if (manual_enroll) {
+        if (lookup_pkcs10_request(pkcs10, p10_len)) {
+            /*
+             * We've seen this cert request in the past.
+             * Remove it from the lookup table and allow
+             * the enrollment to continue.
+             * Fall-thru to enrollment logic below
+             */
+        } else {
+            /*
+             * Couldn't find this request, it's the first time
+             * we've seen it.  Therefore, send the retry
+             * response.
+             */
+            return (EST_ERR_CA_ENROLL_RETRY);
+        }
+
+    }
+
+    EnterCriticalSection(&enrollment_critical_section);
+
+    if (write_csr) {
+        /*
+         * Dump out pkcs10 to a file, this will contain a list of the OIDs in the CSR.
+         */
+        snprintf(file_name, MAX_FILENAME_LEN, "/tmp/csr.p10");
+        write_binary_file(file_name, pkcs10, p10_len);
+    }
+
+    result = ossl_simple_enroll(pkcs10, p10_len, conf_file);
+
+    LeaveCriticalSection(&enrollment_critical_section);
+
+    /*
+     * The result is a BIO containing the pkcs7 signed certificate
+     * Need to convert it to char and copy the results so we can
+     * free the BIO.
+     */
+    *pkcs7_len = BIO_get_mem_data(result, (char**) &buf);
+    if (*pkcs7_len > 0 && *pkcs7_len < MAX_CERT_LEN) {
+        *pkcs7 = malloc(*pkcs7_len);
+        memcpy(*pkcs7, buf, *pkcs7_len);
+    }
+
+    BIO_free_all(result);
+    return EST_ERR_NONE;
+}
+
 
 /****************************************************************************************
  * The following funcitons are the callbacks used by libest.a to bind
  * the EST stack to the HTTP/SSL layer and the CA server.
  ***************************************************************************************/
-#define MAX_CERT_LEN 8192
+
 /*
  * Callback function used by EST stack to process a PKCS10
  * enrollment request with the CA.
@@ -432,7 +914,8 @@ static int process_pkcs10_enrollment(unsigned char * pkcs10, int p10_len,
 //This CSR attributes contains the challengePassword OID and others
 #define TEST_CSR "MCYGBysGAQEBARYGCSqGSIb3DQEJBwYFK4EEACIGCWCGSAFlAwQCAg==\0"
 
-static unsigned char * process_csrattrs_request(int *csr_len, char *path_seg, void *app_data)
+static unsigned char * process_csrattrs_request(int *csr_len, char *path_seg,
+                                                X509 *peer_cert, void *app_data)
 {
     unsigned char *csr_data;
 
@@ -462,7 +945,7 @@ static unsigned char * process_csrattrs_request(int *csr_len, char *path_seg, vo
  * detail to the user regarding the cause of the
  * failure.
  */
-void ossl_dump_ssl_errors()
+void st_ossl_dump_ssl_errors()
 {
     BIO		*e = NULL;
     BUF_MEM	*bptr = NULL;
@@ -567,7 +1050,7 @@ static BIO *get_certs_pkcs7(BIO *in, int do_base_64)
      */
     if (add_certs_from_BIO(cert_stack, in) < 0) {
         printf("Unable to load certificates\n");
-        ossl_dump_ssl_errors();
+        st_ossl_dump_ssl_errors();
         goto cleanup;
     }
 
@@ -587,7 +1070,7 @@ static BIO *get_certs_pkcs7(BIO *in, int do_base_64)
         b64 = BIO_new(BIO_f_base64());
         if (b64 == NULL) {
             printf("BIO_new failed while attempting to create base64 BIO\n");
-            ossl_dump_ssl_errors();
+            st_ossl_dump_ssl_errors();
             goto cleanup;
         }
         out = BIO_push(b64, out);
@@ -604,7 +1087,7 @@ static BIO *get_certs_pkcs7(BIO *in, int do_base_64)
     buflen = i2d_PKCS7_bio(out, p7);
     if (!buflen) {
         printf("PEM_write_bio_PKCS7 failed\n");
-        ossl_dump_ssl_errors();
+        st_ossl_dump_ssl_errors();
         BIO_free_all(out);
         out = NULL;
         goto cleanup;
@@ -790,7 +1273,7 @@ static int ssl_srp_server_param_cb(SSL *s, int *ad, void *arg) {
 
     printf("SRP username = %s\n", login);
 
-    user = SRP_VBASE_get_by_user(srp_db, login);
+    user = SRP_VBASE_get1_by_user(srp_db, login);
 
     if (user == NULL) {
         printf("User %s doesn't exist in SRP database\n", login);
@@ -803,6 +1286,7 @@ static int ssl_srp_server_param_cb(SSL *s, int *ad, void *arg) {
      */
     if (SSL_set_srp_server_param(s, user->N, user->g, user->s, user->v, user->info) < 0) {
         *ad = SSL_AD_INTERNAL_ERROR;
+        SRP_user_pwd_free(user);
         return SSL3_AL_FATAL;
     }
 
@@ -811,6 +1295,7 @@ static int ssl_srp_server_param_cb(SSL *s, int *ad, void *arg) {
     user = NULL;
     login = NULL;
     fflush(stdout);
+    SRP_user_pwd_free(user);    
     return SSL_ERROR_NONE;
 }
 
@@ -995,6 +1480,9 @@ void st_stop()
  *                  is used to test the retry-after logic.
  *  ec_nid:         Openssl NID value for ECDHE curve to use during
  *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ *  enable_events:  Enable EST event callbacks
+ *  enable_coap:    Flag for enabling the use of EST over CoAP on server
+ *  coap_server_addr: Address for the EST CoAP server to listen on
  */
 static int st_start_internal(
         int listen_port,
@@ -1010,7 +1498,11 @@ static int st_start_internal(
         int enable_srp,
         char *srp_vfile,
         int enable_tls10,
-        int disable_cacerts_response)
+        int disable_cacerts_response,
+        int enable_crl,
+        int enable_events,
+        int enable_coap,
+        int coap_max_sessions)
 {
     X509 *x;
     EVP_PKEY *priv_key;
@@ -1021,6 +1513,9 @@ static int st_start_internal(
     HANDLE mThread;
     DWORD mThreadID;
     int rc;
+    #ifdef HAVE_LIBCOAP
+    int coap_port;
+    #endif
 
     manual_enroll = simulate_manual_enroll;
 
@@ -1113,6 +1608,13 @@ static int st_start_internal(
         return (-1);
     }
 
+    /*
+     * Install event callbacks
+     */
+    if (enable_events) {
+        st_set_default_est_event_callbacks(ectx);
+    }
+
     if (ec_nid) {
         est_server_set_ecdhe_curve(ectx, ec_nid);
     }
@@ -1123,6 +1625,10 @@ static int st_start_internal(
 
     if (enable_tls10) {
         est_server_enable_tls10(ectx);
+    }
+
+    if (enable_crl) {
+        est_enable_crl(ectx);
     }
 
     if (est_set_ca_enroll_cb(ectx, &process_pkcs10_enrollment)) {
@@ -1195,12 +1701,33 @@ static int st_start_internal(
         }
     }
 
-    printf("\nLaunching EST server...\n");
+    if (enable_coap) {
+#ifdef HAVE_LIBCOAP
+        if (est_server_set_dtls_session_max(ectx, coap_max_sessions)) {
+            printf("\nUnable to set DTLS maximum sessions. Aborting!!!\n");
+            return(-1);
+        }
 
-    rv = est_server_start(ectx);
-    if (rv != EST_ERR_NONE) {
-        printf("\nFailed to init mg\n");
+        printf("\nLaunching EST over CoAP server...\n");
+        coap_port = 0;
+        rv = est_server_coap_init_start(ectx, coap_port);
+        if (rv != 0) {
+            printf("\nFailed to init the coap library into server mode\n");
+            return (-1);
+        }
+#else
+        printf("\nCan't launch st_server in coap mode when est isn't built with"
+               " libcoap\n");
         return (-1);
+#endif
+    } else {
+        printf("\nLaunching EST server...\n");
+
+        rv = est_server_start(ectx);
+        if (rv != EST_ERR_NONE) {
+            printf("\nFailed to init mg\n");
+            return (-1);
+        }
     }
 
     // Start master (listening) thread
@@ -1261,8 +1788,53 @@ int st_start_tls10(int listen_port,
     int rv;
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
-        trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
-        enable_pop, ec_nid, 0, NULL, 1, 0);
+                           trusted_certs_file, ossl_conf_file,
+                           simulate_manual_enroll, enable_pop, ec_nid, 0, NULL,
+                           1, 0, 0, 0, 0, 0);
+
+    return (rv);
+}
+
+/*
+ * Call this to start a simple EST server with CRL check enabled,
+ * This server will not be thread safe.  It can only handle a single
+ * EST request on the listening socket at any given time.
+ * This server will run until st_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:       PEM encoded certificate used for server's identity
+ *  keyfile:        Private key associated with the certfile
+ *  realm:          HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  ossl_conf_file: Configuration file that specifies the OpenSSL
+ *                  CA to use.
+ *  simulate_manual_enroll: Pass in a non-zero value to have the EST
+ *                  simulate manual approval at the CA level.  This
+ *                  is used to test the retry-after logic.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_start_crl(int listen_port,
+                 char *certfile,
+                 char *keyfile,
+                 char *realm,
+                 char *ca_chain_file,
+                 char *trusted_certs_file,
+                 char *ossl_conf_file,
+                 int simulate_manual_enroll,
+                 int enable_pop,
+                 int ec_nid)
+{
+    int rv;
+
+    rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+                           trusted_certs_file, ossl_conf_file,
+                           simulate_manual_enroll, enable_pop, ec_nid, 0, NULL,
+                           0, 0, 1, 0, 0, 0);
 
     return (rv);
 }
@@ -1304,9 +1876,100 @@ int st_start(int listen_port,
     int rv;
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
-        trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
-        enable_pop, ec_nid, 0, NULL, 0, 0);
+                           trusted_certs_file, ossl_conf_file,
+                           simulate_manual_enroll, enable_pop, ec_nid, 0, NULL,
+                           0, 0, 0, 0, 0, 0);
 
+    return (rv);
+}
+
+/*
+ * Call this to start an EST over CoAP server.  This server will not
+ * be thread safe.  It can only handle a single EST request on
+ * the listening socket at any given time.  This server will run
+ * until st_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client. 
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer. 
+ *  ossl_conf_file: Configuration file that specifies the OpenSSL
+ *                  CA to use.
+ *  simulate_manual_enroll: Pass in a non-zero value to have the EST
+ *                  simulate manual approval at the CA level.  This
+ *                  is used to test the retry-after logic.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_start_coap (int listen_port,
+                   char *certfile,
+                   char *keyfile,
+                   char *realm,
+                   char *ca_chain_file,
+                   char *trusted_certs_file,
+                   char *ossl_conf_file,
+                   int simulate_manual_enroll,
+                   int enable_pop,
+                   int ec_nid)
+{
+    int rv;
+
+    rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+	                       trusted_certs_file, ossl_conf_file,
+                           simulate_manual_enroll, enable_pop, ec_nid, 0, NULL,
+                           0, 0, 0, 0, 1, EST_DTLS_SESSION_MAX_DEF);
+
+    return (rv);
+}
+
+/*
+ * Call this to start an EST over CoAP server with a non-default number
+ * of maximum sessions.  This server will not be thread safe.  It can only
+ * handle a single EST request on the listening socket at any given time.
+ * This server will run until st_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:       PEM encoded certificate used for server's identity
+ *  keyfile:        Private key associated with the certfile
+ *  realm:          HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client.
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer.
+ *  ossl_conf_file: Configuration file that specifies the OpenSSL
+ *                  CA to use.
+ *  simulate_manual_enroll: Pass in a non-zero value to have the EST
+ *                  simulate manual approval at the CA level.  This
+ *                  is used to test the retry-after logic.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ *  max_sessions:   Maximum number of DTLS sessions supported.
+ */
+int st_start_coap_sessions (int listen_port,
+                            char *certfile,
+                            char *keyfile,
+                            char *realm,
+                            char *ca_chain_file,
+                            char *trusted_certs_file,
+                            char *ossl_conf_file,
+                            int simulate_manual_enroll,
+                            int enable_pop,
+                            int ec_nid,
+                            int max_sessions)
+{
+    int rv;
+
+    rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+                           trusted_certs_file, ossl_conf_file,
+                           simulate_manual_enroll, enable_pop, ec_nid, 0, NULL,
+                           0, 0, 0, 0, 1, max_sessions);
+ 
     return (rv);
 }
 
@@ -1347,8 +2010,9 @@ int st_start_nocacerts(int listen_port,
     int rv;
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
-        trusted_certs_file, ossl_conf_file, simulate_manual_enroll,
-        enable_pop, ec_nid, 0, NULL, 0, 1);
+                           trusted_certs_file, ossl_conf_file,
+                           simulate_manual_enroll, enable_pop, ec_nid, 0, NULL,
+                           0, 1, 0, 0, 0, 0);
     return (rv);
 
 }
@@ -1386,8 +2050,8 @@ int st_start_srp(int listen_port,
     int rv;
 
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
-        trusted_certs_file, ossl_conf_file, 0, enable_pop,
-        0, 1, vfile, 0, 0);
+                           trusted_certs_file, ossl_conf_file, 0, enable_pop, 0,
+                           1, vfile, 0, 0, 0, 0, 0, 0);
 
     return (rv);
 }
@@ -1426,8 +2090,94 @@ int st_start_srp_tls10(int listen_port,
     int rv;
     /* Note here that the last parm turns on tls1.0 */
     rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
-        trusted_certs_file, ossl_conf_file, 0, enable_pop, 0,
-        1, vfile, 1, 0);
+                           trusted_certs_file, ossl_conf_file, 0, enable_pop, 0,
+                           1, vfile, 1, 0, 0, 0, 0, 0);
+    return (rv);
+}
+
+/*
+ * Call this to start a simple EST server with event callbacks.
+ * This server will not be thread safe.  It can only handle a single
+ * EST request on the listening socket at any given time.
+ * This server will run until st_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:       PEM encoded certificate used for server's identity
+ *  keyfile:        Private key associated with the certfile
+ *  realm:          HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client.
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer.
+ *  ossl_conf_file: Configuration file that specifies the OpenSSL
+ *                  CA to use.
+ *  simulate_manual_enroll: Pass in a non-zero value to have the EST
+ *                  simulate manual approval at the CA level.  This
+ *                  is used to test the retry-after logic.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_start_events (int listen_port,
+                     char *certfile,
+                     char *keyfile,
+                     char *realm,
+                     char *ca_chain_file,
+                     char *trusted_certs_file,
+                     char *ossl_conf_file,
+                     int simulate_manual_enroll,
+                     int enable_pop,
+                     int ec_nid)
+{
+    int rv;
+
+    rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+                           trusted_certs_file, ossl_conf_file,
+                           simulate_manual_enroll, enable_pop, ec_nid, 0, NULL,
+                           0, 0, 0, 1, 0, 0);
+    return (rv);
+}
+
+/*
+ * Call this to start a simple EST server using CoAP with event callbacks.
+ * This server will not be thread safe.  It can only handle a single
+ * EST request on the listening socket at any given time.
+ * This server will run until st_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:       PEM encoded certificate used for server's identity
+ *  keyfile:        Private key associated with the certfile
+ *  realm:          HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client.
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer.
+ *  ossl_conf_file: Configuration file that specifies the OpenSSL
+ *                  CA to use.
+ *  simulate_manual_enroll: Pass in a non-zero value to have the EST
+ *                  simulate manual approval at the CA level.  This
+ *                  is used to test the retry-after logic.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_start_coap_events (int listen_port,
+                          char *certfile,
+                          char *keyfile,
+                          char *realm,
+                          char *ca_chain_file,
+                          char *trusted_certs_file,
+                          char *ossl_conf_file,
+                          int simulate_manual_enroll,
+                          int enable_pop,
+                          int ec_nid)
+{
+    int rv;
+
+    rv = st_start_internal(listen_port, certfile, keyfile, realm, ca_chain_file,
+                           trusted_certs_file, ossl_conf_file,
+                           simulate_manual_enroll, enable_pop, ec_nid, 0, NULL,
+                           0, 0, 0, 1, 1, EST_DTLS_SESSION_MAX_DEF);
     return (rv);
 }
 
@@ -1534,16 +2284,11 @@ void st_write_csr(int state)
 void st_csr_filename(char *incoming_name)
 {
     if (incoming_name == NULL) {
-#ifdef WIN32
         snprintf(csr_filename, MAX_FILENAME_LEN, "%s\\%s",
             getenv("TEMP"), "csr.p10");
-#else
-        snprintf(csr_filename, MAX_FILENAME_LEN, "/tmp/csr.p10");
-#endif
     }
     else {
         snprintf(csr_filename, MAX_FILENAME_LEN, incoming_name);
     }
 }
-
 

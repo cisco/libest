@@ -144,6 +144,7 @@ static int us900_destroy_suite (void)
 
 static unsigned char * handle_correct_csrattrs_request (int *csr_len,
                                                         char *path_seg,
+                                                        X509 *peer_cert,
                                                         void *app_data)
 {
     unsigned char *csr_data;
@@ -157,6 +158,7 @@ static unsigned char * handle_correct_csrattrs_request (int *csr_len,
 
 static unsigned char * handle_corrupt_csrattrs_request (int *csr_len,
                                                         char *path_seg,
+                                                        X509 *peer_cert,
                                                         void *app_data)
 {
     unsigned char *csr_data;
@@ -170,6 +172,7 @@ static unsigned char * handle_corrupt_csrattrs_request (int *csr_len,
 
 static unsigned char * handle_short_csrattrs_request (int *csr_len,
                                                       char *path_seg,
+                                                      X509 *peer_cert,
                                                       void *app_data)
 {
     unsigned char *csr_data;
@@ -183,6 +186,7 @@ static unsigned char * handle_short_csrattrs_request (int *csr_len,
 
 static unsigned char * handle_long_csrattrs_request (int *csr_len,
                                                      char *path_seg,
+                                                     X509 *peer_cert,
                                                      void *app_data)
 {
     unsigned char *csr_data;
@@ -196,6 +200,7 @@ static unsigned char * handle_long_csrattrs_request (int *csr_len,
 
 static unsigned char * handle_nopop_csrattrs_request (int *csr_len,
                                                       char *path_seg,
+                                                      X509 *peer_cert,
                                                       void *app_data)
 {
     unsigned char *csr_data;
@@ -209,6 +214,7 @@ static unsigned char * handle_nopop_csrattrs_request (int *csr_len,
 
 static unsigned char * handle_empty_csrattrs_request (int *csr_len,
                                                       char *path_seg,
+                                                      X509 *peer_cert,
                                                       void *app_data)
 {
     unsigned char *csr_data;
@@ -226,6 +232,8 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
     BIO * bio_err;
     bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
     int approve = 0;
+    const ASN1_BIT_STRING *cur_cert_sig;
+    const X509_ALGOR *cur_cert_sig_alg;
 
     /*
      * Print out the specifics of this cert
@@ -243,7 +251,15 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
      * This fingerprint can be checked against the anticipated value to determine
      * whether or not the server's cert should be approved.
      */
-    X509_signature_print(bio_err, cur_cert->sig_alg, cur_cert->signature);
+#ifdef HAVE_OLD_OPENSSL    
+    X509_get0_signature((ASN1_BIT_STRING **)&cur_cert_sig,
+                        (X509_ALGOR **)&cur_cert_sig_alg, cur_cert);
+    X509_signature_print(bio_err, (X509_ALGOR *)cur_cert_sig_alg,
+                         (ASN1_BIT_STRING *)cur_cert_sig);
+#else    
+    X509_get0_signature(&cur_cert_sig, &cur_cert_sig_alg, cur_cert);
+    X509_signature_print(bio_err, cur_cert_sig_alg, cur_cert_sig);
+#endif    
 
     if (openssl_cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
         approve = 1;
@@ -451,7 +467,7 @@ static void us900_test2 (void)
 
     /* should get 204 with no data */
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
-    CU_ASSERT(rc == EST_ERR_NONE);
+    CU_ASSERT(rc == EST_ERR_HTTP_NO_CONTENT);
     CU_ASSERT(csr_len == 0);
     CU_ASSERT(csr_data == NULL);
 
@@ -470,7 +486,7 @@ static void us900_test2 (void)
     }
     /* callback should supersede init csrattrs */
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
-    CU_ASSERT(rc == EST_ERR_NONE);
+    CU_ASSERT(rc == EST_ERR_UNKNOWN);
     CU_ASSERT(csr_len == 0);
 
     if (est_set_csr_cb(ectx, &handle_short_csrattrs_request)) {
@@ -479,7 +495,7 @@ static void us900_test2 (void)
     }
     /* callback should supersede init csrattrs */
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
-    CU_ASSERT(rc == EST_ERR_NONE);
+    CU_ASSERT(rc == EST_ERR_UNKNOWN);
     CU_ASSERT(csr_len == 0);
 
     if (est_set_csr_cb(ectx, &handle_long_csrattrs_request)) {
@@ -488,7 +504,7 @@ static void us900_test2 (void)
     }
     /* callback should supersede init csrattrs */
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
-    CU_ASSERT(rc == EST_ERR_NONE);
+    CU_ASSERT(rc == EST_ERR_UNKNOWN);
     CU_ASSERT(csr_len == 0);
 
     if (est_set_csr_cb(ectx, &handle_correct_csrattrs_request)) {
@@ -537,7 +553,7 @@ static void us900_test2 (void)
     rc = est_server_init_csrattrs(ectx, NULL, 0);
     CU_ASSERT(rc == EST_ERR_NONE);
     rc = est_client_get_csrattrs(ctx, &csr_data, &csr_len);
-    CU_ASSERT(rc == EST_ERR_NONE);
+    CU_ASSERT(rc == EST_ERR_HTTP_NO_CONTENT);
     CU_ASSERT(csr_len == 0);
 
     rc = est_server_init_csrattrs(

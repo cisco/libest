@@ -212,7 +212,7 @@ static void us902_test3 (void)
  * Simple reenroll - Corrupted PKCS10
  *
  * This test case uses libcurl to test simple
- * enrollment usinga corrupted CSR.  HTTP Basic
+ * enrollment using a corrupted CSR.  HTTP Basic
  * authentication is used.
  */
 static void us902_test4 (void)

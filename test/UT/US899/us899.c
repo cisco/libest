@@ -228,6 +228,8 @@ static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
     BIO *bio_err;
     bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
     int approve = 0; 
+    const ASN1_BIT_STRING *cur_cert_sig;
+    const X509_ALGOR *cur_cert_sig_alg;
     
     /*
      * Print out the specifics of this cert
@@ -243,7 +245,15 @@ static int client_manual_cert_verify(X509 *cur_cert, int openssl_cert_error)
      * This fingerprint can be checked against the anticipated value to determine
      * whether or not the server's cert should be approved.
      */
-    X509_signature_print(bio_err, cur_cert->sig_alg, cur_cert->signature);
+#ifdef HAVE_OLD_OPENSSL    
+    X509_get0_signature((ASN1_BIT_STRING **)&cur_cert_sig,
+                        (X509_ALGOR **)&cur_cert_sig_alg, cur_cert);
+    X509_signature_print(bio_err, (X509_ALGOR *)cur_cert_sig_alg,
+                         (ASN1_BIT_STRING *)cur_cert_sig);
+#else    
+    X509_get0_signature(&cur_cert_sig, &cur_cert_sig_alg, cur_cert);
+    X509_signature_print(bio_err, cur_cert_sig_alg, cur_cert_sig);
+#endif    
 
     if (openssl_cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
         approve = 1;
@@ -322,11 +332,23 @@ static int sign_X509_req (X509_REQ *x, EVP_PKEY *pkey, const EVP_MD *md)
 {
     int rv;
     EVP_PKEY_CTX *pkctx = NULL;
-    EVP_MD_CTX mctx;
+#ifdef HAVE_OLD_OPENSSL
+    EVP_MD_CTX md_ctx;
+    EVP_MD_CTX *mctx = &md_ctx;
+    
+    EVP_MD_CTX_init(mctx);    
+#else
+    EVP_MD_CTX *mctx;
 
-    EVP_MD_CTX_init(&mctx);
+    mctx = EVP_MD_CTX_new();
+    if (mctx == NULL) {
+        return 0;
+    }
+#endif
 
-    if (!EVP_DigestSignInit(&mctx, &pkctx, md, NULL, pkey)) {
+    EVP_MD_CTX_init(mctx);
+
+    if (!EVP_DigestSignInit(mctx, &pkctx, md, NULL, pkey)) {
         return 0;
     }
 
@@ -338,10 +360,16 @@ static int sign_X509_req (X509_REQ *x, EVP_PKEY *pkey, const EVP_MD *md)
      * cases.  Setting this flag tells OpenSSL to run the ASN
      * encoding again rather than using the cached copy.
      */
+#ifdef HAVE_OLD_OPENSSL
     x->req_info->enc.modified = 1; 
-    rv = X509_REQ_sign_ctx(x, &mctx);
+#endif
+    rv = X509_REQ_sign_ctx(x, mctx);
 
-    EVP_MD_CTX_cleanup(&mctx);
+#ifdef HAVE_OLD_OPENSSL
+    EVP_MD_CTX_cleanup(mctx);
+#else    
+    EVP_MD_CTX_free(mctx);
+#endif
 
     return (rv);
 }
@@ -581,7 +609,7 @@ static void us899_test3 (void)
 /*
  * Simple enroll CSR - corrupted  
  *
- * This test checks the X509_REQ helper function is working proplery.
+ * This test checks the X509_REQ helper function is working properly.
  */
 static void us899_test4 (void) 
 {

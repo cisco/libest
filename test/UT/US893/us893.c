@@ -128,7 +128,7 @@ static int us893_start_server (int manual_enroll, int nid)
         return rv;
 
     /*
-     * Next we start an EST proxy actging as an RA
+     * Next we start an EST proxy acting as an RA
      */
     rv = st_proxy_start(US893_TCP_PROXY_PORT,
                         US893_PROXY_CERT,
@@ -576,7 +576,7 @@ static void us893_test5 (void)
     /*
      * The PoP check should fail
      */
-    CU_ASSERT(rv == 400);
+    CU_ASSERT(rv == 401);
 
     /*
      * Stop the proxy server
@@ -794,7 +794,7 @@ static void us893_test7 (void)
     ectx->csr_pop_required = 1; //This is a hack for testing only, do not attempt this 
     //We need to force the challengePassword into the CSR
     rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
-    CU_ASSERT(rv == EST_ERR_HTTP_BAD_REQ);
+    CU_ASSERT(rv == EST_ERR_AUTH_FAIL);
 
     /*
      * Stop the proxy server
@@ -1086,15 +1086,15 @@ static void us893_test11 (void)
     curl_easy_perform(hnd);
 
     /*
-     * Get the HTTP reponse status code from the server
+     * Get the HTTP response status code from the server
      */
     curl_easy_getinfo(hnd, CURLINFO_RESPONSE_CODE, &http_code);
     curl_easy_cleanup(hnd);
     hnd = NULL;
     curl_slist_free_all(slist1);
     slist1 = NULL;
-
-    CU_ASSERT(http_code == 400);
+    /* Set up  */
+    CU_ASSERT(http_code == 502);
 
     /*
      * Stop the proxy server
@@ -1144,7 +1144,7 @@ static void us893_test12 (void)
     /*
      * Should fail since the proxy will fail the PoP check
      */
-    CU_ASSERT(rv == 400);
+    CU_ASSERT(rv == 401);
 
     st_proxy_disable_pop();
 }

@@ -15,6 +15,7 @@
 #include <pthread.h>
 #endif
 #include <fcntl.h>
+#include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -24,11 +25,16 @@
 #include <est.h>
 #include <signal.h>
 
-
-
 volatile int stop_flag = 0;
-int sock;                 
-static int tcp_port = 8085;
+int sock;
+
+#ifdef HAVE_LIBCOAP 
+static int udp_port;
+#endif
+extern int coap_mode;
+
+static int tcp_port;
+
 static int family = AF_INET;
 volatile int num_threads; 
 static EST_CTX *ctx;
@@ -44,8 +50,11 @@ pthread_cond_t empty;
 typedef void * (*thread_func_t)(void *);
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
+#if HAVE_LIBCOAP
+#define NUM_WORKER_THREADS 1
+#else
 #define NUM_WORKER_THREADS 5
-
+#endif
 
 static int grab_work (int *sp)
 {
@@ -95,7 +104,6 @@ static void * worker_thread (void* data)
     return NULL;
 }
 
-
 static void process_socket (int fd)
 {
     pthread_mutex_lock(&mutex);
@@ -114,6 +122,7 @@ static void process_socket (int fd)
     pthread_cond_signal(&full);
     pthread_mutex_unlock(&mutex);
 }
+
 #else
 static void process_socket (int fd)
 {
@@ -124,90 +133,110 @@ static void process_socket (int fd)
 
 static void * master_thread (void *data)
 {
-    struct sockaddr *addr;
     struct addrinfo hints, *ai, *aiptr;
     char portstr[12];
     int on = 1;
     int rc;
+    struct sockaddr *addr;
     int flags;
     int new;
     int unsigned len;
+#if (HAVE_LIBCOAP)
+    int processing_error = 0;
+#endif
 
-    /*
-     * Lookup the local address we'll use to bind too
-     */
-    memset(&hints, '\0', sizeof(struct addrinfo));
-    hints.ai_family = family;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE; 
-    snprintf(portstr, sizeof(portstr), "%u", tcp_port);
-    rc = getaddrinfo(NULL, portstr, &hints, &aiptr);
-    if (rc) {
-        printf("\ngetaddrinfo call failed\n");
-	printf("getaddrinfo(): %s\n", gai_strerror(rc));
-        exit(1);
-    }
-    for (ai = aiptr; ai; ai = ai->ai_next) {
-        sock = socket(family, SOCK_STREAM, IPPROTO_TCP);
-        if (sock == -1) {
-	    /* If we can't create a socket using this address, then
-	     * try the next address */
-	    continue;
-        }
-	/*
-	 * Set some socket options for our server
-	 */
-        if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(on))) {
-            printf("\nsetsockopt REUSEADDR call failed\n");
-            exit(1);
-        }
-        if (setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char*)&on, sizeof(on))) {
-            printf("\nsetsockopt KEEPALIAVE call failed\n");
-            exit(1);
-        }
-        flags = fcntl(sock, F_GETFL, 0);
-        if (fcntl(sock, F_SETFL, flags | O_NONBLOCK)) {
-            printf("\nfcntl SETFL call failed\n");
-            exit(1);
-        }
-	/*
-	 * Bind to the socket 
-	 */
-        rc = bind(sock, ai->ai_addr, ai->ai_addrlen);
-        if (rc == -1) {
-            printf("\nbind call failed\n");
-            exit(1);
-        }
-	break;
-    }
-    if (ai) {
-	addr = ai->ai_addr;
-	listen(sock, SOMAXCONN);
-    } else {
-        printf("\nNo address info found\n");
-        exit(1);
-    }
+    if (coap_mode == 0){
+        
+        /*
+         * Lookup the local address we'll use to bind too
+         */
+        memset(&hints, '\0', sizeof(struct addrinfo));
+        hints.ai_family = family;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_flags = AI_PASSIVE; 
+        snprintf(portstr, sizeof(portstr), "%u", tcp_port);
+        rc = getaddrinfo(NULL, portstr, &hints, &aiptr);
+        if (rc) {
+            printf("\ngetaddrinfo call failed\n");
+            printf("getaddrinfo(): %s\n", gai_strerror(rc));
 
-    while (stop_flag == 0) {
-        len = sizeof(struct sockaddr);
-        new = accept(sock, (struct sockaddr*)addr, &len);
-        if (new < 0) {
-            if (stop_flag != 0) {
-		break;
-	    }
-	    /*
-	     * this is a bit cheesy, but much easier to implement than using select()
-	     */
-            usleep(100);
+            exit(1);
+        }
+        for (ai = aiptr; ai; ai = ai->ai_next) {
+            sock = socket(family, SOCK_STREAM, IPPROTO_TCP);
+            if (sock == -1) {
+                /* If we can't create a socket using this address, then
+                 * try the next address */
+                continue;
+            }
+            /*
+             * Set some socket options for our server
+             */
+            if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(on))) {
+                printf("\nsetsockopt REUSEADDR call failed\n");
+                exit(1);
+            }
+            if (setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char*)&on, sizeof(on))) {
+                printf("\nsetsockopt KEEPALIAVE call failed\n");
+                exit(1);
+            }
+            flags = fcntl(sock, F_GETFL, 0);
+            if (fcntl(sock, F_SETFL, flags | O_NONBLOCK)) {
+                printf("\nfcntl SETFL call failed\n");
+                exit(1);
+            }
+            /*
+             * Bind to the socket 
+             */
+            rc = bind(sock, ai->ai_addr, ai->ai_addrlen);
+            if (rc == -1) {
+                printf("\nbind call failed\n");
+                exit(1);
+            }
+            break;
+        }
+
+        if (ai) {
+            addr = ai->ai_addr;
+            listen(sock, SOMAXCONN);
         } else {
-            if (stop_flag == 0) {
-                process_socket(new);
+            printf("\nNo address info found\n");
+            exit(1);
+        }    
+
+        while (stop_flag == 0) {
+            len = sizeof(struct sockaddr);
+            new = accept(sock, (struct sockaddr*)addr, &len);
+            if (new < 0) {
+                if (stop_flag != 0) {
+                    break;
+                }
+                /*
+                 * this is a bit cheesy, but much easier to implement than using select()
+                 */
+                usleep(100);
+            } else {
+                if (stop_flag == 0) {
+                    process_socket(new);
+                }
             }
         }
-    }
-
-    close(sock);
-    freeaddrinfo(aiptr);
+    
+        close(sock);
+        freeaddrinfo(aiptr);
+    } else if (coap_mode == 1) {
+#if !(HAVE_LIBCOAP)
+        printf("\nestserver not built with coap support and --enable-coap has been specified.\n");
+        exit(1);
+#else
+        while (stop_flag == 0 && processing_error == 0) {
+            processing_error = est_server_coap_run_once(ctx);
+        }
+#endif
+    } else {
+        printf("\ninvalid setting for coap_mode.\n");
+        exit(1);
+    }    
 
 #ifndef DISABLE_PTHREADS
     // Notify all the workers that it's time to shutdown
@@ -248,6 +277,7 @@ static void catch_int(int signo)
 }
 
 
+
 /*
  * This is the entry point into the Simple TCP server.
  * This is designed to work with either the EST server
@@ -280,7 +310,16 @@ void start_simple_server (EST_CTX *ectx, int port, int delay, int v6)
      * instance of the server.
      */
     ctx = ectx;
+
+    /*
+     * Make the port number visible to the master thread
+     * by setting up a global
+     */
+#ifdef HAVE_LIBCOAP
+    udp_port = port;
+#endif
     tcp_port = port;
+    
     if (v6) {
 	family = AF_INET6;
     }
