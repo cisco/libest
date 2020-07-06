@@ -7,7 +7,7 @@
  *
  * October, 2013
  *
- * Copyright (c) 2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016, 2018 by cisco Systems, Inc.
  * All rights reserved.
  *------------------------------------------------------------------
  */
@@ -104,21 +104,35 @@ static DH *get_dh1024dsa()
     0x07,0xE7,0x68,0x1A,0x82,0x5D,0x32,0xA2,
     };
     DH *dh;
+#ifndef HAVE_OLD_OPENSSL
+    BIGNUM *p, *g;
+#endif
 
     if ((dh=DH_new()) == NULL) {
-    return(NULL);
+        return(NULL);
     }
+#ifdef HAVE_OLD_OPENSSL
     dh->p=BN_bin2bn(dh1024_p,sizeof(dh1024_p),NULL);
     dh->g=BN_bin2bn(dh1024_g,sizeof(dh1024_g),NULL);
     if ((dh->p == NULL) || (dh->g == NULL)) {
-    DH_free(dh); return(NULL);
+        DH_free(dh); return(NULL);
     }
     dh->length = 160;
     return(dh);
+#else    
+    p = BN_bin2bn(dh1024_p, sizeof(dh1024_p), NULL);
+    g = BN_bin2bn(dh1024_g, sizeof(dh1024_g), NULL);
+    if ((p == NULL) || (g == NULL)) {
+        DH_free(dh);
+        return (NULL);
+    }
+    DH_set0_pqg(dh, p, NULL, g);
+    return (dh);
+#endif
 }
 
 /****************************************************************************************
- * The following funcitons are the callbacks used by libest.a to bind
+ * The following functions are the callbacks used by libest.a to bind
  * the EST stack to the HTTP/SSL layer and the CA server.
  ***************************************************************************************/
 static char digest_user[3][32] =
@@ -220,7 +234,7 @@ static int ssl_srp_server_param_cb (SSL *s, int *ad, void *arg)
 
     printf("Proxy SRP username = %s\n", login);
 
-    user = SRP_VBASE_get_by_user(p_srp_db, login);
+    user = SRP_VBASE_get1_by_user(p_srp_db, login);
 
     if (user == NULL) {
         printf("User %s doesn't exist in proxy SRP database\n", login);
@@ -234,6 +248,7 @@ static int ssl_srp_server_param_cb (SSL *s, int *ad, void *arg)
     if (SSL_set_srp_server_param(s, user->N, user->g, user->s, user->v,
         user->info) < 0) {
         *ad = SSL_AD_INTERNAL_ERROR;
+        SRP_user_pwd_free(user);
         return SSL3_AL_FATAL;
     }
 
@@ -243,6 +258,7 @@ static int ssl_srp_server_param_cb (SSL *s, int *ad, void *arg)
     user = NULL;
     login = NULL;
     fflush(stdout);
+    SRP_user_pwd_free(user);    
     return SSL_ERROR_NONE;
 }
 
@@ -457,7 +473,10 @@ static int st_proxy_start_internal (int listen_port, char *certfile,
                                     int enable_srp, char *srp_vfile,
                                     int enable_tls10,
                                     int enable_server_token_auth,
-                                    int disable_cacerts_response)
+                                    int disable_cacerts_response,
+                                    int coap_enabled,
+                                    char *path_seg,
+                                    int coap_max_sessions)
 {
 X509 *x;
 EVP_PKEY * priv_key;
@@ -574,6 +593,11 @@ if (est_set_http_auth_cb(epctx, &process_http_auth)) {
     return (-1);
 }
 
+if (est_proxy_store_path_segment(epctx, path_seg)) {
+    printf("\nUnable to set proxy path-segment.  Aborting!!!\n");
+    return (-1);
+}
+
 /*
  * Specify the address of the CA EST server
  */
@@ -643,12 +667,33 @@ if (rv != EST_ERR_NONE) {
     return (-1);
 }
 
-printf("\nLaunching EST proxy server...\n");
+if (coap_enabled) {
+#ifdef HAVE_LIBCOAP
+    if (est_server_set_dtls_session_max(epctx, coap_max_sessions)) {
+        printf("\nUnable to set DTLS maximum sessions. Aborting!!!\n");
+        return(-1);
+    }
 
-rv = est_proxy_start(epctx);
-if (rv != EST_ERR_NONE) {
-    printf("\nFailed to init mg\n");
+    printf("\nLaunching EST over CoAP proxy...\n");
+    coap_port = 0;
+    rv = est_proxy_coap_init_start(epctx, coap_port);
+    if (rv != 0) {
+        printf("\nFailed to init the coap library into server mode\n");
+        return (-1);
+    }
+#else
+    printf("\nCan't launch st_proxy in coap mode when est isn't built with"
+           " libcoap\n");
     return (-1);
+#endif
+} else {
+    printf("\nLaunching EST proxy server...\n");
+
+    rv = est_proxy_start(epctx);
+    if (rv != EST_ERR_NONE) {
+        printf("\nFailed to init mg\n");
+        return (-1);
+    }
 }
 
 // Start master (listening) thread
@@ -697,7 +742,265 @@ int st_proxy_start (int listen_port, char *certfile, char *keyfile, char *realm,
 {
 return st_proxy_start_internal(listen_port, certfile, keyfile, realm,
     ca_chain_file, trusted_certs_file, userid, password, server, server_port,
-    enable_pop, ec_nid, 0, NULL, 0, 0, 0);
+    enable_pop, ec_nid, 0, NULL, 0, 0, 0, 0, NULL, 0);
+}
+
+/*
+ * Call this to start an EST over CoAP proxy server.  This server will not
+ * be thread safe.  It can only handle a single EST request on
+ * the listening socket at any given time.  This server will run
+ * until st_proxy_stop() is invoked.
+ *
+ * Parameters:
+ *  coap_server_addr: Address for the EST CoAP proxy to listen on
+ *  listen_port:    Port number to listen on
+ *  certfile:	    PEM encoded certificate used for server's identity
+ *  keyfile:	    Private key associated with the certfile
+ *  realm:	    HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client.
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer.
+ *  userid          User ID used by proxy to identify itself to the server for
+ *                  HTTP authentication.
+ *  password        The password associated with userid.
+ *  server          Hostname or IP address of the CA EST server that this
+ *                  proxy will forward requests too.
+ *  server_port     TCP port number used by the CA EST server.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_proxy_start_coap (char *coap_server_addr, int listen_port,
+                         char *certfile, char *keyfile, char *realm, 
+                         char *ca_chain_file, char *trusted_certs_file,
+                         char *userid, char *password, char *server,
+                         int server_port, int enable_pop, int ec_nid)
+{
+return st_proxy_start_internal(listen_port, certfile, keyfile, realm,
+    ca_chain_file, trusted_certs_file, userid, password, server, server_port,
+    enable_pop, ec_nid, 0, NULL, 0, 0, 0, 1, NULL, EST_DTLS_SESSION_MAX_DEF);
+}
+
+/*
+ * Call this to start an EST proxy with event handling.
+ * This proxy will not be thread safe.  It can only handle a single EST request
+ * on the listening socket at any given time.
+ * This server will run until st_proxy_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:       PEM encoded certificate used for server's identity
+ *  keyfile:        Private key associated with the certfile
+ *  realm:          HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client.
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer.
+ *  userid          User ID used by proxy to identify itself to the server for
+ *                  HTTP authentication.
+ *  password        The password associated with userid.
+ *  server          Hostname or IP address of the CA EST server that this
+ *                  proxy will forward requests too.
+ *  server_port     TCP port number used by the CA EST server.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_proxy_start_events (int listen_port,
+                           char *certfile,
+                           char *keyfile,
+                           char *realm,
+                           char *ca_chain_file,
+                           char *trusted_certs_file,
+                           char *userid,
+                           char *password,
+                           char *server,
+                           int server_port,
+                           int enable_pop,
+                           int ec_nid)
+{
+    return st_proxy_start_internal(listen_port, certfile, keyfile, realm,
+                                   ca_chain_file, trusted_certs_file, userid,
+                                   password, server, server_port, enable_pop,
+                                   ec_nid, 0, NULL, 0, 0, 0, 0, NULL, 0);
+}
+
+/*
+ * Call this to start an EST over CoAP proxy with event handling.
+ * This proxy will not be thread safe.  It can only handle a single EST request
+ * on the listening socket at any given time.
+ * This server will run until st_proxy_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:       PEM encoded certificate used for server's identity
+ *  keyfile:        Private key associated with the certfile
+ *  realm:          HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client.
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer.
+ *  userid          User ID used by proxy to identify itself to the server for
+ *                  HTTP authentication.
+ *  password        The password associated with userid.
+ *  server          Hostname or IP address of the CA EST server that this
+ *                  proxy will forward requests too.
+ *  server_port     TCP port number used by the CA EST server.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_proxy_start_coap_events (int listen_port,
+                                char *certfile,
+                                char *keyfile,
+                                char *realm,
+                                char *ca_chain_file,
+                                char *trusted_certs_file,
+                                char *userid,
+                                char *password,
+                                char *server,
+                                int server_port,
+                                int enable_pop,
+                                int ec_nid)
+{
+    return st_proxy_start_internal(listen_port, certfile, keyfile, realm,
+                                   ca_chain_file, trusted_certs_file, userid,
+                                   password, server, server_port, enable_pop,
+                                   ec_nid, 0, NULL, 0, 0, 0, 1, NULL,
+                                   EST_DTLS_SESSION_MAX_DEF);
+}
+
+/*
+ * Call this to start an EST proxy with upstream path segment.
+ * This proxy will not be thread safe.  It can only handle a single EST request
+ * on the listening socket at any given time.
+ * This server will run until st_proxy_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:       PEM encoded certificate used for server's identity
+ *  keyfile:        Private key associated with the certfile
+ *  realm:          HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client.
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer.
+ *  userid          User ID used by proxy to identify itself to the server for
+ *                  HTTP authentication.
+ *  password        The password associated with userid.
+ *  server          Hostname or IP address of the CA EST server that this
+ *                  proxy will forward requests too.
+ *  server_port     TCP port number used by the CA EST server.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ *  path_seg:       Upstream injected path-segment
+ */
+int st_proxy_start_pathseg (int listen_port,
+                            char *certfile,
+                            char *keyfile,
+                            char *realm,
+                            char *ca_chain_file,
+                            char *trusted_certs_file,
+                            char *userid,
+                            char *password,
+                            char *server,
+                            int server_port,
+                            int enable_pop,
+                            int ec_nid,
+                            char *path_seg)
+{
+    return st_proxy_start_internal(listen_port, certfile, keyfile, realm,
+                                   ca_chain_file, trusted_certs_file, userid,
+                                   password, server, server_port, enable_pop,
+                                   ec_nid, 0, NULL, 0, 0, 0, 0, path_seg, 0);
+jnm
+}
+
+/*
+ * Call this to start an EST over CoAP proxy with upstream path segment.
+ * This proxy will not be thread safe.  It can only handle a single EST request
+ * on the listening socket at any given time.
+ * This server will run until st_proxy_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:       PEM encoded certificate used for server's identity
+ *  keyfile:        Private key associated with the certfile
+ *  realm:          HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client.
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer.
+ *  userid          User ID used by proxy to identify itself to the server for
+ *                  HTTP authentication.
+ *  password        The password associated with userid.
+ *  server          Hostname or IP address of the CA EST server that this
+ *                  proxy will forward requests too.
+ *  server_port     TCP port number used by the CA EST server.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ *  path_seg:       Upstream injected path-segment
+ */
+int st_proxy_start_pathseg_coap (int listen_port,
+                                 char *certfile,
+                                 char *keyfile,
+                                 char *realm,
+                                 char *ca_chain_file,
+                                 char *trusted_certs_file,
+                                 char *userid,
+                                 char *password,
+                                 char *server,
+                                 int server_port,
+                                 int enable_pop,
+                                 int ec_nid,
+                                 char *path_seg)
+{
+    return st_proxy_start_internal(listen_port, certfile, keyfile, realm,
+                                   ca_chain_file, trusted_certs_file, userid,
+                                   password, server, server_port, enable_pop,
+                                   ec_nid, 0, NULL, 0, 0, 0, 1, path_seg,
+                                   EST_DTLS_SESSION_MAX_DEF);
+}
+
+/*
+ * Call this to start a simple EST proxy server with no cacerts.
+ * This server will not be thread safe.  It can only handle a
+ * single EST request on the listening socket at any given time.
+ * This server will run until st_proxy_stop() is invoked.
+ *
+ * Parameters:
+ *  listen_port:    Port number to listen on
+ *  certfile:       PEM encoded certificate used for server's identity
+ *  keyfile:        Private key associated with the certfile
+ *  realm:          HTTP realm to present to the client
+ *  ca_chain_file:  PEM encoded certificates to use in the /cacerts
+ *                  response to the client.
+ *  trusted_certs_file: PEM encoded certificates to use for authenticating
+ *                  the EST client at the TLS layer.
+ *  userid          User ID used by proxy to identify itself to the server for
+ *                  HTTP authentication.
+ *  password        The password associated with userid.
+ *  server          Hostname or IP address of the CA EST server that this
+ *                  proxy will forward requests too.
+ *  server_port     TCP port number used by the CA EST server.
+ *  ec_nid:         Openssl NID value for ECDHE curve to use during
+ *                  TLS handshake.  Take values from <openssl/obj_mac.h>
+ */
+int st_proxy_coap_start_nocacerts (int listen_port,
+                                   char *certfile,
+                                   char *keyfile,
+                                   char *realm,
+                                   char *ca_chain_file,
+                                   char *trusted_certs_file,
+                                   char *userid,
+                                   char *password,
+                                   char *server,
+                                   int server_port,
+                                   int enable_pop,
+                                   int ec_nid)
+{
+    return st_proxy_start_internal(listen_port, certfile, keyfile, realm,
+                                   ca_chain_file, trusted_certs_file, userid,
+                                   password, server, server_port, enable_pop,
+                                   ec_nid, 0, NULL, 0, 0, 1, 0, NULL, 1);
 }
 
 /*
@@ -732,7 +1035,7 @@ int st_proxy_start_nocacerts (int listen_port, char *certfile, char *keyfile,
 {
 return st_proxy_start_internal(listen_port, certfile, keyfile, realm,
     ca_chain_file, trusted_certs_file, userid, password, server, server_port,
-    enable_pop, ec_nid, 0, NULL, 0, 0, 1);
+    enable_pop, ec_nid, 0, NULL, 0, 0, 1, 0, NULL, 0);
 }
 
 /*
@@ -767,7 +1070,7 @@ int st_proxy_start_srp (int listen_port, char *certfile, char *keyfile,
 {
 return st_proxy_start_internal(listen_port, certfile, keyfile, realm,
     ca_chain_file, trusted_certs_file, userid, password, server, server_port,
-    enable_pop, 0, 1, vfile, 0, 0, 0);
+    enable_pop, 0, 1, vfile, 0, 0, 0, 0, NULL, 0);
 }
 
 /*
@@ -803,7 +1106,7 @@ int st_proxy_start_tls10 (int listen_port, char *certfile, char *keyfile,
 {
 return st_proxy_start_internal(listen_port, certfile, keyfile, realm,
     ca_chain_file, trusted_certs_file, userid, password, server, server_port,
-    enable_pop, ec_nid, 0, NULL, 1, 0, 0);
+    enable_pop, ec_nid, 0, NULL, 1, 0, 0, 0, NULL, 0);
 }
 
 /*
@@ -839,7 +1142,7 @@ int st_proxy_start_srp_tls10 (int listen_port, char *certfile, char *keyfile,
 {
 return st_proxy_start_internal(listen_port, certfile, keyfile, realm,
     ca_chain_file, trusted_certs_file, userid, password, server, server_port,
-    enable_pop, 0, 1, vfile, 1, 0, 0);
+    enable_pop, 0, 1, vfile, 1, 0, 0, 0, NULL, 0);
 }
 
 /*
@@ -874,7 +1177,7 @@ int st_proxy_start_token (int listen_port, char *certfile, char *keyfile,
 {
 return st_proxy_start_internal(listen_port, certfile, keyfile, realm,
     ca_chain_file, trusted_certs_file, userid, password, server, server_port,
-    enable_pop, 0, 0, NULL, 0, 1, 0);
+    enable_pop, 0, 0, NULL, 0, 1, 0, 0, NULL, 0);
 }
 
 void st_proxy_enable_pop ()
@@ -964,8 +1267,317 @@ void st_proxy_set_server_read_timeout (int timeout)
 est_server_set_read_timeout(epctx, timeout);
 }
 
+/* Used to enable Enhanced Cert Auth mode on the st proxy */
+int st_proxy_enable_enhcd_cert_auth (int nid, char *ah_pwd,
+                                     EST_ECA_CSR_CHECK_FLAG csr_check_flag)
+{
+    return est_server_enable_enhanced_cert_auth(epctx, nid, ah_pwd,
+                                                csr_check_flag);
+}
+
+/* Used to add manufacturer info to the mfg_info_list when using st proxy */
+int st_proxy_enhcd_cert_auth_add_mfg_info (char *mfg_name,
+                                           int mfg_subj_field_nid,
+                                           unsigned char *truststore_buf,
+                                           int truststore_buf_len)
+{
+    return est_server_enhanced_cert_auth_add_mfg_info(
+        epctx, mfg_name, mfg_subj_field_nid, truststore_buf,
+        truststore_buf_len);
+}
+
+/* Used to disable Enhanced Cert Auth mode on the st proxy */
+int st_proxy_disable_enhcd_cert_auth (void)
+{
+    return est_server_disable_enhanced_cert_auth(epctx);
+}
+
+static void st_notify_est_err_cb (char *format, va_list arg_list) {
+    /*
+     * Print the incoming EST error message.
+     */
+    fprintf(stderr, "***PROXY EVENT [%s]--> EST Internal Error-> ",
+                    __FUNCTION__);
+
+    vfprintf(stderr, format, arg_list);
+
+    return;
+}
+
+static void st_notify_ssl_proto_err_cb (char *err_msg) {
+
+    /*
+     * Print the incoming SSL protocol error message.
+     */
+    fprintf(stderr, "***PROXY EVENT [%s]--> SSL Protocol Error-> %s\n",
+                    __FUNCTION__, err_msg);
+
+    return;
+}
+
+static void st_notify_enroll_req_cb (char *id_cert_subj, X509 *peer_cert,
+                                     char *csr_subj, X509_REQ *csr_x509,
+                                     char *ipstr, int port,
+                                     char *path_seg, EST_ENROLL_REQ_TYPE enroll_req)
+{
+    char *req;
+
+    /*
+     * Display information about this enroll request event.
+     */
+    if (enroll_req == SIMPLE_ENROLL_REQ) {
+        req = "Enroll";
+    } else if (enroll_req == REENROLL_REQ) {
+        req = "Re-enroll";
+    } else if (enroll_req == SERVERKEYGEN_REQ) {
+        req = "Server-Side KeyGen";
+    } else {
+        req = "Unknown request";
+    }
+    fprintf(stderr, "***PROXY EVENT [%s]--> EST %s Request-> ", __FUNCTION__, req);
+    fprintf(stderr, "TLS ID cert subject: \"%s\", "
+                    "CSR subject: \"%s\", "
+                    "IP address: \"%s\",  Port: %d, "
+                    "path segment: \"%s\"\n",
+                    id_cert_subj, csr_subj, ipstr, port, path_seg);
+    return;
+}
+
+static void st_notify_enroll_rsp_cb (char *id_cert_subj, X509 *peer_cert,
+                                     char *csr_subj, X509_REQ *csr,
+                                     char *ip_addr, int port,
+                                     unsigned char *returned_cert, int returned_cert_len,
+                                     char *path_seg, EST_ENROLL_REQ_TYPE enroll_req, EST_ERROR rc) {
+
+    char *rsp;
+
+    /*
+     * Display information about this enroll response event.
+     */
+    if (enroll_req == SIMPLE_ENROLL_REQ) {
+        rsp = "Enroll";
+    } else if (enroll_req == REENROLL_REQ) {
+        rsp = "Re-enroll";
+    } else if (enroll_req == SERVERKEYGEN_REQ) {
+        rsp = "Server-Side KeyGen";
+    } else {
+        rsp = "Unknown request";
+    }
+    fprintf(stderr, "***PROXY EVENT [%s]--> EST %s Response-> ", __FUNCTION__, rsp);
+    fprintf(stderr, "TLS ID cert subject: \"%s\", "
+                    "CSR subject: \"%s\", "
+                    "IP address: \"%s\",  Port: %d, "
+                    "path segment: \"%s\", ",
+                    id_cert_subj, csr_subj, ip_addr, port, path_seg);
+    /*
+     * The newly enrolled cert could be accessed through calls to OpenSSL.
+     * First convert it into an X509 structure and then use various get
+     * functions to retrieve fields from the cert; such as the subject field,
+     * issuer, not before/not after, etc
+     *
+     * Here, we just print the pointer and length to prove that the
+     * buffer has been passed up.
+     */
+    fprintf(stderr, "Returned cert: \"%s\", returned cert length: %d, "
+                    "status of the enroll: \"%s\"\n",
+                    returned_cert, returned_cert_len,
+                    EST_ERR_NUM_TO_STR(rc));
+
+    return;
+}
+
+static void st_notify_enroll_auth_result_cb (X509 *peer_cert, char *path_seg,
+                                             EST_ENROLL_REQ_TYPE enroll_req,
+                                             EST_ENHANCED_AUTH_TS_AUTH_STATE state,
+                                             EST_AUTH_STATE rv) {
+    char *rsp;
+
+    /*
+     * Display information about this enroll authentication response event.
+     */
+    if (enroll_req == SIMPLE_ENROLL_REQ) {
+        rsp = "Enroll";
+    } else if (enroll_req == REENROLL_REQ) {
+        rsp = "Re-enroll";
+    } else if (enroll_req == SERVERKEYGEN_REQ) {
+        rsp = "Server-Side KeyGen";
+    } else {
+        rsp = "Unknown request";
+    }
+    fprintf(stderr, "***PROXY EVENT [%s]--> EST %s Authentication Response-> ",
+                    __FUNCTION__, rsp);
+    /*
+     * The attributes from the peer cert can be obtained through calls
+     * to openssl X509 get functions.
+     *
+     * the Auth state (status of the auth check) can be checked against
+     * enums defined in est.h
+     */
+    fprintf(stderr, "Peer cert: %p, "
+                    "path_seq: %p, "
+                    "Enhanced auth Trust store state: %d (%s), "
+                    "auth-state: %d (%s)\n",
+                    peer_cert, path_seg,
+                    state, print_est_enhanced_auth_state(state),
+                    rv, print_est_auth_status(rv));
+    return;
+}
+
+static void st_notify_endpoint_req_cb (char *id_cert_subj, X509 *peer_cert,
+                                       const char *uri, char *ip_addr, int port,
+                                       EST_ENDPOINT_EVENT_TYPE event_type)
+{
+    pthread_t tid = pthread_self();
+
+    /*
+     * Display information about this endpoint request event.  Note that
+     * the assumption is  that uri and method are printable if not null.
+     */
+    if (uri == NULL) {
+        uri = "<URI null>";
+    }
+
+    fprintf(stderr, "***PROXY EVENT [%s]--> EST Endpoint Request-> %s %lu ", __FUNCTION__,
+            (event_type == EST_ENDPOINT_REQ_START?"start of request":"end of request"),
+            tid);
+    fprintf(stderr, "TLS ID cert subject: \"%s\", "
+                    "uri: \"%s\", "
+                    "IP address: \"%s\",  Port: %d\n",
+                    id_cert_subj, uri, ip_addr, port);
+    return;
+}
+
+/*
+ * st_notify_event_plugin_config
+ *
+ * This data structure contains the notify-specific event plugin module
+ * data.
+ */
+static st_est_event_cb_table_t  st_est_default_event_cb_table = {
+
+    /*
+     * Address of the notify-specific event callback function that
+     * is registered with EST and called when EST errors occur.
+     */
+    st_notify_est_err_cb,
+
+    /*
+     * Address of the notify-specific event callback function that
+     * is registered with EST and called when SSL protocol errors occur.
+     */
+   st_notify_ssl_proto_err_cb,
+
+   /*
+    * Address of the notify-specific event callback function that
+    * is registered with EST and called when EST enroll or re-enroll
+    * requests are made.
+    */
+   st_notify_enroll_req_cb,
+
+   /*
+    * Address of the notify-specific event callback function that
+    * is registered with EST and called when EST enroll or re-enroll
+    * responses are received.
+    */
+   st_notify_enroll_rsp_cb,
+
+   /*
+    * Address of the notify-specific event callback function that
+    * is registered with EST and called when EST enroll or re-enroll
+    * authentication results are received.
+    */
+   st_notify_enroll_auth_result_cb,
+
+   /*
+    * Address of the notify-specific event callback function that
+    * is registered with EST and called when EST endpoint requests
+    * are received.
+    */
+   st_notify_endpoint_req_cb
+};
+
+/*
+ * st_set_est_event_callbacks
+ *
+ * Sets callbacks for all of the EST event callbacks for
+ * the specified EST_CTX to the callback functions
+ * pointed to by event_cb_ptr.
+ */
+static
+void st_proxy_internal_set_est_event_callbacks (EST_CTX *libest_ctx,
+                                                st_est_event_cb_table_t *event_cb_ptr) {
+
+    if (event_cb_ptr != NULL) {
+
+        est_set_est_err_event_cb(event_cb_ptr->est_err_event_cb);
+        est_set_ssl_proto_err_event_cb(event_cb_ptr->ssl_proto_err_event_cb);
+        est_set_enroll_req_event_cb(libest_ctx,
+                                    event_cb_ptr->enroll_req_event_cb);
+        est_set_enroll_rsp_event_cb(libest_ctx,
+                                    event_cb_ptr->enroll_rsp_event_cb);
+        est_set_enroll_auth_result_event_cb(libest_ctx,
+                                            event_cb_ptr->enroll_auth_result_event_cb);
+        est_set_endpoint_req_event_cb(libest_ctx,
+                                      event_cb_ptr->endpoint_req_event_cb);
+    } else {
+
+        est_set_est_err_event_cb(NULL);
+        est_set_ssl_proto_err_event_cb(NULL);
+        est_set_enroll_req_event_cb(libest_ctx, NULL);
+        est_set_enroll_rsp_event_cb(libest_ctx, NULL);
+        est_set_enroll_auth_result_event_cb(libest_ctx, NULL);
+        est_set_endpoint_req_event_cb(libest_ctx, NULL);
+    }
+
+    return;
+}
+
+/*
+ * st_set_default_est_event_callbacks
+ *
+ * Sets callbacks for all of the EST event callbacks for
+ * the specified EST_CTX to the callback functions
+ * specified in st_est_default_event_cb_table.
+ */
+void st_proxy_set_est_event_callbacks (st_est_event_cb_table_t *event_callbacks) {
+
+    st_proxy_internal_set_est_event_callbacks(epctx, event_callbacks);
+
+    return;
+}
+
+/*
+ * st_set_default_est_event_callbacks
+ *
+ * Sets callbacks for all of the EST event callbacks for
+ * the specified EST_CTX to the callback functions
+ * specified in st_est_default_event_cb_table.
+ */
+void st_proxy_set_default_est_event_callbacks () {
+
+    st_proxy_internal_set_est_event_callbacks(epctx, &st_est_default_event_cb_table);
+
+    return;
+}
+
+/*
+ * st_disable_est_event_callbacks
+ *
+ * Disable callbacks for all of the EST event callbacks for
+ * the specified EST_CTX to the callback functions.
+ */
+void st_proxy_disable_est_event_callbacks() {
+    st_proxy_internal_set_est_event_callbacks(epctx, NULL);
+
+    return;
+}
+
+void st_proxy_set_dtls_handshake_timeout (int timeout)
+{
+    est_server_set_dtls_handshake_timeout(epctx, timeout);
+}
+
 void st_proxy_toggle_ipv6 ()
 {
 proxy_ipv6_flag = !proxy_ipv6_flag;
 }
-

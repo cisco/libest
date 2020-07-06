@@ -1,0 +1,116 @@
+-----BEGIN CERTIFICATE-----
+MIIBXDCCAQKgAwIBAgIJAJnDQ2pHt9dnMAoGCCqGSM49BAMCMBsxGTAXBgNVBAMM
+EGVzdEV4YW1wbGVTVURJQ0EwHhcNMTgwNjA3MTQ0OTIyWhcNMTkwNjA3MTQ0OTIy
+WjAbMRkwFwYDVQQDDBBlc3RFeGFtcGxlU1VESUNBMFkwEwYHKoZIzj0CAQYIKoZI
+zj0DAQcDQgAEvqnBMXkXeQsbkuNYrvtYxZ4G6fGcRHrEnwKvT7YjH4ALEfm/h+JQ
+dN+Zwk/xkjibScS2v4LqVM7fbKnoQ72gJaMvMC0wDAYDVR0TBAUwAwEB/zAdBgNV
+HQ4EFgQUwUht07RyCMY8ELRRQwiEcrlEwYEwCgYIKoZIzj0EAwIDSAAwRQIhAORG
+Oa/qLj1AT5bWMw1LUi01e8wIjDuEqGW4gSoi5EOPAiBCGaqifTJ/oN3xMhw8DLnE
+kpIAQgxYtpGU2pyh4Gfunw==
+-----END CERTIFICATE-----
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 1 (0x1)
+    Signature Algorithm: ecdsa-with-SHA256
+        Issuer: CN=estExampleSUDICA
+        Validity
+            Not Before: Jun  7 14:49:22 2018 GMT
+            Not After : May 20 14:49:22 2030 GMT
+        Subject: CN=estExampleSUDICA1
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub: 
+                    04:61:12:c4:56:57:d0:af:39:8e:d3:f5:e6:c2:c0:
+                    f7:35:a1:fd:55:2b:76:5b:fd:6e:75:81:74:31:6b:
+                    ad:bc:54:d2:be:ca:1c:00:42:cc:5f:9a:b4:f2:57:
+                    ff:ce:fe:b3:a0:3f:4e:a2:c4:a3:b7:79:aa:dd:38:
+                    b5:af:04:0c:48
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:TRUE
+            X509v3 Key Usage: 
+                Certificate Sign
+            X509v3 CRL Distribution Points: 
+
+                Full Name:
+                  URI:http://example.com/crl.pem
+
+            X509v3 Subject Key Identifier: 
+                E3:DE:E0:4E:D9:98:A2:35:3B:A7:1E:4D:5C:BD:18:97:1E:2E:08:CB
+            X509v3 Authority Key Identifier: 
+                keyid:C1:48:6D:D3:B4:72:08:C6:3C:10:B4:51:43:08:84:72:B9:44:C1:81
+
+    Signature Algorithm: ecdsa-with-SHA256
+         30:45:02:21:00:e8:88:fb:cc:70:b2:27:d3:59:8d:cb:1c:16:
+         07:a4:a9:3a:ec:85:9b:44:9c:da:e6:00:e7:ce:98:7b:98:5a:
+         68:02:20:08:43:96:17:6b:32:b1:71:d1:70:5e:34:1e:c1:26:
+         8c:92:b8:50:97:84:54:9c:05:0f:39:3b:67:1c:56:9b:ff
+-----BEGIN CERTIFICATE-----
+MIIBsjCCAVigAwIBAgIBATAKBggqhkjOPQQDAjAbMRkwFwYDVQQDDBBlc3RFeGFt
+cGxlU1VESUNBMB4XDTE4MDYwNzE0NDkyMloXDTMwMDUyMDE0NDkyMlowHDEaMBgG
+A1UEAwwRZXN0RXhhbXBsZVNVRElDQTEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNC
+AARhEsRWV9CvOY7T9ebCwPc1of1VK3Zb/W51gXQxa628VNK+yhwAQsxfmrTyV//O
+/rOgP06ixKO3eardOLWvBAxIo4GLMIGIMAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQD
+AgIEMCsGA1UdHwQkMCIwIKAeoByGGmh0dHA6Ly9leGFtcGxlLmNvbS9jcmwucGVt
+MB0GA1UdDgQWBBTj3uBO2ZiiNTunHk1cvRiXHi4IyzAfBgNVHSMEGDAWgBTBSG3T
+tHIIxjwQtFFDCIRyuUTBgTAKBggqhkjOPQQDAgNIADBFAiEA6Ij7zHCyJ9NZjcsc
+FgekqTrshZtEnNrmAOfOmHuYWmgCIAhDlhdrMrFx0XBeNB7BJoySuFCXhFScBQ85
+O2ccVpv/
+-----END CERTIFICATE-----
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 2 (0x2)
+    Signature Algorithm: ecdsa-with-SHA256
+        Issuer: CN=estExampleSUDICA1
+        Validity
+            Not Before: Jun  7 14:49:22 2018 GMT
+            Not After : May 20 14:49:22 2030 GMT
+        Subject: CN=estExampleSUDICA2
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub: 
+                    04:d1:f0:96:1a:7f:85:52:18:94:75:e9:e7:6c:2e:
+                    56:03:24:37:0f:73:f8:54:72:f4:da:11:1d:6a:ab:
+                    c7:16:0d:de:7f:49:fd:af:73:49:07:2c:c1:64:0c:
+                    f0:41:d7:35:f7:46:73:7e:84:9b:38:7b:92:5c:2f:
+                    08:c4:ef:0d:15
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:TRUE
+            X509v3 Key Usage: 
+                Certificate Sign
+            X509v3 CRL Distribution Points: 
+
+                Full Name:
+                  URI:http://example.com/crl.pem
+
+            X509v3 Subject Key Identifier: 
+                F8:C1:FA:25:60:65:60:EF:CF:51:C5:94:7B:C0:A5:7B:8F:AD:21:56
+            X509v3 Authority Key Identifier: 
+                keyid:E3:DE:E0:4E:D9:98:A2:35:3B:A7:1E:4D:5C:BD:18:97:1E:2E:08:CB
+
+    Signature Algorithm: ecdsa-with-SHA256
+         30:45:02:20:2e:1f:1f:e9:09:f9:82:b4:ed:8e:d4:3d:e0:30:
+         2a:bf:a1:79:47:df:ca:af:76:ad:84:3c:ef:0e:aa:25:b8:97:
+         02:21:00:c8:c6:7d:25:91:c4:a1:9c:7f:a7:7c:8c:4a:d6:8b:
+         7e:4c:66:1c:34:d0:07:2c:44:1a:8f:90:1c:d1:49:bd:c9
+-----BEGIN CERTIFICATE-----
+MIIBszCCAVmgAwIBAgIBAjAKBggqhkjOPQQDAjAcMRowGAYDVQQDDBFlc3RFeGFt
+cGxlU1VESUNBMTAeFw0xODA2MDcxNDQ5MjJaFw0zMDA1MjAxNDQ5MjJaMBwxGjAY
+BgNVBAMMEWVzdEV4YW1wbGVTVURJQ0EyMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcD
+QgAE0fCWGn+FUhiUdennbC5WAyQ3D3P4VHL02hEdaqvHFg3ef0n9r3NJByzBZAzw
+Qdc190ZzfoSbOHuSXC8IxO8NFaOBizCBiDAMBgNVHRMEBTADAQH/MAsGA1UdDwQE
+AwICBDArBgNVHR8EJDAiMCCgHqAchhpodHRwOi8vZXhhbXBsZS5jb20vY3JsLnBl
+bTAdBgNVHQ4EFgQU+MH6JWBlYO/PUcWUe8Cle4+tIVYwHwYDVR0jBBgwFoAU497g
+TtmYojU7px5NXL0Ylx4uCMswCgYIKoZIzj0EAwIDSAAwRQIgLh8f6Qn5grTtjtQ9
+4DAqv6F5R9/Kr3athDzvDqoluJcCIQDIxn0lkcShnH+nfIxK1ot+TGYcNNAHLEQa
+j5Ac0Um9yQ==
+-----END CERTIFICATE-----

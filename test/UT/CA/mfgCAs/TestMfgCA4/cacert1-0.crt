@@ -1,0 +1,53 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 1 (0x1)
+        Signature Algorithm: ecdsa-with-SHA256
+        Issuer: CN=estExampleTestMfg4CA
+        Validity
+            Not Before: Jan 21 17:04:29 2020 GMT
+            Not After : Jan 21 17:04:29 2040 GMT
+        Subject: CN=estExampleTestMfg4CA1-0
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub:
+                    04:a4:96:6a:d0:49:20:e8:09:dd:ec:d7:c9:76:2e:
+                    61:30:14:e8:a5:81:5b:3e:e8:4c:d9:05:c3:23:29:
+                    6b:42:ee:c7:b8:24:45:eb:5f:e1:fa:3c:04:4b:c6:
+                    1c:c6:0c:03:8d:e6:aa:82:e6:62:e1:22:1d:27:e7:
+                    09:91:e1:0f:4c
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:TRUE
+            X509v3 Key Usage: 
+                Certificate Sign
+            X509v3 CRL Distribution Points: 
+
+                Full Name:
+                  URI:http://example.com/crl.pem
+
+            X509v3 Subject Key Identifier: 
+                64:06:65:03:E2:06:43:6A:C4:0A:8F:EA:B4:42:FB:FE:8B:48:07:5F
+            X509v3 Authority Key Identifier: 
+                keyid:9C:6A:1D:61:C0:93:CA:25:48:0B:A8:A2:AC:71:5B:B1:84:8F:2F:4A
+
+    Signature Algorithm: ecdsa-with-SHA256
+         30:45:02:21:00:8c:d2:ae:80:bb:87:6b:bf:96:b3:ce:43:e3:
+         f1:64:1e:67:9e:ba:74:3d:3b:8e:d6:d8:67:c5:38:5a:51:64:
+         f6:02:20:47:29:4c:ae:d5:9b:58:c5:f2:bd:30:90:ea:3a:8e:
+         41:d7:11:e7:f5:12:c2:ad:54:72:42:d5:8d:6d:9c:a1:1c
+-----BEGIN CERTIFICATE-----
+MIIBvDCCAWKgAwIBAgIBATAKBggqhkjOPQQDAjAfMR0wGwYDVQQDDBRlc3RFeGFt
+cGxlVGVzdE1mZzRDQTAeFw0yMDAxMjExNzA0MjlaFw00MDAxMjExNzA0MjlaMCIx
+IDAeBgNVBAMMF2VzdEV4YW1wbGVUZXN0TWZnNENBMS0wMFkwEwYHKoZIzj0CAQYI
+KoZIzj0DAQcDQgAEpJZq0Ekg6And7NfJdi5hMBTopYFbPuhM2QXDIylrQu7HuCRF
+61/h+jwES8YcxgwDjeaqguZi4SIdJ+cJkeEPTKOBizCBiDAMBgNVHRMEBTADAQH/
+MAsGA1UdDwQEAwICBDArBgNVHR8EJDAiMCCgHqAchhpodHRwOi8vZXhhbXBsZS5j
+b20vY3JsLnBlbTAdBgNVHQ4EFgQUZAZlA+IGQ2rECo/qtEL7/otIB18wHwYDVR0j
+BBgwFoAUnGodYcCTyiVIC6iirHFbsYSPL0owCgYIKoZIzj0EAwIDSAAwRQIhAIzS
+roC7h2u/lrPOQ+PxZB5nnrp0PTuO1thnxThaUWT2AiBHKUyu1ZtYxfK9MJDqOo5B
+1xHn9RLCrVRyQtWNbZyhHA==
+-----END CERTIFICATE-----

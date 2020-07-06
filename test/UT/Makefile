@@ -1,3 +1,4 @@
+#ENABLE_BRSKI=1
 # source files.
 SRC =  	runtest.c \
 	US748/us748.c \
@@ -23,8 +24,37 @@ SRC =  	runtest.c \
 	US2174/us2174.c \
 	US3496/us3496.c \
 	US3512/us3512.c \
-    US3612/us3612.c \
+	US3612/us3612.c \
+	US3646/us3646.c \
 	US4020/us4020.c \
+	US4710/us4710.c \
+	US4778/us4778.c \
+	US4784/us4784.c \
+	US4752/us4752.c \
+	US4880/us4880.c \
+	US5052/us5052.c \
+	US5121/us5121.c \
+	US5139/us5139.c \
+	US5184/us5184.c \
+	US5213/us5213.c \
+	US5226/us5226.c \
+	US5230/us5230.c \
+	US5237/us5237.c \
+	US5240/us5240.c \
+	US5241/us5241.c \
+	US5244/us5244.c \
+	US5246/us5246.c \
+	US5248/us5248.c \
+	US5255/us5255.c \
+	US5282/us5282.c \
+	US5331/us5331.c \
+	US5357/us5357.c \
+	US5367/us5367.c \
+	US5394/us5394.c \
+	US5399/us5399.c \
+	US5418/us5418c.c \
+	US5418/us5418h.c \
+	../util/cdets.c \
 	../util/curl_utils.c \
 	../util/test_utils.c \
 	../util/st_server.c \
@@ -49,15 +79,24 @@ ifndef URIPARSER_DIR
     URIPARSER_LDFLAGS=
 else
     URIPARSER_LDFLAGS=-luriparser
+	CFLAGS+=-DENABLE_URIPARSER
 endif
 ifndef CUNIT_DIR
    CUNIT_DIR=/usr/local
 endif
+ifdef LIBCOAP_DIR
+	CFLAGS+=-DHAVE_LIBCOAP
+	CFLAGS+=-DLIBCOAP_DIR=\"$(LIBCOAP_DIR)\"
+endif
+ifdef ENABLE_BRSKI
+	CFLAGS+=-DENABLE_BRSKI
+endif    
+
 # include directories
-INCLUDES = -I../../src/est -I../.. -I../util -I$(OPENSSL_DIR)/include -I$(CURL_DIR)/include -I$(CUNIT_DIR)/include -I$(URIPARSER_DIR)/include 
+INCLUDES = -I../../src/est -I../.. -I../util -I$(OPENSSL_DIR)/include -I$(CURL_DIR)/include -I$(CUNIT_DIR)/include -I$(URIPARSER_DIR)/include -I$(LIBCOAP_DIR)/include
 
 # C++ compiler flags (-g -O2 -Wall)
-CCFLAGS = -Wall -g -DHAVE_CUNIT -DNO_SSL_DL $(CURL_CC_DEFINE)
+CCFLAGS = -Wall -g -DHAVE_CUNIT -DNO_SSL_DL $(CURL_CC_DEFINE) $(CFLAGS) 
 
 # compiler
 CC = gcc
@@ -84,4 +123,3 @@ runtest: $(OBJ)
 clean:
 	rm -f $(OBJ)  
 	rm -f runtest
-

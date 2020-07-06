@@ -18,6 +18,7 @@ following message flows are provided:
 \item  csrattrs
 \item  simpleenroll
 \item  simiplereenroll
+\item  serverkeygen 
 \end{itemize}
 @endlatexonly
 
@@ -37,7 +38,7 @@ case you attained the library from another source.
 	
 @latexonly
 \begin{quote}
-Copyright (c) 2013-2014 Cisco Systems, Inc.  All rights reserved.
+Copyright (c) 2013-2019 Cisco Systems, Inc.  All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions
@@ -74,8 +75,8 @@ The EST specification defines requirements for enrolling X509
 certifications for end-entities, Registration Authorities (RA), and 
 Certificate Authorities (CA).  There are six message flows described
 in the EST specification.  libEST supports a subset of these
-message flows, but it designed to operate as a client, RA, or CA.
-libEST supports the following four EST message flows:
+message flows, but is designed to operate as a client, proxy, or server.
+libEST supports the following five EST message flows:
 
 @latexonly
 \begin{itemize}
@@ -83,6 +84,7 @@ libEST supports the following four EST message flows:
 \item  csrattrs
 \item  simpleenroll
 \item  simiplereenroll
+\item  serverkeygen 
 \end{itemize}
 @endlatexonly
 
@@ -90,7 +92,6 @@ libEST supports the following four EST message flows:
 The following message flows are currently not supported:
 \begin{itemize}
 \item fullcmc 
-\item serverkeygen 
 \end{itemize}
 @endlatexonly
  
@@ -128,8 +129,8 @@ the \texttt{libest} directory, run the configure script and then make:
 This package has been tested on both 32 and 64 bit Linux systems running
 CentOS and Ubuntu.  The OpenSSL development package should be installed
 on the system.  libEST is designed to work 
-with the OpenSSL 1.0.1 or OpenSSL 1.0.2 API.  You can use the --with-ssl-dir option with
-the ./configure command to specify the location of the OpenSSL
+with the OpenSSL 1.0.2 API or above.  You can use the --with-ssl-dir option
+with the ./configure command to specify the location of the OpenSSL
 installation on the host system.
 
 \subsection{Static Linking}
@@ -139,6 +140,106 @@ libEST are built.  If only the static version is to be used,
 the --disable-shared option should be used with ./configure.
 This will disbale the generation of the shared version of the libEST
 library, forcing the linker to use the statically linked version.
+
+\subsection{LibCoAP Library}
+
+libEST is dependent upon the libcoap library to communicate via CoAP. The
+libcoap library must first be obtained from Github
+(https://github.com/obgm/libcoap/releases).  Cisco specific changes exist that
+must be applied to libcoap before it is built and installed.  The patch
+containing the Cisco specific changes to libcoap is libcoap.cisco.xxx.patch
+(xxx set to the specific build version) and is found in the top level
+directory of the libEST code base.
+
+\begin{verbatim}
+  tar -xvf libcoap-4.2.0-rc3.tar.gz
+  cd libcoap-4.2.0-rc3/libcoap
+  cp <install path to libEST code base>/libcoap.cisco.109.patch .
+  patch -i libcoap.cisco.109.patch -p 1
+\end{verbatim}
+
+Libcoap needs to built using OpenSSL 1.1.0 or greater. The OpenSSL version
+used to build this dependency should be the same as the version used when
+building libEST. Once the Cisco specific changes have been applied to the
+libcoap source, perform the following commands to build and install:
+
+\begin{verbatim}
+  export _OPENSSL_DIR=<OpenSSL 1.1.x+ install dir>
+  export CFLAGS="-I${_OPENSSL_DIR}/include"
+  export LDFLAGS="-L${_OPENSSL_DIR}/lib"
+  export PKG_CONFIG_PATH="${_OPENSSL_DIR}/lib/pkgconfig"
+  ./configure [--prefix=<install-dir>] --disable-documentation --with-openssl\
+   --with-cisco
+  make
+  make install
+\end{verbatim}
+
+If the ./configure was not present, run the following command and rerun the
+above commands:
+\begin{verbatim}
+  ./autogen.sh
+\end{verbatim}
+
+When configuring the libEST build, the --with-libcoap-dir option is used to
+point to the installed libcoap library to be used.
+If the prefix option was used to specify a new path to install to, make sure to
+add the libcoap lib folder to LD\_LIBRARY\_PATH so that it can be linked in at
+runtime. See the example application code for an example application using this
+feature's APIs.
+
+\subsection{Libcurl Library}
+
+libEST can be built with libcurl to allow libEST to be used in SOCKS/HTTP 
+proxy mode. libEST has been built and tested with the following versions of 
+libcurl:
+\begin{itemize}
+\item 7.60.0
+\item 7.62.0
+\item 7.64.0
+\end{itemize}
+
+Libcurl needs to built using OpenSSL 1.0.2 or greater. The OpenSSL version used 
+to build this dependency should be the same as the version used to build
+libEST. To perform this build of libcurl on Linux download the libcurl tarball
+from the libcurl download page, expand it, and run the following commands:
+\begin{verbatim}
+  export _OPENSSL_DIR=<OpenSSL 1.0.2+ install dir>
+  export CPPFLAGS="-I$_OPENSSL_DIR/include"
+  export LDFLAGS="-L$_OPENSSL_DIR/lib"
+  export LD\_LIBRARY\_PATH="$_OPENSSL_DIR/lib"
+  ./configure [--prefix=<install-dir>] --with-ssl=${_OPENSSL_DIR}
+  make
+  make install
+\end{verbatim}
+
+When configuring the libEST build, the --with-libcurl-dir option is used to
+point to the installed libcurl library to be used. If the prefix option was 
+used to specify a new path to install to, make sure to add the libcurl lib
+folder to LD\_LIBRARY\_PATH so that it can be linked in at runtime.
+
+\subsection{URIParser Library}
+
+libEST can be built with uriparser to allow libEST to support the use of 
+an URI path segment inside an EST request. libEST has been built and tested 
+with the following versions of uriparser:
+\begin{itemize}
+\item 0.8.5
+\item 0.9.1
+\end{itemize}
+
+To build uriparser on Linux download the uriparser tarball from the uriparser
+download page, expand it, and run the following commands:
+
+\begin{verbatim}
+  ./configure [--prefix=<install-dir>] 
+  make
+  make install
+\end{verbatim}
+
+When configuring the libEST build, the --with-uriparser-dir option is used to
+point to the installed uriparser library to be used. If the prefix option was 
+used to specify a new path to install to, make sure to add the uriparser
+lib folder to LD\_LIBRARY\_PATH so that it can be linked in at runtime.
 
 \subsection{Release builds}
 
@@ -157,6 +258,12 @@ following procedure can be used:
 @latexonly
 
 \subsection{Java build}
+
+@endlatexonly
+<b>NOTE: JEST is no longer supported.  The code and the following instructions are 
+included for teams that wish to use it as a starting point for 
+developing their own JNI to LibEST.</b>
+@latexonly
 
 libEST is used by JEST, which provides Java support for EST client-side 
 operations.  JEST requires the libEST libary (libest.so). JEST 
@@ -539,15 +646,5 @@ steps outline the minimal API calls required to implement an EST proxy:
     est_server_handle_request().
 
 
-@section FIPS FIPS 140-2 Compliance
-
-Another consideration is FIPS 140 compliance.  libEST was developed
-using OpenSSL 1.0.1 and 1.0.2.  OpenSSL can be configured and compiled 
-with FIPS 140 support.  This allows libEST to claim FIPS compliance when the 
-application invokes the FIPS_mode_set() entry point in the OpenSSL
-API.  When in FIPS mode, some ciphers are not allowed, including MD5.
-Since HTTP digest authentication uses MD5, FIPS should not be enabled
-in conjunction with HTTP digest authentication.  Also, all certificates
-and CSRs should not use MD5 and must use FIPS approved key sizes.
 
  */

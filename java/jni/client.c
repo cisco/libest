@@ -146,7 +146,10 @@ static int jni_est_client_X509_REQ_sign (X509_REQ *x, EVP_PKEY *pkey, const EVP_
      * cases.  Setting this flag tells OpenSSL to run the ASN
      * encoding again rather than using the cached copy.
      */
-    x->req_info->enc.modified = 1; 
+#ifdef HAVE_OLD_OPENSSL 
+    x->req_info->enc.modified = 1;
+#endif
+
     rv = X509_REQ_sign_ctx(x, &mctx);
 
     EVP_MD_CTX_cleanup(&mctx);

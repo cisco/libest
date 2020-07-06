@@ -9,7 +9,7 @@
  *
  * May, 2013
  *
- * Copyright (c) 2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016, 2017, 2018, 2019 by Cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -28,11 +28,6 @@
 #include "est_locl.h"
 #include "est_server.h"
 
-#ifdef WIN32
-#define GETPID _getpid
-#else
-#define GETPID getpid
-#endif 
 
 /*
  * Since we hijack the OpenSSL BUF_MEM with our
@@ -48,7 +43,7 @@ static void est_proxy_free_ossl_bufmem (BUF_MEM *b)
 
 /*
  * The following code implements the lookup operation for obtaining the client
- * context pointers when calling into the EST client code to communincate with
+ * context pointers when calling into the EST client code to communicate with
  * the upstream server.
  */
 
@@ -65,10 +60,13 @@ static int bsearch_compare(const void *pa, const void *pb)
     CLIENT_CTX_LU_NODE_T *a = (CLIENT_CTX_LU_NODE_T *)pa;
     CLIENT_CTX_LU_NODE_T *b = (CLIENT_CTX_LU_NODE_T *)pb;
     
-    if (a->threadid > b->threadid) result = 1;
-    if (a->threadid < b->threadid) result = -1;
-    if (a->threadid == b->threadid) result = 0;
-
+    if (a->threadid > b->threadid) {
+        result = 1;
+    } else if (a->threadid < b->threadid) {
+        result = -1;
+    } else {
+        result = 0;
+    }
     return (result);
 }
 
@@ -244,31 +242,6 @@ void proxy_cleanup (EST_CTX *p_ctx)
 * EST proxy operations
 *****************************************************************************/
 
-
-/*
- * This routine will check the result code from an enroll
- * attempt and propagate the retry-after message to the 
- * client if needed.
- */
-static EST_ERROR est_proxy_propagate_retry (EST_CTX *ctx, void *http_ctx)
-{
-    /*
-     * The CA did not sign the request and has asked the
-     * client to retry in the future.  This may occur if
-     * the CA is not configured for automatic enrollment.
-     * Send the HTTP retry response to the client.
-     * We need to propagate the retry-after response to
-     * the client.
-     */
-    EST_LOG_INFO("CA server requests retry, propagate this to the client (%d)", 
-        ctx->retry_after_delay);
-    if (EST_ERR_NONE != est_server_send_http_retry_after(ctx, http_ctx, ctx->retry_after_delay)) {
-        return (EST_ERR_HTTP_WRITE);
-    }
-    return (EST_ERR_NONE);
-}
-
-
 /*
  * This routine will send a PKCS7 encoded certificate to
  * the EST client via HTTP. 
@@ -281,7 +254,7 @@ static EST_ERROR est_proxy_propagate_pkcs7 (void *http_ctx, unsigned char *pkcs7
     /*
      * Send HTTP header
      */
-    snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
+    snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200_RESP, EST_HTTP_HDR_EOL,
              EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
     hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
     snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
@@ -303,6 +276,93 @@ static EST_ERROR est_proxy_propagate_pkcs7 (void *http_ctx, unsigned char *pkcs7
         EST_LOG_ERR("HTTP write error while propagating pkcs7");
         return (EST_ERR_HTTP_WRITE);
     }
+    return (EST_ERR_NONE);
+}
+
+/*
+ * This routine will send multipart key and cert response to the
+ * client via HTTP
+ */
+static EST_ERROR est_proxy_propagate_keygen_rsp (void *http_ctx,
+                                                 unsigned char *key, int key_len,
+                                                 unsigned char *pkcs7, int pkcs7_len)
+{
+    char http_hdr[EST_HTTP_HDR_MAX];
+    int hdrlen;
+
+    /*
+     * Send HTTP header
+     */
+    snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
+             EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
+    hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
+    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s; boundary=%s%s", EST_HTTP_HDR_CT,
+             EST_HTTP_CT_MULTI_MIXED, EST_HTTP_BOUNDARY,EST_HTTP_HDR_EOL);
+    hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
+    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
+             key_len+pkcs7_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
+    hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
+    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "\n--%s%s", EST_HTTP_BOUNDARY, EST_HTTP_HDR_EOL);
+
+    /*
+     * private key header info
+     */
+    hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
+    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
+             EST_HTTP_CT_PKCS8, EST_HTTP_HDR_EOL);
+    hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
+    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s%s", EST_HTTP_HDR_CE,
+             EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
+
+    if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
+        return (EST_ERR_HTTP_WRITE);
+    }
+
+    /*
+     * Send the PKCS8 private key in the body
+     */
+    if (!mg_write(http_ctx, key, key_len)) {
+        EST_LOG_ERR("HTTP write error while propogating server generated key");
+        return (EST_ERR_HTTP_WRITE);
+    }
+
+    /*
+     * Write boundary for multipart/mixed content-types
+     */
+    snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s--%s%s", EST_HTTP_HDR_EOL, EST_HTTP_BOUNDARY, EST_HTTP_HDR_EOL);
+    if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
+        return (EST_ERR_HTTP_WRITE);
+    }
+
+    /*
+     * Send certificate header info
+     */
+    snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
+             EST_HTTP_CT_PKCS7_CO, EST_HTTP_HDR_EOL);
+    hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
+    snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s%s", EST_HTTP_HDR_CE,
+             EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
+
+    if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
+        return (EST_ERR_HTTP_WRITE);
+    }
+
+    /*
+     * Send the signed PKCS7 certificate in the body
+     */
+    if (!mg_write(http_ctx, pkcs7, pkcs7_len)) {
+        EST_LOG_ERR("HTTP write error while propagating pkcs7");
+        return (EST_ERR_HTTP_WRITE);
+    }
+
+    /*
+     * Write boundary for multipart/mixed content-types
+     */
+    snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s--%s--%s%s", EST_HTTP_HDR_EOL, EST_HTTP_BOUNDARY, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
+    if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
+        return (EST_ERR_HTTP_WRITE);
+    }
+
     return (EST_ERR_NONE);
 }
 
@@ -419,7 +479,121 @@ static EST_ERROR est_proxy_send_enroll_request (EST_CTX *clnt_ctx,
     return (rv);
 }
 
+/*
+ * This routine will connect to the EST server and attempt
+ * to enroll the CSR in the *pkcs10 buffer as well as collect
+ * a new private key that will be generated by the server and
+ * added to the CSR before the enrollment. Upon success
+ * it will return the X509 cert in the *pkcs7 buffer and an
+ * RSA key in the *key buffer.  The respectives lengths
+ * will be in *pkcs7_len and *key_len. The *pkcs7 buffer and
+ * *key buffer should be allocated by the caller.
+ */
+static EST_ERROR est_proxy_send_keygen_request (EST_CTX *clnt_ctx,
+                                                BUF_MEM *pkcs10,
+                                                unsigned char *key,
+                                                int *key_len,
+                                                unsigned char *pkcs7,
+                                                int *pkcs7_len)
+{
+    EST_ERROR rv;
+    SSL *ssl_client;
 
+    /*
+     * Connect to the server
+     */
+    rv = est_client_connect(clnt_ctx, &ssl_client);
+    if (rv != EST_ERR_NONE) {
+        return (rv);
+    }
+
+    /*
+     * Send the server-side keygen request
+     */
+    rv = est_client_send_keygen_request(clnt_ctx, ssl_client,
+                                        pkcs10, key, key_len,
+                                        pkcs7, pkcs7_len);
+
+    /*
+     * Disconnect from the server
+     */
+    est_client_disconnect(clnt_ctx, &ssl_client);
+
+    return (rv);
+}
+
+/*
+ * Ensure the length of the given path segment is valid 
+ * and store it in the context (ctx->uri_path_segment).
+ * This function is available externally.
+ */
+EST_ERROR est_proxy_store_path_segment (EST_CTX *ctx, char *path_seg)
+{
+#ifdef HAVE_URIPARSER
+    int path_seg_len;
+    EST_ERROR rc;
+
+    if (!ctx) {
+        EST_LOG_ERR("Null context");
+        return (EST_ERR_NO_CTX);
+    }
+
+    if (ctx->est_mode != EST_PROXY) {
+        EST_LOG_ERR("Invalid context. Expected %d, received %d.",
+                    EST_PROXY, ctx->est_mode);
+        return EST_ERR_BAD_MODE;
+    }
+
+    if (path_seg != NULL) {
+
+        if (*path_seg == '\0') {
+            EST_LOG_ERR("Invalid injected path segment. Below minimum size.");
+            return EST_ERR_HTTP_INVALID_PATH_SEGMENT;
+        }
+        
+        /*
+         * Make sure it's not too long
+         */
+        path_seg_len = strnlen_s(path_seg, EST_MAX_PATH_SEGMENT_LEN+1);
+        if (path_seg_len > EST_MAX_PATH_SEGMENT_LEN) {
+            EST_LOG_ERR("Invalid injected path segment. Exceeded "
+                        "maximum size of %d bytes", EST_MAX_PATH_SEGMENT_LEN);
+            return EST_ERR_HTTP_INVALID_PATH_SEGMENT;
+        }
+
+        /*
+         * Ensure it is a valid path segment value
+         */
+        rc = est_parse_path_seg(path_seg);
+        if (rc != EST_ERR_NONE) {
+             EST_LOG_ERR("Invalid injected path segment '%s'. Failed "
+                         "parsing requirements.", path_seg);
+            return EST_ERR_HTTP_INVALID_PATH_SEGMENT;
+        }
+
+        /*
+         * store it away in the context
+         */
+        rc = est_store_path_segment(ctx, path_seg, path_seg_len);
+        if (rc != EST_ERR_NONE) {
+            EST_LOG_ERR("Failed to store proxy path segment.");
+            return (rc);
+        }
+
+        EST_LOG_INFO("URI path segment stored in context as \"%s\"", ctx->uri_path_segment);
+        
+    }
+    return EST_ERR_NONE;
+#else
+    EST_LOG_ERR("Could not parse injected path seg without URIPARSER");
+    return EST_ERR_HTTP_PATH_SEGMENT_NOT_SUPPORTED;
+#endif
+}
+
+/*
+ * Length checks the given path segment and stores it in the
+ * client context of the est in proxy mode.
+ */
 static EST_ERROR est_proxy_set_path_segment (EST_CTX *client_ctx,
                                              char *path_segment)
 {
@@ -436,7 +610,6 @@ static EST_ERROR est_proxy_set_path_segment (EST_CTX *client_ctx,
     return EST_ERR_NONE;
 }
 
-
 /*
  * This function is used by the server side of the EST proxy to respond to an
  * incoming Simple Enroll request.  This function is similar to the Client API
@@ -445,68 +618,81 @@ static EST_ERROR est_proxy_set_path_segment (EST_CTX *client_ctx,
  * inserting the TLS unique id and instead including the id-kp-cmcRA usage
  * extension.
  */
-static EST_ERROR est_proxy_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
-                                                 SSL *ssl, const char *ct,
-                                                 char *body, int body_len,
-					         char *path_seg, int reenroll)
+EST_ERROR est_proxy_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
+                                          SSL *ssl, const char *ct, 
+                                          char *body, int body_len, 
+                                          char *path_seg, int reenroll, 
+                                          unsigned char **returned_cert, 
+                                          int *returned_cert_len)
 {
     EST_ERROR rv;
     BUF_MEM *pkcs10;
     unsigned char *pkcs7;
     int pkcs7_len = 0;
-    int diff;
+   
     X509_REQ *csr = NULL;
     EST_CTX *client_ctx;
-    errno_t safec_rc;
-     
-    /*
-     * Make sure the client has sent us a PKCS10 CSR request
-     */
 
-    safec_rc = memcmp_s(ct, sizeof("application/pkcs10"), "application/pkcs10",
-        sizeof("application/pkcs10"), &diff);
+    /* Performance Timers */
+    EST_TIMER send_to_server_timer;
 
-    if (safec_rc != EOK) {
-        EST_LOG_INFO("memcmp_s error 0x%xO\n", safec_rc);
-    }
+    if (ctx->transport_mode == EST_HTTP) {
+        int diff;
+        errno_t safec_rc;
 
-    if (diff) {
-        return (EST_ERR_BAD_CONTENT_TYPE);
+        /*
+        * Make sure the client has sent us a PKCS10 CSR request if in HTTP
+        */
+
+        safec_rc = memcmp_s(ct, sizeof("application/pkcs10"), "application/pkcs10",
+            sizeof("application/pkcs10"), &diff);
+
+        if (safec_rc != EOK) {
+            EST_LOG_INFO("memcmp_s error 0x%xO\n", safec_rc);
+        }
+
+        if (diff) {
+            return (EST_ERR_BAD_CONTENT_TYPE);
+        }
     }
 
     /*
      * Authenticate the client
      */
-    switch (est_enroll_auth(ctx, http_ctx, ssl, path_seg, reenroll)) {
+    switch (est_enroll_auth(ctx, http_ctx, ssl, path_seg, reenroll, body,
+                            body_len, &csr)) {
     case EST_HTTP_AUTH:
     case EST_SRP_AUTH:
     case EST_CERT_AUTH:
         break;
     case EST_HTTP_AUTH_PENDING:
         return (EST_ERR_AUTH_PENDING);
-        break;
+    case EST_CSR_PARSE_FAIL:
+        return (EST_ERR_BAD_PKCS10);
     case EST_UNAUTHORIZED:
     default:
         return (EST_ERR_AUTH_FAIL);
-        break;
     }
 
     /*
      * Parse the PKCS10 CSR from the client
      */
-    csr = est_server_parse_csr((unsigned char*)body, body_len);
     if (!csr) {
-	EST_LOG_ERR("Unable to parse the PKCS10 CSR sent by the client");
-	return (EST_ERR_BAD_PKCS10);
+        csr = est_server_parse_csr((unsigned char *)body, body_len,
+                                   EST_CSR_DECODE);
+        if (!csr) {
+            EST_LOG_ERR("Unable to parse the PKCS10 CSR sent by the client");
+            return (EST_ERR_BAD_PKCS10);
+        }
     }
-    
+
     /*
      * Perform a sanity check on the CSR
      */
     if (est_server_check_csr(csr)) {
-	EST_LOG_ERR("PKCS10 CSR sent by the client failed sanity check");
-	X509_REQ_free(csr);
-	return (EST_ERR_BAD_PKCS10);
+        EST_LOG_ERR("PKCS10 CSR sent by the client failed sanity check");
+        X509_REQ_free(csr);
+        return (EST_ERR_BAD_PKCS10);
     }
 
     /*
@@ -537,7 +723,7 @@ static EST_ERROR est_proxy_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
     if (!client_ctx) {
         EST_LOG_ERR("Unable to obtain client context for proxy operation");
         est_proxy_free_ossl_bufmem(pkcs10);
-	return (EST_ERR_NO_CTX);
+        return (EST_ERR_NO_CTX);
     }
 
     /*
@@ -545,48 +731,106 @@ static EST_ERROR est_proxy_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
      * downstream client on this request.  It's already been validated,
      * place it in ctx for use by client code.
      */
-    if (path_seg) {
-        est_proxy_set_path_segment(client_ctx, path_seg);
+
+    /* 
+     * If no path segment was given by the client, set it to
+     * the path segment that may already be stored in the proxy context
+     */
+    if (path_seg == NULL) {
+        /* TODO: this will need to be altered when coap can handle path segments */
+        path_seg = ctx->uri_path_segment;
+    }
+
+    /* store the proxy path segment in the client context */
+    if (path_seg != NULL) {
+        rv = est_proxy_set_path_segment(client_ctx, path_seg);
+        if (rv != EST_ERR_NONE) {
+            EST_LOG_ERR("Could not store path_seg into client context.");
+            est_proxy_free_ossl_bufmem(pkcs10);
+            return rv;
+        }
     }
 
     /*
      * Allocate some space to hold the cert that we
      * expect to receive from the EST server.
      */
-    pkcs7 = malloc(EST_CA_MAX); 
+    pkcs7 = malloc(EST_CA_MAX);
 
+    if (pkcs7 == NULL) {
+        EST_LOG_ERR("Malloc failed for pkcs7 buffer");
+        return (EST_ERR_MALLOC);
+    }
+try_again:
     /*
      * Attempt to enroll the CSR from the client
      */
+    start_timer(&send_to_server_timer, ctx,
+                "HTTPS proxy est_proxy_send_enroll_request");
     rv = est_proxy_send_enroll_request(client_ctx, pkcs10, pkcs7, &pkcs7_len,
                                        reenroll);
+    stop_timer(&send_to_server_timer);
+    ctx->retry_after_delay = client_ctx->retry_after_delay;
 
     /*
      * Handle any errors that likely occurred
      */
     switch (rv) {
+    case EST_ERR_NONE:
+        break;
+    /*
+     * Something went wrong with the upstream request to the
+     * server.
+     */
+    case EST_ERR_IP_GETADDR:
+    case EST_ERR_IP_CONNECT:
+    case EST_ERR_SSL_READ:
+        /* This section will map to a 504 repsonse */
+        EST_LOG_ERR("Proxy: Server not reachable %s (%d)",
+                    EST_ERR_NUM_TO_STR(rv), rv);
+        rv = EST_ERR_IP_CONNECT;
+        break;
+    case EST_ERR_SSL_CONNECT:
+    case EST_ERR_FQDN_MISMATCH:
+    case EST_ERR_SSL_WRITE:
+    case EST_ERR_ZERO_LENGTH_BUF:
+    case EST_ERR_MULTIPART_PARSE:
+    case EST_ERR_UNKNOWN:
+    case EST_ERR_BUF_EXCEEDS_MAX_LEN:
+    case EST_ERR_HTTP_UNSUPPORTED:
+        /* This section will map to a 502 repsonse */
+        EST_LOG_ERR(
+            "Proxy: Error while communicating with upstream server %s (%d)",
+            EST_ERR_NUM_TO_STR(rv), rv);
+        rv = EST_ERR_HTTP_UNSUPPORTED;
+        break;
+    case EST_ERR_HTTP_BAD_REQ:
+    case EST_ERR_HTTP_NO_CONTENT:
+    case EST_ERR_HTTP_NOT_FOUND:
+    case EST_ERR_HTTP_LOCKED:
+    case EST_ERR_CA_ENROLL_RETRY:
+        /* This section will pass through the response code from the server */
+        EST_LOG_ERR("Proxy: Passing through error response code from upstream "
+                    "server %s (%d)",
+                    EST_ERR_NUM_TO_STR(rv), rv);
+        break;
     case EST_ERR_AUTH_FAIL:
-        /* Try one more time if we're doing Digest auth */
-        if ((ctx->auth_mode == AUTH_DIGEST ||
-             ctx->auth_mode == AUTH_BASIC  ||
-             ctx->auth_mode == AUTH_TOKEN)) {
-            
-            EST_LOG_INFO("HTTP Auth failed, trying again with digest/basic parameters");
-
-            rv = est_proxy_send_enroll_request(client_ctx, pkcs10, pkcs7, &pkcs7_len, reenroll);
-	    if (rv == EST_ERR_CA_ENROLL_RETRY) {
-	        rv = est_proxy_propagate_retry(client_ctx, http_ctx);
-	    } else if (rv != EST_ERR_NONE) {
-                EST_LOG_WARN("EST enrollment failed, error code is %d", rv);
-            }
+        /* Try one more time if proxy has auth creds */
+        if ((ctx->auth_mode == AUTH_DIGEST || ctx->auth_mode == AUTH_BASIC ||
+             ctx->auth_mode == AUTH_TOKEN) &&
+            client_ctx->auth_mode != AUTH_FAIL) {
+            EST_LOG_INFO(
+                "HTTP Auth failed, trying again with HTTP Auth parameters");
+            goto try_again;
         }
         break;
-    case EST_ERR_CA_ENROLL_RETRY:
-	rv = est_proxy_propagate_retry(client_ctx, http_ctx);
-	break;
     default:
-        EST_LOG_WARN("Initial EST enrollment request error code is %d", rv);
-	break;
+        /* This section will map to a 500 repsonse */
+        EST_LOG_ERR("Proxy: Unhandled error occured while communicating with "
+                    "the upstream server %s (%d)",
+                    EST_ERR_NUM_TO_STR(rv), rv);
+        rv = EST_ERR_UNKNOWN;
+        break;
     }
 
     client_ctx->auth_mode = AUTH_NONE;
@@ -597,25 +841,320 @@ static EST_ERROR est_proxy_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
     est_proxy_free_ossl_bufmem(pkcs10);
 
     /*
-     * If we have a cert response from the EST server, let's forward
-     * it back to the EST client
-     */
+     * If we have a cert response from the EST server, we pass it
+     * back to the caller.  In HTTP mode we propogate it back right
+     * here and pass it back so it can be passed in the event notification
+     * handler, if needed.  In CoAP mode, we just pass it back to the
+     * caller (the CoAP handler) and have the caller send it back and
+     * also log it with the event handler, if needed.
+     *
+     * If there was no cert, log this error condition.
+     */    
     if (pkcs7_len > 0) {
-        rv = est_proxy_propagate_pkcs7(http_ctx, pkcs7, pkcs7_len);
-    }
-    free(pkcs7);
 
+        /*
+         * It's assumed the caller wants access to the returned cert
+         * so pass it back.
+         */
+        if (returned_cert == NULL || returned_cert_len == NULL) {
+            EST_LOG_ERR("Null pointers for return cert values");
+            free(pkcs7);
+            return (EST_ERR_INVALID_PARAMETERS);
+        }
+        *returned_cert = pkcs7;
+        *returned_cert_len = pkcs7_len;
+
+        /*
+         * If HTTP mode, we also need to send it right now to the client
+         */
+        if (ctx->transport_mode == EST_HTTP) {
+            rv = est_proxy_propagate_pkcs7(http_ctx, pkcs7, pkcs7_len);
+        }
+    } else {
+        EST_LOG_ERR("No certificate returned from server.");
+        if (pkcs7) {
+            free(pkcs7);
+        }
+    }
     return (rv);
 }
 
-#if 0
-static int est_proxy_handle_keygen (EST_CTX *ctx)
-{
-    //TODO
-    return (EST_ERR_NONE);
-}
-#endif
 
+/*
+ * This function is used by the server side of the EST proxy to respond to an
+ * incoming Server-side key generation enrollment request.  This function is
+ * similar to the Client API function, est_client_enroll_req() which is leveraged
+ * by est_client_send_keygen_req(), except it bypasses some things that are
+ * not done when functioning as a proxy, such as signing the CSR, not
+ * inserting the TLS unique id and instead including the id-kp-cmcRA usage
+ * extension.
+ */
+EST_ERROR est_proxy_handle_server_keygen (EST_CTX *ctx, void *http_ctx,
+                                                 SSL *ssl, const char *ct,
+                                                 char *body, int body_len,
+                                                 char *path_seg,
+                                                 unsigned char **returned_cert, 
+                                                 int *returned_cert_len,
+                                                 unsigned char **returned_key,
+                                                 int *returned_key_len)
+{
+    EST_ERROR rv;
+    BUF_MEM *pkcs10;
+    unsigned char *pkcs7, *key;
+    int pkcs7_len = 0, key_len = 0;
+    int diff;
+    X509_REQ *csr = NULL;
+    EST_CTX *client_ctx;
+    errno_t safec_rc;
+
+    /* Performance Timers */
+    EST_TIMER send_to_server_timer;
+
+    /*
+     * Make sure the client has sent us a PKCS10 CSR request
+     * This check happens in the coap handler functions for CoAP mode and
+     * therefore doesn't hae to be done here.
+     */
+    if (ctx->transport_mode == EST_HTTP) {
+        safec_rc = memcmp_s(ct, sizeof("application/pkcs10"), "application/pkcs10",
+                            sizeof("application/pkcs10"), &diff);
+
+        if (safec_rc != EOK) {
+            EST_LOG_INFO("memcmp_s error 0x%xO\n", safec_rc);
+        }
+
+        if (diff) {
+            return (EST_ERR_BAD_CONTENT_TYPE);
+        }
+    }
+
+    /*
+     * Authenticate the client
+     */
+    switch (est_enroll_auth(ctx, http_ctx, ssl, path_seg, SERVERKEYGEN_REQ, body, body_len,
+                            &csr)) {
+    case EST_HTTP_AUTH:
+    case EST_SRP_AUTH:
+    case EST_CERT_AUTH:
+        break;
+    case EST_HTTP_AUTH_PENDING:
+        if(csr) X509_REQ_free(csr);
+        return (EST_ERR_AUTH_PENDING);
+    case EST_CSR_PARSE_FAIL:
+        if(csr) X509_REQ_free(csr);
+        return (EST_ERR_BAD_PKCS10);
+    case EST_UNAUTHORIZED:
+    default:
+        if(csr) X509_REQ_free(csr);
+        return (EST_ERR_AUTH_FAIL);
+    }
+
+    /*
+     * Parse the PKCS10 CSR from the client
+     */
+    if (!csr) {
+        csr = est_server_parse_csr((unsigned char *)body, body_len,
+                                   EST_CSR_DECODE);
+        if (!csr) {
+            EST_LOG_ERR("Unable to parse the PKCS10 CSR sent by the client");
+            return (EST_ERR_BAD_PKCS10);
+        }
+    }
+
+    /*
+     * Perform a sanity check on the CSR
+     */
+    if (est_server_check_csr(csr)) {
+        EST_LOG_ERR("PKCS10 CSR sent by the client failed sanity check");
+        X509_REQ_free(csr);
+        return (EST_ERR_BAD_PKCS10);
+    }
+
+    /*
+     * Do the PoP check (Proof of Possession).  The challenge password
+     * in the pkcs10 request should match the TLS unique ID.
+     */
+    rv = est_tls_uid_auth(ctx, ssl, csr);
+    X509_REQ_free(csr);
+
+    if (rv != EST_ERR_NONE) {
+        return (EST_ERR_AUTH_FAIL_TLSUID);
+    }
+
+    /*
+     * body now points to the pkcs10 data, pass
+     * this to the enrollment routine.  Need to hi-jack
+     * a BUF_MEM.  Attach the body to a new BUF_MEM
+     */
+    pkcs10 = BUF_MEM_new();
+    pkcs10->data = body;
+    pkcs10->length = body_len;
+    pkcs10->max = body_len;
+
+    /*
+     * get the client context for this thread
+     */
+    client_ctx = get_client_ctx(ctx);
+    if (!client_ctx) {
+        EST_LOG_ERR("Unable to obtain client context for proxy operation");
+        est_proxy_free_ossl_bufmem(pkcs10);
+        return (EST_ERR_NO_CTX);
+    }
+
+    /*
+     * path_segment.  The path seg value is coming in from the
+     * downstream client on this request.  It's already been validated,
+     * place it in ctx for use by client code.
+     */
+
+    /* 
+     * If no path segment was given by the client, set it to
+     * the path segment that may already be stored in the proxy context
+     */
+    if (path_seg == NULL) {
+        /* TODO: this will need to be altered when coap can handle path segments */
+        path_seg = ctx->uri_path_segment;
+    }
+
+    /* store the proxy path segment in the client context */
+    if (path_seg != NULL) {
+        rv = est_proxy_set_path_segment(client_ctx, path_seg);
+        if (rv != EST_ERR_NONE) {
+            EST_LOG_ERR("Could not store path_seg into client context.");
+            est_proxy_free_ossl_bufmem(pkcs10);
+            return rv;
+        }
+    }
+
+    /*
+     * Allocate some space to hold the cert that we
+     * expect to receive from the EST server.
+     */
+    pkcs7 = malloc(EST_CA_MAX);
+    key = malloc(EST_MAX_CLIENT_PKEY_LEN);
+
+try_again:
+    /*
+     * Attempt to enroll the CSR from the client
+     */
+    start_timer(&send_to_server_timer, ctx,
+                "HTTPS proxy est_proxy_send_keygen_request");
+    rv = est_proxy_send_keygen_request(client_ctx, pkcs10, key, &key_len, pkcs7, &pkcs7_len);
+    stop_timer(&send_to_server_timer);
+    ctx->retry_after_delay = client_ctx->retry_after_delay;
+
+    /*
+     * Handle any errors that likely occurred
+     */
+    switch (rv) {
+    case EST_ERR_NONE:
+        break;
+    /*
+     * Something went wrong with the upstream request to the
+     * server.
+     */
+    case EST_ERR_IP_GETADDR:
+    case EST_ERR_IP_CONNECT:
+    case EST_ERR_SSL_READ:
+        /* This section will map to a 504 repsonse */
+        EST_LOG_ERR("Proxy: Server not reachable %s (%d)",
+                    EST_ERR_NUM_TO_STR(rv), rv);
+        rv = EST_ERR_IP_CONNECT;
+        break;
+    case EST_ERR_SSL_CONNECT:
+    case EST_ERR_FQDN_MISMATCH:
+    case EST_ERR_SSL_WRITE:
+    case EST_ERR_ZERO_LENGTH_BUF:
+    case EST_ERR_MULTIPART_PARSE:
+    case EST_ERR_UNKNOWN:
+    case EST_ERR_BUF_EXCEEDS_MAX_LEN:
+    case EST_ERR_HTTP_UNSUPPORTED:
+        /* This section will map to a 502 repsonse */
+        EST_LOG_ERR(
+            "Proxy: Error while communicating with upstream server %s (%d)",
+            EST_ERR_NUM_TO_STR(rv), rv);
+        rv = EST_ERR_HTTP_UNSUPPORTED;
+        break;
+    case EST_ERR_HTTP_BAD_REQ:
+    case EST_ERR_HTTP_NO_CONTENT:
+    case EST_ERR_HTTP_NOT_FOUND:
+    case EST_ERR_HTTP_LOCKED:
+    case EST_ERR_CA_ENROLL_RETRY:
+        /* This section will pass through the response code from the server */
+        EST_LOG_ERR("Proxy: Passing through error response code from upstream "
+                    "server %s (%d)",
+                    EST_ERR_NUM_TO_STR(rv), rv);
+        break;
+    case EST_ERR_AUTH_FAIL:
+        /* Try one more time if proxy has auth creds */
+        if ((ctx->auth_mode == AUTH_DIGEST || ctx->auth_mode == AUTH_BASIC ||
+             ctx->auth_mode == AUTH_TOKEN) &&
+            client_ctx->auth_mode != AUTH_FAIL) {
+            EST_LOG_INFO(
+                "HTTP Auth failed, trying again with HTTP Auth parameters");
+            goto try_again;
+        }
+        break;
+    default:
+        /* This section will map to a 500 repsonse */
+        EST_LOG_ERR("Proxy: Unhandled error occured while communicating with "
+                    "the upstream server %s (%d)",
+                    EST_ERR_NUM_TO_STR(rv), rv);
+        rv = EST_ERR_UNKNOWN;
+        break;
+    }
+
+    client_ctx->auth_mode = AUTH_NONE;
+
+    /*
+     * Prevent OpenSSL from freeing our data
+     */
+    est_proxy_free_ossl_bufmem(pkcs10);
+
+    /*
+     * If we have a response from the EST server, we pass it
+     * back to the caller.  In HTTP mode we propogate it back right
+     * here and pass it back so it can be passed in the event notification
+     * handler, if needed.  In CoAP mode, we just pass it back to the
+     * caller (the CoAP handler) and have the caller send it back and
+     * also log it with the event handler, if needed.
+     *
+     * If we have a response from the EST server, let's forward
+     * it back to the EST client
+     */
+    if (pkcs7_len > 0 && key_len > 0) {
+        /*
+         * It's assumed the caller wants access to the returned cert
+         * and key so pass it back.
+         */
+        if (returned_cert == NULL || returned_cert_len == NULL
+            || returned_key == NULL || returned_key_len == NULL) {
+            EST_LOG_ERR("Null pointers for return cert or key values");
+            free(pkcs7);
+            memzero_s(key, key_len);
+            free(key);
+            return (EST_ERR_INVALID_PARAMETERS);
+        }
+        *returned_cert = pkcs7;
+        *returned_cert_len = pkcs7_len;
+        *returned_key = key;
+        *returned_key_len = key_len;
+
+        /*
+         * If HTTP mode, we also need to send it right now to the client
+         */
+        if (ctx->transport_mode == EST_HTTP) {
+            rv = est_proxy_propagate_keygen_rsp(http_ctx, key, key_len, pkcs7, pkcs7_len);
+        }
+    } else {
+        EST_LOG_ERR("No certificate or key returned from server.");
+        memzero_s(key, EST_MAX_CLIENT_PKEY_LEN);
+        free(key);
+        free(pkcs7);
+    }
+
+    return (rv);
+}
 
 /*
  * This function is used by the server side of the EST proxy to respond to an
@@ -623,17 +1162,41 @@ static int est_proxy_handle_keygen (EST_CTX *ctx)
  * then respond with this locally set buffer.  If not set, then issue a
  * request to the upstream server.
  */
-static int est_proxy_handle_cacerts (EST_CTX *ctx, void *http_ctx,
-                                     char *path_seg)
+EST_ERROR est_proxy_handle_cacerts (EST_CTX *ctx, void *http_ctx, char *path_seg)
 {
     EST_ERROR rv = EST_ERR_NONE;
     EST_CTX *client_ctx;
     int cacerts_len;
 
+    /* Performance Timers */
+    EST_TIMER send_to_server_timer;
+
+    /*
+     * If the certs are stored locally then send them back to the client
+     */
     if (ctx->ca_certs != NULL) {
-        EST_LOG_INFO("Proxy: CA certs set locally, responding with locally set CA certs response");
-        return(est_handle_cacerts(ctx, ctx->ca_certs, ctx->ca_certs_len,
-                                  http_ctx, path_seg));
+        EST_LOG_INFO("Proxy: CA certs set locally, responding with locally "
+                     "set CA certs response");
+                     
+        if (ctx->transport_mode == EST_HTTP) {
+            rv = est_handle_cacerts(ctx, ctx->ca_certs, ctx->ca_certs_len,
+                                  http_ctx, path_seg);
+        } else if (ctx->transport_mode == EST_COAP) {
+            /* 
+             * since the certs are already in the context,
+             * there is nothing to do here (the coap crts
+             * handler uses the certs stored in the context)
+             */
+            rv = EST_ERR_NONE;
+        } else {
+            EST_LOG_ERR("EST in improper transport mode. Cannot forward "
+                        "cacerts to client.");
+            rv = EST_ERR_BAD_MODE;
+        }
+    /*
+     * If the certs are not stored locally then attempt to retrieve them
+     * from the upstream server
+     */
     } else {
         
         /*
@@ -650,37 +1213,114 @@ static int est_proxy_handle_cacerts (EST_CTX *ctx, void *http_ctx,
          * downstream client on this request.  It's already been validated,
          * place it in ctx for use by client code.
          */
-        if (path_seg) {    
+
+        /* 
+         * If no path segment was given by the client, set it to
+         * the path segment that may already be stored in the proxy context
+         */
+        if (path_seg == NULL) {
+            /* TODO: this will need to be altered when coap can handle path segments */
+            path_seg = ctx->uri_path_segment;
+        }
+
+        /* store the proxy path segment in the client context */
+        if (path_seg != NULL) {
             rv = est_proxy_set_path_segment(client_ctx, path_seg);
             if (rv != EST_ERR_NONE) {
-                EST_LOG_ERR("Unable to save the path segment from the URI into the client context");
-                return (rv);
+                EST_LOG_ERR("Could not store path_seg into client context.");
+                return rv;
             }
-        }        
+        }
 
         /*
          * Invoke client code to retrieve the cacerts.
          * Note: there is no need to authenticate the client (see sec 4.5)
          */
-        EST_LOG_INFO("Proxy: Attempting to retrieve CA certs from upstream server");
+        EST_LOG_INFO(
+            "Proxy: Attempting to retrieve CA certs from upstream server");
+
+        start_timer(&send_to_server_timer, ctx,
+                    "HTTPS proxy est_client_get_cacerts");
         rv = est_client_get_cacerts(client_ctx, &cacerts_len);
+        stop_timer(&send_to_server_timer);
+        ctx->retry_after_delay = client_ctx->retry_after_delay;
 
         /*
          * If the upstream request was successful, the retrieved CA certs will be
          * in the context
          */
-        if (rv == EST_ERR_NONE) {
-            EST_LOG_INFO("Proxy: CA certs retrieved successfully from server. Forwarding to EST client.");
-            return(est_handle_cacerts(client_ctx, client_ctx->retrieved_ca_certs,
-                                      client_ctx->retrieved_ca_certs_len,
-                                      http_ctx, path_seg));
-        } else {
-            /*
-             * Something went wrong with the upstream request to the
-             * server.  Treat this as a not found condition.
+        switch (rv) {
+        case EST_ERR_NONE:
+            EST_LOG_INFO("Proxy: CA certs retrieved successfully from server. "
+                         "Forwarding to EST client.");
+            break;
+        /*
+         * Something went wrong with the upstream request to the
+         * server.
+         */
+        case EST_ERR_IP_GETADDR:
+        case EST_ERR_IP_CONNECT:
+        case EST_ERR_SSL_READ:
+            /* This section will map to a 504 repsonse */
+            EST_LOG_ERR("Proxy: Server not reachable %s (%d)",
+                        EST_ERR_NUM_TO_STR(rv), rv);
+            return (EST_ERR_IP_CONNECT);
+        case EST_ERR_SSL_CONNECT:
+        case EST_ERR_FQDN_MISMATCH:
+        case EST_ERR_SSL_WRITE:
+        case EST_ERR_ZERO_LENGTH_BUF:
+        case EST_ERR_MULTIPART_PARSE:
+        case EST_ERR_UNKNOWN:
+        case EST_ERR_BUF_EXCEEDS_MAX_LEN:
+        case EST_ERR_HTTP_UNSUPPORTED:
+            /* This section will map to a 502 repsonse */
+            EST_LOG_ERR(
+                "Proxy: Error while communicating with upstream server %s (%d)",
+                EST_ERR_NUM_TO_STR(rv), rv);
+            return (EST_ERR_HTTP_UNSUPPORTED);
+        case EST_ERR_HTTP_BAD_REQ:
+        case EST_ERR_HTTP_NO_CONTENT:
+        case EST_ERR_HTTP_NOT_FOUND:
+        case EST_ERR_AUTH_FAIL:
+        case EST_ERR_HTTP_LOCKED:
+        case EST_ERR_CA_ENROLL_RETRY:
+            /* 
+             * This section will pass through the response code from the server
              */
-            EST_LOG_ERR("Proxy: Server not reachable or sent corrupt CA Certs");
-            rv = EST_ERR_HTTP_NOT_FOUND;
+            EST_LOG_ERR("Proxy: Passing through error response code from "
+                        "upstream server %s (%d)",
+                        EST_ERR_NUM_TO_STR(rv), rv);
+            return rv;
+        default:
+            /* This section will map to a 500 repsonse */
+            EST_LOG_ERR("Proxy: Unhandled error occured while communicating "
+                        "with the upstream server %s (%d)",
+                        EST_ERR_NUM_TO_STR(rv), rv);
+            return (EST_ERR_UNKNOWN);
+        }
+
+        /*
+         * If in coap mode then set certs in memory so the coap
+         * code can send it back to the client
+         */
+        if (ctx->transport_mode == EST_COAP) {
+            /*
+             * pass the retrieved cert from the client ctx to the
+             * server ctx to avoid a double free later on
+             */
+            ctx->ca_certs = client_ctx->retrieved_ca_certs;
+            ctx->ca_certs_len = client_ctx->retrieved_ca_certs_len;
+            client_ctx->retrieved_ca_certs = NULL;
+            client_ctx->retrieved_ca_certs_len = 0;
+            rv = EST_ERR_NONE;
+        } else if (ctx->transport_mode == EST_HTTP) {
+            rv = est_handle_cacerts(ctx, client_ctx->retrieved_ca_certs,
+                                    client_ctx->retrieved_ca_certs_len,
+                                    http_ctx, path_seg);
+        } else {
+            EST_LOG_ERR("EST in improper transport mode. Cannot forward "
+                        "cacerts to client.");
+            rv = EST_ERR_BAD_MODE;
         }
     }
     
@@ -692,9 +1332,11 @@ static int est_proxy_handle_cacerts (EST_CTX *ctx, void *http_ctx,
  * This function is used by the server side of the EST proxy to respond to an
  * incoming CSR Attributes request.  This function is similar to the Client API
  * function, est_client_get_csrattrs().
-  */
-static int est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx,
-                                       char *path_seg)
+ */
+EST_ERROR est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx,
+                                      char *path_seg,
+                                      unsigned char **returned_attrs,
+                                      int *returned_attrs_len)
 {
     int rv = EST_ERR_NONE;
     int pop_present;
@@ -702,13 +1344,16 @@ static int est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx,
     int csr_len, csr_pop_len;
     EST_CTX *client_ctx;
 
+    /* Performance Timers */
+    EST_TIMER send_to_server_timer;
+
     /*
      * get the client context for this thread
      */
     client_ctx = get_client_ctx(ctx);
     if (!client_ctx) {
         EST_LOG_ERR("Unable to obtain client context for proxy operation");
-	return (EST_ERR_NO_CTX);
+        return (EST_ERR_NO_CTX);
     }
 
     /*
@@ -716,11 +1361,22 @@ static int est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx,
      * downstream client on this request.  It's already been validated,
      * place it in ctx for use by client code.
      */
-    if (path_seg) {
+
+    /* 
+     * If no path segment was given by the client, set it to
+     * the path segment that may already be stored in the proxy context
+     */
+    if (path_seg == NULL) {
+        /* TODO: this will need to be altered when coap can handle path segments */
+        path_seg = ctx->uri_path_segment;
+    }
+
+    /* store the proxy path segment in the client context */
+    if (path_seg != NULL) {
         rv = est_proxy_set_path_segment(client_ctx, path_seg);
         if (rv != EST_ERR_NONE) {
-            EST_LOG_ERR("Unable to save the path segment from the URI into the client context");
-            return (rv);
+            EST_LOG_ERR("Could not store path_seg into client context.");
+            return rv;
         }
     }
 
@@ -729,7 +1385,11 @@ static int est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx,
      * Note: there is no need to authenticate the client (see sec 4.5)
      */
     EST_LOG_INFO("Proxy: Attempting to retrieve CSR attrs from upstream server");
+    start_timer(&send_to_server_timer, ctx,
+                "HTTPS proxy est_client_get_csrattrs");
     rv = est_client_get_csrattrs(client_ctx, (unsigned char **)&csr_data, &csr_len);
+    stop_timer(&send_to_server_timer);
+    ctx->retry_after_delay = client_ctx->retry_after_delay;
     /*
      * csr_data points to the memory allocated to hold the csr attributes,
      * which will be freed in this call stack.  To prevent a double-free
@@ -737,51 +1397,140 @@ static int est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx,
      */
     client_ctx->retrieved_csrattrs = NULL;
     client_ctx->retrieved_csrattrs_len = 0;
-    if (rv == EST_ERR_NONE) {
-	ctx->csr_pop_present = 0;
-	if (ctx->server_enable_pop) {
-	    rv = est_is_challengePassword_present(csr_data, csr_len, &pop_present);
-	    if (rv != EST_ERR_NONE) {
-		EST_LOG_ERR("Error during PoP/sanity check");
-		est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NO_CONTENT);
-		return (EST_ERR_NONE);
-	    }
-	    ctx->csr_pop_present = pop_present;
-
-	    if (!ctx->csr_pop_present) {
-		if (csr_len == 0) {
-                    csr_data = malloc(EST_CSRATTRS_POP_LEN + 1);
-		    if (!csr_data) {
-			return (EST_ERR_MALLOC);
-		    }
-		    strncpy_s(csr_data, EST_CSRATTRS_POP_LEN + 1, 
-			      EST_CSRATTRS_POP, EST_CSRATTRS_POP_LEN);
-		    csr_data[EST_CSRATTRS_POP_LEN] = 0;
-		    csr_len = EST_CSRATTRS_POP_LEN;
-		    return (est_send_csrattr_data(ctx, csr_data, csr_len, http_ctx));
-		}
-		rv = est_add_challengePassword(csr_data, csr_len, &csr_data_pop, &csr_pop_len);
-		if (rv != EST_ERR_NONE) {
-		    if (csr_data) {
-		        free(csr_data);
-		    }
-		    EST_LOG_ERR("Error during add PoP");
-		    est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NO_CONTENT);
-		    return (EST_ERR_NONE);
-		}
-		if (csr_data) {
-		    free(csr_data);
-		}
-		csr_data = csr_data_pop;
-		csr_len = csr_pop_len;
-	    }
-	}
-    } else {
-	EST_LOG_ERR("Server not reachable or sent corrupt attributes");
-	est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NO_CONTENT);
-	return (EST_ERR_NONE);
+    switch (rv) {
+    case EST_ERR_NONE:
+        break;
+    /*
+     * Something went wrong with the upstream request to the
+     * server.
+     */
+    case EST_ERR_IP_GETADDR:
+    case EST_ERR_IP_CONNECT:
+    case EST_ERR_SSL_READ:
+        /* This section will map to a 504 repsonse */
+        EST_LOG_ERR("Proxy: Server not reachable %s (%d)",
+                    EST_ERR_NUM_TO_STR(rv), rv);
+        return (EST_ERR_IP_CONNECT);
+    case EST_ERR_SSL_CONNECT:
+    case EST_ERR_FQDN_MISMATCH:
+    case EST_ERR_SSL_WRITE:
+    case EST_ERR_ZERO_LENGTH_BUF:
+    case EST_ERR_MULTIPART_PARSE:
+    case EST_ERR_UNKNOWN:
+    case EST_ERR_BUF_EXCEEDS_MAX_LEN:
+    case EST_ERR_HTTP_UNSUPPORTED:
+        /* This section will map to a 502 repsonse */
+        EST_LOG_ERR(
+            "Proxy: Error while communicating with upstream server %s (%d)",
+            EST_ERR_NUM_TO_STR(rv), rv);
+        return (EST_ERR_HTTP_UNSUPPORTED);
+    case EST_ERR_HTTP_NO_CONTENT:
+        if (ctx->server_enable_pop) {
+            break;
+        }
+    case EST_ERR_HTTP_BAD_REQ:
+    case EST_ERR_HTTP_NOT_FOUND:
+    case EST_ERR_AUTH_FAIL:
+    case EST_ERR_HTTP_LOCKED:
+    case EST_ERR_CA_ENROLL_RETRY:
+        /* This section will pass through the response code from the server */
+        EST_LOG_ERR("Proxy: Passing through error response code from upstream "
+                    "server %s (%d)",
+                    EST_ERR_NUM_TO_STR(rv), rv);
+        return rv;
+    default:
+        /* This section will map to a 500 repsonse */
+        EST_LOG_ERR("Proxy: Unhandled error occured while communicating with "
+                    "the upstream server %s (%d)",
+                    EST_ERR_NUM_TO_STR(rv), rv);
+        return (EST_ERR_UNKNOWN);
     }
-    return (est_send_csrattr_data(ctx, csr_data, csr_len, http_ctx));
+    ctx->csr_pop_present = 0;
+    if (ctx->server_enable_pop) {
+        rv = est_is_challengePassword_present(csr_data, csr_len, &pop_present);
+        if (rv != EST_ERR_NONE) {
+            EST_LOG_ERR("Error during PoP/sanity check");
+            /*
+             * send the error back to the client
+             */
+            if (ctx->transport_mode == EST_HTTP) {
+                est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NO_CONTENT);
+            } else if (ctx->transport_mode == EST_COAP) {
+                return (EST_ERR_HTTP_NO_CONTENT);
+            } else {
+                EST_LOG_ERR("EST in improper transport mode. "
+                            "Cannot get csr attrs.");
+                return (EST_ERR_BAD_MODE);
+            }
+            return (EST_ERR_NONE);
+        }
+        ctx->csr_pop_present = pop_present;
+
+        if (!ctx->csr_pop_present) {
+            if (csr_len == 0) {
+                csr_data = malloc(EST_CSRATTRS_POP_LEN + 1);
+                if (!csr_data) {
+                    return (EST_ERR_MALLOC);
+                }
+                strcpy_s(csr_data, EST_CSRATTRS_POP_LEN + 1, EST_CSRATTRS_POP);
+                csr_data[EST_CSRATTRS_POP_LEN] = 0;
+                csr_len = EST_CSRATTRS_POP_LEN;
+                /*
+                * send the attrs back to the client
+                */
+                if (ctx->transport_mode == EST_HTTP) {
+                    return (est_send_csrattr_data(ctx, csr_data, csr_len, http_ctx));
+                } else if (ctx->transport_mode == EST_COAP) {
+                    *returned_attrs = (unsigned char *)csr_data;
+                    *returned_attrs_len = csr_len;
+                    return (EST_ERR_NONE);
+                } else {
+                    EST_LOG_ERR("EST in improper transport mode. "
+                                "Cannot get csr attrs.");
+                    return (EST_ERR_BAD_MODE);
+                }
+            }
+            rv = est_add_challengePassword(csr_data, csr_len, &csr_data_pop, &csr_pop_len);
+            if (rv != EST_ERR_NONE) {
+                if (csr_data) {
+                    free(csr_data);
+                }
+                EST_LOG_ERR("Error during add PoP");
+                /*
+                 * send the error back to the client
+                 */
+                if (ctx->transport_mode == EST_HTTP) {
+                    est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NO_CONTENT);
+                } else if (ctx->transport_mode == EST_COAP) {
+                    return (EST_ERR_HTTP_NO_CONTENT);
+                } else {
+                    EST_LOG_ERR("EST in improper transport mode. "
+                                "Cannot get csr attrs.");
+                    return (EST_ERR_BAD_MODE);
+                }
+                return (EST_ERR_NONE);
+            }
+            if (csr_data) {
+                free(csr_data);
+            }
+            csr_data = csr_data_pop;
+            csr_len = csr_pop_len;
+        }
+    }
+    /*
+     * send the attrs back to the client
+     */
+    if (ctx->transport_mode == EST_HTTP) {
+        return (est_send_csrattr_data(ctx, csr_data, csr_len, http_ctx));
+    } else if (ctx->transport_mode == EST_COAP) {
+        *returned_attrs = (unsigned char *)csr_data;
+        *returned_attrs_len = csr_len;
+        return (EST_ERR_NONE);
+    } else {
+        EST_LOG_ERR("EST in improper transport mode. "
+                    "Cannot get csr attrs.");
+        return (EST_ERR_BAD_MODE);
+    }
 }
 
 
@@ -791,7 +1540,7 @@ static int est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx,
  * It will determine the EST request type and dispatch the request
  * to the appropriate handler.
  *
- * Paramters:
+ * Parameters:
  *      ctx:	    Pointer to EST_CTX
  *      http_ctx:   Context pointer from web server
  *      method:     The HTML method in the request, should be either "GET" or "POST"
@@ -811,6 +1560,18 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
     EST_OPERATION operation;
     char *path_seg = NULL;    
     EST_ERROR rv = EST_ERR_NONE;
+    X509 *peer_cert = NULL;    
+    EST_ERROR event_rc;
+    unsigned char *returned_cert = NULL;
+    int returned_cert_len = 0;
+    unsigned char *returned_key = NULL;
+    int returned_key_len = 0;
+
+    /* Performance Timers */
+    pid_t proc_pid;
+    char pid_str[MAX_PID_STR_LEN + 1];
+    EST_TIMER http_req_timer;
+    EST_TIMER event_cb_timer;
 
     if (!ctx) {
         return (EST_ERR_NO_CTX);
@@ -822,13 +1583,45 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
     if (ctx->est_mode != EST_PROXY) {
         return (EST_ERR_BAD_MODE);
     }
+
+    /*
+     * Get the SSL context, which is required for authenticating
+     * the client.
+     */
+    ssl = (SSL*)mg_get_conn_ssl(http_ctx);
+    if (!ssl) {
+        est_send_http_error(ctx, http_ctx, EST_ERR_NO_SSL_CTX);
+        free(path_seg);
+        path_seg = NULL;
+        return (EST_ERR_NO_SSL_CTX);
+    }
     
+    /*
+     * Get the peer certificate now.  It's needed for some commands.
+     * There may or may not be one, so no need to check to ensure that
+     * we got one.
+     */
+    peer_cert = SSL_get_peer_certificate(ssl);    
+    
+    /*
+     * Announce the 'EST request received from an end point' event.
+     */
+    start_timer(&event_cb_timer, ctx,
+                "HTTP Proxy est_invoke_endpoint_req_event_cb REQ_START");
+    est_invoke_endpoint_req_event_cb(ctx, peer_cert, ssl, NULL,
+                                     (const char *)uri, EST_ENDPOINT_REQ_START);
+    if (ctx->perf_timers_enabled) {
+        proc_pid = GETPID();
+        snprintf(pid_str, MAX_PID_STR_LEN + 1, "%ld", (unsigned long)proc_pid);
+    }
+    stop_timer_with_id(&event_cb_timer, pid_str);
     rv = est_parse_uri(uri, &operation, &path_seg);
     if (rv != EST_ERR_NONE) {
         est_send_http_error(ctx, http_ctx, rv);
         return (rv);
     }
     
+    start_http_req_timer(&http_req_timer, ctx, operation);
     /*
      * See if this is a cacerts request
      */
@@ -843,6 +1636,7 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
             free(path_seg);
             path_seg = NULL;
+            stop_timer_with_id(&http_req_timer, pid_str);
             return (EST_ERR_WRONG_METHOD);
         }
         
@@ -851,8 +1645,10 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
             est_send_http_error(ctx, http_ctx, rc);
             free(path_seg);
             path_seg = NULL;
+            stop_timer_with_id(&http_req_timer, pid_str);
             return (rc);
-        }            
+        } 
+        stop_timer_with_id(&http_req_timer, pid_str);           
     }
 
     /*
@@ -869,15 +1665,17 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
             free(path_seg);
             path_seg = NULL;
+            stop_timer_with_id(&http_req_timer, pid_str);
             return (EST_ERR_WRONG_METHOD);
         }
-	if (!ct) {
+        if (!ct) {
             EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
             est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
             free(path_seg);
             path_seg = NULL;
-	    return (EST_ERR_BAD_CONTENT_TYPE); 
-	}
+            stop_timer_with_id(&http_req_timer, pid_str);
+            return (EST_ERR_BAD_CONTENT_TYPE); 
+        }
         /*
          * In this case body is indicating that no content was passed in, and
          * this is a enroll request.  This cannot be correct because a CSR is
@@ -889,34 +1687,62 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
             est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
             free(path_seg);
             path_seg = NULL;
+            stop_timer_with_id(&http_req_timer, pid_str);
             return (EST_ERR_BAD_CONTENT_LEN);
         }
-        
-        /*
-         * Get the SSL context, which is required for authenticating
-         * the client.
-         */
-        ssl = (SSL*)mg_get_conn_ssl(http_ctx);
-        if (!ssl) {
-            est_send_http_error(ctx, http_ctx, EST_ERR_NO_SSL_CTX);
-            free(path_seg);
-            path_seg = NULL;
-            return (EST_ERR_NO_SSL_CTX);
-        }
 
-        rc = est_proxy_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, path_seg, 0);
+        /*
+         * Announce an EST Enroll or Re-Enroll CSR request is taking
+         * place now.
+         */
+        if (ctx->enroll_req_event_cb != NULL) {
+            start_timer(
+                &event_cb_timer, ctx,
+                "HTTP Proxy est_invoke_enroll_req_event_cb SIMPLE_ENROLL");
+            event_rc = est_invoke_enroll_req_event_cb(ctx, ssl, peer_cert,
+                                                      (unsigned char *)body, body_len,
+                                                      NULL, path_seg, SIMPLE_ENROLL_REQ);
+            stop_timer_with_id(&event_cb_timer, pid_str);
+            if (event_rc != EST_ERR_NONE) {
+                EST_LOG_WARN("Unable to successfully invoke event notification callback\n");
+            }
+        }
+        
+        rc = est_proxy_handle_simple_enroll(ctx, http_ctx, ssl, ct,
+                                            body, body_len, path_seg, 0,
+                                            &returned_cert, &returned_cert_len);
+
+        /*
+         * Announce the response event for this request.
+         */
+        if (ctx->enroll_rsp_event_cb != NULL) {
+            start_timer(
+                &event_cb_timer, ctx,
+                "HTTP Proxy est_invoke_enroll_rsp_event_cb SIMPLE_ENROLL");
+            event_rc = est_invoke_enroll_rsp_event_cb(ctx, ssl, peer_cert,
+                                                      (unsigned char *)body, body_len,
+                                                      NULL, path_seg, SIMPLE_ENROLL_REQ,
+                                                      returned_cert, returned_cert_len, rc);
+            stop_timer_with_id(&event_cb_timer, pid_str);
+            if (event_rc != EST_ERR_NONE) {
+                EST_LOG_WARN("Unable to successfully invoke event notification callback\n");
+            }
+        }
+        /*
+         * We're done with the returned cert now. 
+         */
+        free(returned_cert);
+
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
             EST_LOG_WARN("Enrollment failed with rc=%d (%s)\n", 
 		         rc, EST_ERR_NUM_TO_STR(rc));
-	    if (rc == EST_ERR_AUTH_FAIL) {
-		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
-	    } else {
-		est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
-	    }
+            est_send_http_error(ctx, http_ctx, rc);
             free(path_seg);
             path_seg = NULL;
-            return (EST_ERR_BAD_PKCS10);
+            stop_timer_with_id(&http_req_timer, pid_str);
+            return rc;
         }
+        stop_timer_with_id(&http_req_timer, pid_str);
     }
 
     /*
@@ -933,15 +1759,17 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
             free(path_seg);
             path_seg = NULL;
+            stop_timer_with_id(&http_req_timer, pid_str);
             return (EST_ERR_WRONG_METHOD);
         }
-	if (!ct) {
+        if (!ct) {
             EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
             est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
             free(path_seg);
             path_seg = NULL;
-	    return (EST_ERR_BAD_CONTENT_TYPE); 
-	}
+            stop_timer_with_id(&http_req_timer, pid_str);
+	        return (EST_ERR_BAD_CONTENT_TYPE); 
+	    }
         /*
          * In this case body is indicating that no content was passed in, and
          * this is a enroll request.  This cannot be correct because a CSR is
@@ -953,43 +1781,68 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
             est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
             free(path_seg);
             path_seg = NULL;
+            stop_timer_with_id(&http_req_timer, pid_str);
             return (EST_ERR_BAD_CONTENT_LEN);
         }
-        
-        /*
-         * Get the SSL context, which is required for authenticating
-         * the client.
-         */
-        ssl = (SSL*)mg_get_conn_ssl(http_ctx);
-        if (!ssl) {
-            est_send_http_error(ctx, http_ctx, EST_ERR_NO_SSL_CTX);
-            free(path_seg);
-            path_seg = NULL;
-            return (EST_ERR_NO_SSL_CTX);
-        }
 
-        rc = est_proxy_handle_simple_enroll(ctx, http_ctx, ssl, ct, body, body_len, path_seg, 1);
+        /*
+         * Announce an EST Enroll or Re-Enroll CSR request is taking
+         * place now.
+         */
+        if (ctx->enroll_req_event_cb != NULL) {
+            start_timer(
+                &event_cb_timer, ctx,
+                "HTTP Proxy est_invoke_enroll_req_event_cb REENROLL_REQ");
+            event_rc = est_invoke_enroll_req_event_cb(ctx, ssl, peer_cert,
+                                                      (unsigned char *)body, body_len,
+                                                      NULL, path_seg, REENROLL_REQ);
+            stop_timer_with_id(&event_cb_timer, pid_str);
+            if (event_rc != EST_ERR_NONE) {
+                EST_LOG_WARN("Unable to successfully invoke event notification callback\n");
+            }
+        }
+        
+        rc = est_proxy_handle_simple_enroll(ctx, http_ctx, ssl, ct,
+                                            body, body_len, path_seg, 1,
+                                            &returned_cert, &returned_cert_len);
+
+        /*
+         * Announce the response event for this request.
+         */
+        if (ctx->enroll_rsp_event_cb != NULL) {
+            start_timer(
+                &event_cb_timer, ctx,
+                "HTTP Proxy est_invoke_enroll_rsp_event_cb REENROLL_REQ");
+            event_rc = est_invoke_enroll_rsp_event_cb(ctx, ssl, peer_cert,
+                                                      (unsigned char *)body, body_len,
+                                                      NULL, path_seg, REENROLL_REQ,
+                                                      returned_cert, returned_cert_len, rc);
+            stop_timer_with_id(&event_cb_timer, pid_str);
+            if (event_rc != EST_ERR_NONE) {
+                EST_LOG_WARN("Unable to successfully invoke event notification callback\n");
+            }
+        }
+        /*
+         * We're done with the returned cert now. 
+         */
+        free(returned_cert);
+
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
             EST_LOG_WARN("Reenroll failed with rc=%d (%s)\n", 
 		         rc, EST_ERR_NUM_TO_STR(rc));
-	    if (rc == EST_ERR_AUTH_FAIL) {
-		est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
-	    } else {
-		est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
-	    }
+            est_send_http_error(ctx, http_ctx, rc);
             free(path_seg);
             path_seg = NULL;
-            return (EST_ERR_BAD_PKCS10);
+            stop_timer_with_id(&http_req_timer, pid_str);
+            return (rc);
         }
+        stop_timer_with_id(&http_req_timer, pid_str);
     }
 
-#if 0
     /*
-     * See if this is a keygen request
-     * FIXME: this is currently not implemented
+     * See if this is a server-side keygen request
      */
-    else if (strncmp(uri, EST_KEYGEN_URI, EST_URI_MAX_LEN) == 0) {
-
+    else if (operation == EST_OP_SERVER_KEYGEN) {
         /* Only POST is allowed */
         safec_rc = strcmp_s(method, MAX_HTTP_METHOD_LEN, "POST", &diff);
         if (safec_rc != EOK) {
@@ -998,18 +1851,89 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
 
         if (diff) {
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
+            free(path_seg);
+            path_seg = NULL;
+            stop_timer_with_id(&http_req_timer, pid_str);
             return (EST_ERR_WRONG_METHOD);
         }
-	if (!ct) {
+        if (!ct) {
             EST_LOG_WARN("Incoming HTTP header has no Content-Type header\n");
-	    return (EST_ERR_BAD_CONTENT_TYPE); 
-	}
-        if (est_proxy_handle_keygen(ctx)) {
-            est_send_http_error(ctx, http_ctx, 0); //FIXME: last param should not be zero
-            return (EST_ERR_HTTP_WRITE);           //FIXME: need the appropriate return code
+            est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
+            free(path_seg);
+            path_seg = NULL;
+            stop_timer_with_id(&http_req_timer, pid_str);
+            return (EST_ERR_BAD_CONTENT_TYPE);
         }
+        /*
+         * In this case body is indicating that no content was passed in, and
+         * this is a enroll request.  This cannot be correct because a CSR is
+         * required.  If this continues, and we're in proxy mode, we'll try to
+         * forward this non-existent CSR
+         */
+        if (body == NULL) {
+            EST_LOG_WARN("Incoming HTTP header has no CSR content.\n");
+            est_send_http_error(ctx, http_ctx, EST_ERR_BAD_PKCS10);
+            free(path_seg);
+            path_seg = NULL;
+            stop_timer_with_id(&http_req_timer, pid_str);
+            return (EST_ERR_BAD_CONTENT_LEN);
+        }
+        /*
+         * Announce an EST Server Keygen request is taking place now.
+         */
+        if (ctx->enroll_req_event_cb != NULL) {
+            start_timer(
+                &event_cb_timer, ctx,
+                "HTTP Proxy est_invoke_enroll_req_event_cb SERVERKEYGEN_REQ");
+            event_rc = est_invoke_enroll_req_event_cb(ctx, ssl, peer_cert,
+                                                      (unsigned char *)body, body_len,
+                                                      NULL, path_seg, SERVERKEYGEN_REQ);
+            stop_timer_with_id(&event_cb_timer, pid_str);
+            if (event_rc != EST_ERR_NONE) {
+                EST_LOG_WARN("Unable to successfully invoke event notification callback\n");
+            }
+        }
+
+        rc = est_proxy_handle_server_keygen(ctx, http_ctx, ssl, ct, body, body_len, path_seg,
+                                            &returned_cert, &returned_cert_len, &returned_key, &returned_key_len);
+        
+        if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
+            EST_LOG_WARN("Server-side key generation enrollment failed with rc=%d (%s)\n",
+                         rc, EST_ERR_NUM_TO_STR(rc));
+            est_send_http_error(ctx, http_ctx, rc);
+            free(path_seg);
+            path_seg = NULL;
+            stop_timer_with_id(&http_req_timer, pid_str);
+            return rc;
+        }
+
+        /*
+         * Announce the response event for this request.
+         */
+        if (ctx->enroll_rsp_event_cb != NULL) {
+            start_timer(
+                &event_cb_timer, ctx,
+                "HTTP Proxy est_invoke_enroll_rsp_event_cb SERVERKEYGEN_REQ");
+            event_rc = est_invoke_enroll_rsp_event_cb(ctx, ssl, peer_cert,
+                                                      (unsigned char *)body, body_len,
+                                                      NULL, path_seg, SERVERKEYGEN_REQ,
+                                                      returned_cert, returned_cert_len, rc);
+            stop_timer_with_id(&event_cb_timer, pid_str);
+            if (event_rc != EST_ERR_NONE) {
+                EST_LOG_WARN("Unable to successfully invoke event notification callback\n");
+            }
+        }
+        /* 
+         * returned_cert and returned_key will only hold data if
+         * handle_server_keygen was successful
+         */
+        if(rc == EST_ERR_NONE) {
+            free(returned_cert);
+            memzero_s(returned_key, returned_key_len);
+            free(returned_key);
+        }
+        stop_timer_with_id(&http_req_timer, pid_str);
     }
-#endif
 
     /*
      * See if this is a CSR attributes request
@@ -1025,15 +1949,18 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
             est_send_http_error(ctx, http_ctx, EST_ERR_WRONG_METHOD);
             free(path_seg);
             path_seg = NULL;
+            stop_timer_with_id(&http_req_timer, pid_str);
             return (EST_ERR_WRONG_METHOD);
         }
-        rc = est_proxy_handle_csr_attrs(ctx, http_ctx, path_seg);
-	 if (rc != EST_ERR_NONE) {
+        rc = est_proxy_handle_csr_attrs(ctx, http_ctx, path_seg, NULL, 0);
+        if (rc != EST_ERR_NONE) {
             est_send_http_error(ctx, http_ctx, rc); 
             free(path_seg);
             path_seg = NULL;
+            stop_timer_with_id(&http_req_timer, pid_str);
             return (rc);
         }
+        stop_timer_with_id(&http_req_timer, pid_str);
     }
 
     /*
@@ -1042,6 +1969,15 @@ EST_ERROR est_proxy_http_request (EST_CTX *ctx, void *http_ctx,
     else {
         est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NOT_FOUND);
     }
+
+    /*
+     * Announce the end of the EST endpoint request event.
+     */
+    start_timer(&event_cb_timer, ctx,
+                "HTTP Proxy est_invoke_endpoint_req_event_cb REQ_END");
+    est_invoke_endpoint_req_event_cb(ctx, peer_cert, ssl, NULL,
+                                     (const char *)uri, EST_ENDPOINT_REQ_END);
+    stop_timer_with_id(&event_cb_timer, pid_str);    
 
     free(path_seg);
     path_seg = NULL;
@@ -1069,8 +2005,8 @@ EST_ERROR est_proxy_start (EST_CTX *ctx)
     EST_MG_CONTEXT *mgctx;
 
     if (!ctx) {
-	EST_LOG_ERR("Null context");
-	return (EST_ERR_NO_CTX);
+        EST_LOG_ERR("Null context");
+        return (EST_ERR_NO_CTX);
     }
 
     mgctx = mg_start(ctx);
@@ -1098,8 +2034,8 @@ EST_ERROR est_proxy_stop (EST_CTX *ctx)
     EST_MG_CONTEXT *mgctx;
 
     if (!ctx) {
-	EST_LOG_ERR("Null context");
-	return (EST_ERR_NO_CTX);
+        EST_LOG_ERR("Null context");
+        return (EST_ERR_NO_CTX);
     }
 
     mgctx = (EST_MG_CONTEXT*)ctx->mg_ctx;
@@ -1150,7 +2086,7 @@ EST_ERROR est_proxy_stop (EST_CTX *ctx)
     format specified in the cert_format parameter (e.g. PEM) and may contain
     CRL entries that will be used when authenticating EST clients connecting
     to the server.  The applications must also provide the HTTP realm to use
-    for HTTP authentication and the server cerificate/private key to use for
+    for HTTP authentication and the server certificate/private key to use for
     TLS.
     
     Warning: Including additional intermediate sub-CA certificates that are
@@ -1168,7 +2104,10 @@ EST_CTX * est_proxy_init (unsigned char *ca_chain, int ca_chain_len,
 {
     EST_CTX *ctx;
     int len;
-
+#if HAVE_LIBCOAP
+    EST_ERROR rc;
+#endif
+    
     est_log_version();
 
     /*
@@ -1227,6 +2166,7 @@ EST_CTX * est_proxy_init (unsigned char *ca_chain, int ca_chain_len,
     ctx->retry_period = EST_RETRY_PERIOD_DEF;
     ctx->server_enable_pop = 1;
     ctx->require_http_auth = HTTP_AUTH_REQUIRED;
+    ctx->enhanced_cert_auth_enabled = ENHANCED_CERT_AUTH_DISABLED;
     ctx->server_read_timeout = EST_SSL_READ_TIMEOUT_DEF;
 
     if (est_client_set_uid_pw(ctx, uid, pwd) != EST_ERR_NONE) {
@@ -1250,9 +2190,9 @@ EST_CTX * est_proxy_init (unsigned char *ca_chain, int ca_chain_len,
     /*
      * Load the CA certificate chain into an X509 store structure
      * This will be used in verifying incoming certs during TLS
-     * establishement.
+     * establishment.
      * Also save a way a raw copy of the ca_chain buffer so that
-     * it can be used when creating client contexts used to communincate
+     * it can be used when creating client contexts used to communicate
      * to the upstream server.
      */
     if (est_load_trusted_certs(ctx, ca_chain, ca_chain_len)) {
@@ -1270,7 +2210,7 @@ EST_CTX * est_proxy_init (unsigned char *ca_chain, int ca_chain_len,
     ctx->ca_chain_raw[ca_chain_len] = '\0';
     ctx->ca_chain_raw_len = ca_chain_len;
     
-    strncpy_s(ctx->realm, MAX_REALM, http_realm, MAX_REALM);
+    strcpy_s(ctx->realm, MAX_REALM, http_realm);
     ctx->server_cert = tls_id_cert;
     ctx->server_priv_key = tls_id_key;
     ctx->auth_mode = AUTH_BASIC;
@@ -1280,8 +2220,74 @@ EST_CTX * est_proxy_init (unsigned char *ca_chain, int ca_chain_len,
 
     ctx->client_ctx_array = (CLIENT_CTX_LU_NODE_T *) malloc( sizeof(CLIENT_CTX_LU_NODE_T)*cur_max_ctx_array);
     memzero_s(ctx->client_ctx_array, sizeof(CLIENT_CTX_LU_NODE_T)*cur_max_ctx_array);
+
+#ifdef HAVE_LIBCOAP
+    /*
+     * Initialize the DTLS handshake configuration values.
+     * timeout value set to DEF(0), this will cause the initial timeout value to be
+     * CiscoSSL's value of 1.
+     * mtu value set to DEF(0), this will cause libcoap to specify its default
+     * MTU value of 1152.
+     */
+    ctx->dtls_handshake_timer = EST_DTLS_HANDSHAKE_TIMEOUT_DEF;
+    ctx->dtls_handshake_mtu = EST_DTLS_HANDSHAKE_MTU_DEF;
+    ctx->dtls_session_max = EST_DTLS_SESSION_MAX_DEF;
+    
+    /*
+     * Initialize the CoAP request array
+     */
+    rc = est_coap_init_req_array(ctx, ctx->dtls_session_max);
+    if (rc != EST_ERR_NONE) {
+        EST_LOG_ERR("Failed to initialize the CoAP request array");
+        free(ctx);
+        return NULL;
+    }
+
+    ctx->down_time_timer_initialized = 0;
+#endif    
+    ctx->perf_timers_enabled = 0;
     
     return (ctx);
+}
+
+/*! @brief est_proxy_coap_init_start() is called by the application layer to
+     specify the address/port of the EST server. It must be called after
+     est_proxy_init() and prior to starting the EST proxy functionality.
+ 
+    @param ctx Pointer to EST context for a client session
+    @param port UDP port that this EST proxy will listen on
+ 
+    @return EST_ERROR
+    EST_ERR_NONE - Success.
+    EST_ERR_NO_CTX - NULL value passed for EST context
+    EST_ERR_BAD_MODE - This can only be called when in server or proxy mode
+    EST_ERR_INVALID_PORT_NUM - Invalid port number input, less than zero or
+    greater than 65535
+    EST_ERR_CLIENT_COAP_MODE_NOT_SUPPORTED - Returned if libest has not been
+    built with CoAP support.
+    EST_ERR_COAP_PROCESSING_ERROR - Procesing error occurred with the CoAP
+    library.
+    
+    est_proxy_coap_init_start error checks its input parameters and then stores
+    the port number into the EST context.  It then initializes
+    the CoAP library and setting up the resources with which to respond.
+ */
+EST_ERROR est_proxy_coap_init_start (EST_CTX *ctx, int port)
+{
+    if (!ctx) {
+        return EST_ERR_NO_CTX;
+    } else {
+        if (ctx->est_mode == EST_PROXY) {
+            /* 
+            * Calls function in est_server.c in
+            * order to reduce redundant code.
+            */
+            return(est_server_coap_init_start(ctx, port));
+        } else {
+            EST_LOG_ERR("Cannot start EST proxy with coap when context is not in EST proxy mode.");
+            return EST_ERR_BAD_MODE;
+        }
+    }
 }
 
 
@@ -1418,8 +2424,7 @@ EST_ERROR est_proxy_set_server (EST_CTX *ctx, const char *server, int port)
         return EST_ERR_INVALID_PORT_NUM;
     }
     
-    strncpy_s(ctx->est_server, EST_MAX_SERVERNAME_LEN, server, 
-              EST_MAX_SERVERNAME_LEN);
+    strcpy_s(ctx->est_server, EST_MAX_SERVERNAME_LEN, server);
     ctx->est_port_num = port;
     
     return EST_ERR_NONE;

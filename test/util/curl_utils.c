@@ -30,6 +30,7 @@ long curl_http_get (char *url, char *cacert, void *writefunc)
 {
   long http_code = 0;
   CURL *hnd;
+  CURLcode res;
 
   /*
    * Setup Curl 
@@ -54,10 +55,14 @@ long curl_http_get (char *url, char *cacert, void *writefunc)
   /*
    * Send the HTTP GET request
    */
-  curl_easy_perform(hnd);
+  res = curl_easy_perform(hnd);
+  if(res != CURLE_OK) {
+    fprintf(stderr, "\n%s: curl_easy_perform() response: %s\n\n",
+                    __FUNCTION__, curl_easy_strerror(res));
+  }
 
   /*
-   * Get the HTTP reponse status code from the server
+   * Get the HTTP response status code from the server
    */
   curl_easy_getinfo (hnd, CURLINFO_RESPONSE_CODE, &http_code);
 
@@ -107,7 +112,7 @@ long curl_http_post_srp (char *url, char *ct, char *data,
   long http_code = 0;
   CURL *hnd;
   struct curl_slist *slist1;
-
+  CURLcode res;
 
   /*
    * Set the Content-Type header in the HTTP request 
@@ -160,10 +165,14 @@ long curl_http_post_srp (char *url, char *ct, char *data,
   /*
    * Issue the HTTP request
    */
-  curl_easy_perform(hnd);
+  res = curl_easy_perform(hnd);
+  if(res != CURLE_OK) {
+    fprintf(stderr, "\n%s: curl_easy_perform() response: %s\n\n",
+                    __FUNCTION__, curl_easy_strerror(res));
+  }
 
   /*
-   * Get the HTTP reponse status code from the server
+   * Get the HTTP response status code from the server
    */
   curl_easy_getinfo (hnd, CURLINFO_RESPONSE_CODE, &http_code);
 
@@ -210,6 +219,7 @@ long curl_http_post (char *url, char *ct, char *data,
   long http_code = 0;
   CURL *hnd;
   struct curl_slist *slist1;
+  CURLcode res;
 
   /*
    * Set the Content-Type header in the HTTP request 
@@ -238,6 +248,16 @@ long curl_http_post (char *url, char *ct, char *data,
   curl_easy_setopt(hnd, CURLOPT_FORBID_REUSE, 1L);
   if (cipher_suite) {
     curl_easy_setopt(hnd, CURLOPT_SSL_CIPHER_LIST, cipher_suite);
+#ifndef HAVE_OLD_OPENSSL    
+    /*
+     * At this point it's assumed that if a cipher suite is being specified then
+     * either 1.1 or 1.2 is expected to be used.  1.3 only supports 5 cipher suites,
+     * and while it's possible that a test is trying to limit to one of the 5 AND
+     * 1.3, it's currently not expected.  So, if cipher_suite is specified, also
+     * make sure that 1.1 or 1.2 is being used.
+     */
+    curl_easy_setopt(hnd, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_1|CURL_SSLVERSION_MAX_TLSv1_2);
+#endif    
   }
 
   /*
@@ -254,10 +274,14 @@ long curl_http_post (char *url, char *ct, char *data,
   /*
    * Issue the HTTP request
    */
-  curl_easy_perform(hnd);
+  res = curl_easy_perform(hnd);
+  if(res != CURLE_OK) {
+    fprintf(stderr, "\n%s: curl_easy_perform() response: %s\n\n",
+                    __FUNCTION__, curl_easy_strerror(res));
+  }
 
   /*
-   * Get the HTTP reponse status code from the server
+   * Get the HTTP response status code from the server
    */
   curl_easy_getinfo (hnd, CURLINFO_RESPONSE_CODE, &http_code);
 
@@ -294,6 +318,7 @@ long curl_http_post_cert (char *url, char *ct, char *data,
   long http_code = 0;
   CURL *hnd;
   struct curl_slist *slist1;
+  CURLcode res;
 
   /*
    * Set the Content-Type header in the HTTP request 
@@ -326,10 +351,14 @@ long curl_http_post_cert (char *url, char *ct, char *data,
   /*
    * Issue the HTTP request
    */
-  curl_easy_perform(hnd);
+  res = curl_easy_perform(hnd);
+  if(res != CURLE_OK) {
+    fprintf(stderr, "\n%s: curl_easy_perform() response: %s\n\n",
+                    __FUNCTION__, curl_easy_strerror(res));
+  }
 
   /*
-   * Get the HTTP reponse status code from the server
+   * Get the HTTP response status code from the server
    */
   curl_easy_getinfo (hnd, CURLINFO_RESPONSE_CODE, &http_code);
 
@@ -345,7 +374,7 @@ long curl_http_post_cert (char *url, char *ct, char *data,
 /*
  * This function uses libcurl to send an HTTP POST request to a given URL.  As
  * with the function above, it uses only the cert as the authentication, there
- * is no HTTP Auth.  The only diffference here is that, this version takes in
+ * is no HTTP Auth.  The only difference here is that, this version takes in
  * theheader write function in addition to the data write function, so that
  * they can both be accessed by the calling function.  The parameters are:
  *
@@ -375,6 +404,7 @@ long curl_http_post_cert_write (char *url, char *ct, char *data,
   long http_code = 0;
   CURL *hnd;
   struct curl_slist *slist1;
+  CURLcode res;
 
   /*
    * Set the Content-Type header in the HTTP request 
@@ -418,10 +448,14 @@ long curl_http_post_cert_write (char *url, char *ct, char *data,
   /*
    * Issue the HTTP request
    */
-  curl_easy_perform(hnd);
+  res = curl_easy_perform(hnd);
+  if(res != CURLE_OK) {
+    fprintf(stderr, "\n%s: curl_easy_perform() response: %s\n\n",
+                    __FUNCTION__, curl_easy_strerror(res));
+  }
 
   /*
-   * Get the HTTP reponse status code from the server
+   * Get the HTTP response status code from the server
    */
   curl_easy_getinfo (hnd, CURLINFO_RESPONSE_CODE, &http_code);
 
@@ -463,6 +497,7 @@ long curl_http_post_certuid (char *url, char *ct, char *data,
   long http_code = 0;
   CURL *hnd;
   struct curl_slist *slist1;
+  CURLcode res;
 
   /*
    * Set the Content-Type header in the HTTP request 
@@ -497,10 +532,14 @@ long curl_http_post_certuid (char *url, char *ct, char *data,
   /*
    * Issue the HTTP request
    */
-  curl_easy_perform(hnd);
+  res = curl_easy_perform(hnd);
+  if(res != CURLE_OK) {
+    fprintf(stderr, "\n%s: curl_easy_perform() response: %s\n\n",
+                    __FUNCTION__, curl_easy_strerror(res));
+  }
 
   /*
-   * Get the HTTP reponse status code from the server
+   * Get the HTTP response status code from the server
    */
   curl_easy_getinfo (hnd, CURLINFO_RESPONSE_CODE, &http_code);
 
@@ -536,6 +575,7 @@ long curl_http_custom (char *url, char *cacert, char *myrequest, void *writefunc
 {
   long http_code = 0;
   CURL *hnd;
+  CURLcode res;
 
   /*
    * Setup Curl 
@@ -564,10 +604,14 @@ long curl_http_custom (char *url, char *cacert, char *myrequest, void *writefunc
   /*
    * Send the HTTP GET request
    */
-  curl_easy_perform(hnd);
+  res = curl_easy_perform(hnd);
+  if(res != CURLE_OK) {
+    fprintf(stderr, "\n%s: curl_easy_perform() response: %s\n\n",
+                    __FUNCTION__, curl_easy_strerror(res));
+  }
 
   /*
-   * Get the HTTP reponse status code from the server
+   * Get the HTTP response status code from the server
    */
   curl_easy_getinfo (hnd, CURLINFO_RESPONSE_CODE, &http_code);
 

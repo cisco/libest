@@ -1,0 +1,73 @@
+This directory contains a test EST client BRSKI application.  This example
+code shows how the BRSKI APIs can be used.  This application assumes that
+libEST code base has been built with BRSKI support by adding -enable-brski
+to the ./configure operation.  This README assumes the EST server is listening
+on the local host using port 8085.  The EST process works as follows:
+
+    - First, the BRSKI support enabled and configures by 
+      calling est_client_brski_mode()
+    - Next, est_client_brski_get_voucher() is invoked to obtain
+      the BRSKI voucher from the server.
+    - The BRSKI voucher contains the trust anchor to be used and
+      to obtain this voucher, est_client_brski_copy_voucher() is
+      invoked.  
+    - Next, est_client_brski_send_voucher_status() is called to 
+      indicate that this voucher has been retrieved and is going to be
+      used.
+    - At this point, a normal EST enroll process is performed.
+    - Once the certificate is obtained from the enroll process, 
+      est_client_brski_send_enroll_status() is called to indicate
+      that this certificate has been obtained and will now be used. 
+    
+           
+To run the example:
+
+1.  Set LD_LIBRARY_PATH to include the directories where libest.so
+    and libcrypto.so are installed. For example... 
+
+    export LD_LIBRARY_PATH=/usr/local/ssl/lib:/usr/local/est/lib    
+
+2.  Set the following environment variable to specify the location
+    of the file containing the CA certificates used for verifying
+    the server.  In this example we use the trusted certs for
+    the example EST server:
+
+    export EST_OPENSSL_CACERT=../server/estCA/cacert.crt
+
+    PDB NOTE: This can likely be removed since the first request of
+    the request voucher will obtain the CA certificate.  The first
+    connection will need to be overridden by this application layer
+    code.
+
+3.  Connect to the EST server listening on port 8085 and request to
+	bootstrap.  The example EST server uses the user ID and
+    password estuser/estpwd:
+
+    ./estclient_brski  -s 127.0.0.1 -p 8085 -u estuser -h estpwd  
+
+    Note: The user ID and password are hard-coded in this example.  
+          There is currently no way to change the user ID presented 
+		  to the EST server.
+
+After successfully provisioning a new certificate, the following
+files are generated in the current working directory:
+
+    newcacerts.pkcs7 This file contains the latest copy of
+                    the CA certifications from the EST server.
+    cert-b64.pkcs7  This file contains the newly provisioned
+                    certificate.
+    new_key.pem     This file contains the new keypair that
+                    was generated when creating the certificate
+				    request.  This contains the private key that
+				    matches the public key in the new cert.
+
+Use this command to view the new CA certs returned by the server:
+
+    openssl base64 -d -in ./newcacerts.pkcs7 | \
+        openssl pkcs7 -inform DER -text -print_certs
+
+Use this command to view the new certificate from the server:
+
+    openssl base64 -d -in ./cert-b64.pkcs7 | \
+        openssl pkcs7 -inform DER -text -print_certs
+

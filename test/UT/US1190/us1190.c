@@ -106,7 +106,13 @@ static int us1190_destroy_suite (void)
     return 0;
 }
 
+#ifdef HAVE_OLD_OPENSSL
 static void us1190_test_sslversion (const SSL_METHOD *m, int expect_fail)
+#else
+static void us1190_test_sslversion (const SSL_METHOD *m,
+                                    int min_version, int max_version,
+                                    int expect_fail)
+#endif    
 {
     BIO *conn;
     SSL *ssl;
@@ -116,6 +122,12 @@ static void us1190_test_sslversion (const SSL_METHOD *m, int expect_fail)
     ssl_ctx = SSL_CTX_new(m);
     CU_ASSERT(ssl_ctx != NULL);
 
+#ifndef HAVE_OLD_OPENSSL    
+    rv = SSL_CTX_set_min_proto_version(ssl_ctx, min_version);
+    CU_ASSERT(rv != 0);
+    rv = SSL_CTX_set_max_proto_version(ssl_ctx, max_version);
+    CU_ASSERT(rv != 0);
+#endif
     /*
      * Now that the SSL context is ready, open a socket
      * with the server and bind that socket to the context.
@@ -159,7 +171,13 @@ static void us1190_test1 (void)
     LOG_FUNC_NM
     ;
 
+#ifdef HAVE_OLD_OPENSSL    
     us1190_test_sslversion(SSLv3_client_method(), 1);
+#else    
+    us1190_test_sslversion(TLS_client_method(),
+                           SSL3_VERSION, SSL3_VERSION,
+                           1);
+#endif    
 }
 
 /*
@@ -172,7 +190,13 @@ static void us1190_test2 (void)
     LOG_FUNC_NM
     ;
 
+#ifdef HAVE_OLD_OPENSSL    
     us1190_test_sslversion(TLSv1_client_method(), 1);
+#else    
+    us1190_test_sslversion(TLS_client_method(),
+                           TLS1_VERSION, TLS1_VERSION,
+                           1);
+#endif    
 }
 
 /*
@@ -184,7 +208,13 @@ static void us1190_test3 (void)
     LOG_FUNC_NM
     ;
 
+#ifdef HAVE_OLD_OPENSSL    
     us1190_test_sslversion(TLSv1_1_client_method(), 0);
+#else
+    us1190_test_sslversion(TLS_client_method(),
+                           TLS1_1_VERSION, TLS1_1_VERSION,
+                           0);
+#endif    
 }
 
 /*
@@ -196,7 +226,13 @@ static void us1190_test4 (void)
     LOG_FUNC_NM
     ;
 
+#ifdef HAVE_OLD_OPENSSL    
     us1190_test_sslversion(TLSv1_2_client_method(), 0);
+#else    
+    us1190_test_sslversion(TLS_client_method(),
+                           TLS1_2_VERSION, TLS1_2_VERSION,
+                           0);
+#endif    
 }
 
 /*

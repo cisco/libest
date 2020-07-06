@@ -372,7 +372,7 @@ int main (int argc, char **argv)
     }
 
     /*
-     * Your appliations should save the CA certs to local storage in case
+     * Your applications should save the CA certs to local storage in case
      * they're needed for future use.
      */
     write_binary_file(ca_file_name, new_certs, ca_certs_len); 

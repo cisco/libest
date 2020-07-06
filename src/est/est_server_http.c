@@ -12,7 +12,7 @@
  *
  * May, 2013
  *
- * Copyright (c) 2013-2014, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2013-2014, 2016, 2017, 2018 by cisco Systems, Inc.
  * All rights reserved.
  ***------------------------------------------------------------------
  */
@@ -127,6 +127,7 @@ typedef int socklen_t;
 #define PATH_MAX 4096
 #endif
 
+static int mg_printf(struct mg_connection *conn, const char *fmt, ...);
 
 // Describes a string (chunk of memory).
 struct vec {
@@ -161,7 +162,7 @@ static void sockaddr_to_string (char *buf, size_t len,
               (void*)&usa->sin6.sin6_addr, buf, (socklen_t) len);
 #elif defined(_WIN32)
     // Only Windoze Vista (and newer) have inet_ntop()
-    strncpy_s(buf, MAX_SRC_ADDR, inet_ntoa(usa->sin.sin_addr), len);
+    strcpy_s(buf, MAX_SRC_ADDR, inet_ntoa(usa->sin.sin_addr));
 #else
     inet_ntop(usa->sa.sa_family, (void*)&usa->sin.sin_addr, buf, len);
 #endif
@@ -310,104 +311,6 @@ static int mg_snprintf (struct mg_connection *conn, char *buf, size_t buflen,
     va_end(ap);
 
     return n;
-}
-
-static size_t est_strcspn(const char * str1,const char * str2){
-
-    rsize_t count;
-    errno_t safec_rc; 
-
-    if ((str1 != NULL) && (str1[0] == '\0')) {
-        return 0; 
-    }
-
-    safec_rc = strcspn_s(str1, strnlen_s(str1, RSIZE_MAX_STR),
-            str2, RSIZE_MAX_STR, &count);
-    if (safec_rc != EOK) {
-        EST_LOG_INFO("strcspn_s error 0x%xO\n", safec_rc);
-        return 0;
-    }
-
-    return count; 
-
-
-}
-
-static size_t est_strspn(const char * str1,const char  * str2) {
-
-    rsize_t count;
-    errno_t safec_rc; 
-
-    if ((str1 != NULL) && (str1[0] == '\0')) {
-        return 0; 
-    }
-
-    safec_rc = strspn_s(str1, strnlen_s(str1, RSIZE_MAX_STR), 
-            str2, RSIZE_MAX_STR, &count);
-    if (safec_rc != EOK) {
-        EST_LOG_INFO("strspn_s error 0x%xO\n", safec_rc);
-        return 0; 
-    }
-
-    return count; 
-
-}
-
-// Skip the characters until one of the delimiters characters found.
-// 0-terminate resulting word. Skip the delimiter and following whitespaces.
-// Advance pointer to buffer to the next word. Return found 0-terminated word.
-// Delimiters can be quoted with quotechar.
-char *skip_quoted (char **buf, const char *delimiters,
-                   const char *whitespace, char quotechar)
-{
-    char *p, *begin_word, *end_word, *end_whitespace;
-
-    begin_word = *buf;
-
-    end_word = begin_word + est_strcspn(begin_word,delimiters);
-
-    // Check for quotechar
-    if (end_word > begin_word) {
-        p = end_word - 1;
-        while (*p == quotechar) {
-            // If there is anything beyond end_word, copy it
-            if (*end_word == '\0') {
-                *p = '\0';
-                break;
-            } else {
-
-                rsize_t end_off = (rsize_t) est_strcspn(end_word + 1, delimiters);
-                memmove_s(p, end_off + 1, end_word, end_off + 1);
-                p += end_off; // p must correspond to end_word - 1
-                end_word += end_off + 1;
-            }
-        }
-        for (p++; p < end_word; p++) {
-            *p = '\0';
-        }
-    }
-
-    if (*end_word == '\0') {
-        *buf = end_word;
-    } else {
-
-        end_whitespace = end_word + 1 + est_strspn(end_word + 1, whitespace);
-
-        for (p = end_word; p < end_whitespace; p++) {
-            *p = '\0';
-        }
-
-        *buf = end_whitespace;
-    }
-
-    return begin_word;
-}
-
-// Simplified version of skip_quoted without quote char
-// and whitespace == delimiters
-char *skip (char **buf, const char *delimiters)
-{
-    return skip_quoted(buf, delimiters, delimiters, 0);
 }
 
 
@@ -614,7 +517,7 @@ static int wait_until_socket_is_readable (struct mg_connection *conn)
     EST_UINT read_timeout = conn->read_timeout * 1000;
 
     do {
-        /* accumlate the total amount of time waited */
+        /* accumulate the total amount of time waited */
         total_wait_time += MSEC_POLL_WAIT_TIME;
 
         pfd.fd = conn->client.sock;
@@ -676,7 +579,7 @@ static int pull (FILE *fp, struct mg_connection *conn, char *buf, int len)
 	     * More data may be coming, change nread to zero
 	     * so Mongoose will attempt to read more data
 	     * from the peer.  This would occur if the peer
-	     * initiated an SSL renegotation.
+	     * initiated an SSL renegotiation.
 	     */
 	    nread = 0;
 	    break;
@@ -757,7 +660,7 @@ int mg_write (struct mg_connection *conn, const void *buf, size_t len)
     return (int)total;
 }
 
-int mg_printf (struct mg_connection *conn, const char *fmt, ...)
+static int mg_printf (struct mg_connection *conn, const char *fmt, ...)
 {
     char mem[MG_BUF_LEN], *buf = mem;
     int len;
@@ -903,19 +806,26 @@ static void mg_parse_auth_hdr_basic (struct mg_connection *conn,
     value = s;
 
     len = est_base64_decode(value, both, (MAX_UIDPWD * 2 + 2));
-    if (len <= 0) {
-	EST_LOG_WARN("Base64 decode of HTTP auth header failed, HTTP auth will fail");
-	return;
+    if (len <= 0 || len >= MAX_UIDPWD * 2 + 2) {
+        EST_LOG_WARN(
+            "Base64 decode of HTTP auth header failed, HTTP auth will fail");
+        return;
     }
+
+    /*
+     * The data output from the base64 is a string
+     * so let's treat it as such 
+     */
+    both[len] = '\0';
 
     /*
      * Make sure there's a ':' in the string
      */
     colon_found = strstr_s(both, len, ":", 1, &possible_pw);
     if (colon_found != EOK) {
-	EST_LOG_WARN("Invalid format of Basic HTTP credentials, missing :");
-        memzero_s(both, (MAX_UIDPWD*2+2));
-	return;
+        EST_LOG_WARN("Invalid format of Basic HTTP credentials, missing :");
+        memzero_s(both, (MAX_UIDPWD * 2 + 2));
+        return;
     }
 
     /*
@@ -963,7 +873,7 @@ static void mg_parse_auth_hdr_digest (struct mg_connection *conn,
     ah->mode = AUTH_DIGEST;
 
     // Make modifiable copy of the auth header
-    strncpy_s(buf, MAX_AUTH_HDR_LEN, auth_header + 7, MAX_AUTH_HDR_LEN);
+    strcpy_s(buf, MAX_AUTH_HDR_LEN, auth_header + 7);
     s = buf;
 
     // Parse authorization header
@@ -1046,17 +956,24 @@ static void mg_parse_auth_hdr_token (struct mg_connection *conn,
     s = (char *) auth_header + (strlen(EST_BEARER_TOKEN_STR)-1);
 
     // Gobble initial spaces
-    while (isspace(*(unsigned char*)s)) {
-	s++;
+    while (isspace(*(unsigned char *)s)) {
+        s++;
     }
 
     value = s;
     memzero_s(value_decoded, MAX_AUTH_TOKEN_LEN*2);
     len = est_base64_decode(value, value_decoded, (MAX_AUTH_TOKEN_LEN*2));
-    if (len <= 0) {
-	EST_LOG_WARN("Base64 decode of HTTP auth credentials failed, HTTP auth will fail");
-	return;
+    if (len <= 0 || len >= MAX_AUTH_TOKEN_LEN * 2) {
+        EST_LOG_WARN("Base64 decode of HTTP auth credentials failed, HTTP auth "
+                     "will fail");
+        return;
     }
+
+    /*
+     * The data output from the base64 is a string
+     * so let's treat it as such
+     */
+    value_decoded[len] = '\0';
 
     if (*s != '\0') {
         /*Copy the token into the auth header structure. */
@@ -1066,10 +983,9 @@ static void mg_parse_auth_hdr_token (struct mg_connection *conn,
             EST_LOG_ERR("Failed to obtain memory for authentication token buffer");
         }
     } else {
-	EST_LOG_ERR("Authentication header from client contained no Token");
-    }   
+        EST_LOG_ERR("Authentication header from client contained no Token");
+    }
 }
-
 
 /*
  * This function parses the HTTP Authentication header
@@ -1081,7 +997,7 @@ static void mg_parse_auth_hdr_token (struct mg_connection *conn,
  *
  * Return either good, bad, or missing 
  */
-EST_HTTP_AUTH_HDR_RESULT mg_parse_auth_header (struct mg_connection *conn, 
+EST_HTTP_AUTH_HDR_RESULT mg_parse_auth_header (struct mg_connection *conn,
                                                EST_HTTP_AUTH_HDR *ah)
 {
     const char *auth_header;
@@ -1142,7 +1058,7 @@ EST_HTTP_AUTH_HDR_RESULT mg_parse_auth_header (struct mg_connection *conn,
          * Save the user ID on the connection context.
          * We will want to pass this to the CA later.
          */
-        strncpy_s(conn->user_id, MG_UID_MAX, ah->user, MG_UID_MAX);
+        strcpy_s(conn->user_id, MG_UID_MAX, ah->user);
     }
     
     return EST_AUTH_HDR_GOOD;
@@ -1157,7 +1073,7 @@ void mg_send_authorization_request (struct mg_connection *conn)
               "%s\r\n"
               "%s: 0\r\n"
               "%s: Basic realm=\"%s\"\r\n\r\n",
-	      EST_HTTP_HDR_401,
+	      EST_HTTP_HDR_401_RESP,
 	      EST_HTTP_HDR_CL,
 	      EST_HTTP_HDR_AUTH,
               conn->ctx->est_ctx->realm);
@@ -1168,7 +1084,7 @@ void mg_send_authorization_request (struct mg_connection *conn)
               "%s: 0\r\n"
               "%s: Digest qop=\"auth\", "
               "realm=\"%s\", nonce=\"%lu\"\r\n\r\n",
-	      EST_HTTP_HDR_401,
+	      EST_HTTP_HDR_401_RESP,
 	      EST_HTTP_HDR_CL,
 	      EST_HTTP_HDR_AUTH,
               conn->ctx->est_ctx->realm,
@@ -1179,7 +1095,7 @@ void mg_send_authorization_request (struct mg_connection *conn)
               "%s\r\n"
               "%s: 0\r\n"
               "%s: Bearer realm=\"%s\"\r\n\r\n",
-	      EST_HTTP_HDR_401,
+	      EST_HTTP_HDR_401_RESP,
 	      EST_HTTP_HDR_CL,
 	      EST_HTTP_HDR_AUTH,
               conn->ctx->est_ctx->realm);
@@ -1230,7 +1146,7 @@ static int parse_http_message (char *buf, int len, struct mg_request_info *ri)
 
         buf[request_length - 1] = '\0';
 
-        // RFC says that all initial whitespaces should be ingored
+        // RFC says that all initial whitespaces should be ignored
         while (*buf != '\0' && isspace(*(unsigned char*)buf)) {
             buf++;
         }
@@ -1417,10 +1333,21 @@ static int set_ssl_option (struct mg_context *ctx)
     X509_VERIFY_PARAM *vpm = NULL;
     char sic[12] = "EST";
 
+#ifdef HAVE_OLD_OPENSSL
     if ((ssl_ctx = SSL_CTX_new(SSLv23_server_method())) == NULL) {
+#else
+    if ((ssl_ctx = SSL_CTX_new(TLS_server_method())) == NULL) {
+#endif
         cry(fc(ctx), "SSL_CTX_new (server) error: %s", ssl_error());
         return 0;
     }
+#ifndef HAVE_OLD_OPENSSL
+    /*
+     * Temporarily limit EST to no higher than TLS 1.2
+     */
+    SSL_CTX_set_max_proto_version(ssl_ctx, TLS1_2_VERSION);
+#endif
+    
     ctx->ssl_ctx = ssl_ctx;
     ectx = ctx->est_ctx;
 
@@ -1456,7 +1383,7 @@ static int set_ssl_option (struct mg_context *ctx)
      * above gives us a performance boost.
      *
      * The other options set here are to improve forward
-     * secrecty and comply with the EST draft.
+     * secrecy and comply with the EST draft.
      */
 
     SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2 |
@@ -1553,7 +1480,7 @@ static int set_ssl_option (struct mg_context *ctx)
      * the server.  The reason is the EST draft specifies that
      * all the subordinate CA certs should be included in the
      * cacerts message flow.  Hence, the client will already have
-     * the full cert chain.  Therfore, the TLS handshake will only
+     * the full cert chain. Therefore, the TLS handshake will only
      * contain the server's cert, not the full chain. 
      *
       SSL_CTX_use_certificate_chain_file(ctx->ssl_ctx,
@@ -1670,6 +1597,39 @@ static void process_new_connection (struct mg_connection *conn)
              keep_alive);
 }
 
+#if HAVE_LIBCOAP
+static EST_ERROR est_server_coap_handle_request (EST_CTX *ctx, int fd)
+{
+    int coap_rc;
+    coap_context_t *coap_ctx;
+    
+    coap_ctx = ctx->coap_ctx;
+    
+    /*
+     * Make sure we have a coap based context with
+     * which to operate.
+     */
+    if (coap_ctx == NULL){
+        EST_LOG_ERR("Null CoAP context");
+        return (EST_ERR_NO_CTX);
+    }
+    
+    /*
+     * Take the incoming file descriptor and inject it into the correct
+     * endpoint structure so that the CoAP code will find this socket and
+     * read from it.
+     */
+    coap_ctx->endpoint->sock.fd = fd;
+    
+    coap_rc = est_server_coap_run_once(ctx);
+    if (coap_rc != 0) {
+        EST_LOG_ERR("CoAP processing error");
+        return (EST_ERR_UNKNOWN);
+    }
+    
+    return (EST_ERR_NONE);
+}
+#endif
 
 /*! @brief est_server_handle_request() is used by an application 
     to process an EST request.  The application is responsible
@@ -1706,119 +1666,137 @@ EST_ERROR est_server_handle_request (EST_CTX *ctx, int fd)
     int ssl_err, err_code;
     EST_ERROR rv = EST_ERR_NONE;
     int rc;
-
+    if (memzero_s(&accepted, sizeof(accepted))) {
+        EST_LOG_ERR("Safe C Error: memzero_s");
+    }
     if (!ctx) {
         EST_LOG_ERR("Null EST context");
         return (EST_ERR_NO_CTX);
     }
-    if (!ctx->mg_ctx) {
-        EST_LOG_ERR("Null EST MG context");
-        return (EST_ERR_NO_CTX);
-    }
-
-    accepted.sock = fd;
-    accepted.next = NULL;
     
-    len = sizeof(struct sockaddr_storage);
-    rc = getpeername(fd, (struct sockaddr*)&addr, &len);
-    if (rc < 0) {
-	EST_LOG_ERR("getpeername() failed");
-	/* This should never happen, not sure what would cause this */
-	return (EST_ERR_UNKNOWN);
-    }
-    // deal with both IPv4 and IPv6:
-    if (addr.ss_family == AF_INET) {
-        memcpy_s(&accepted.rsa.sin, sizeof(struct sockaddr_in),
-		 &addr, sizeof(struct sockaddr_in));
-        port = ntohs(accepted.rsa.sin.sin_port);
-        inet_ntop(AF_INET, &accepted.rsa.sin.sin_addr, ipstr, sizeof ipstr);
-    } else { // AF_INET6
-        memcpy_s(&accepted.rsa.sin6, sizeof(struct sockaddr_in6),
-		 &addr, sizeof(struct sockaddr_in6));
-        port = ntohs(accepted.rsa.sin6.sin6_port);
-        inet_ntop(AF_INET6, &accepted.rsa.sin6.sin6_addr, ipstr, sizeof ipstr);
-    }
-    EST_LOG_INFO("Peer IP address: %s", ipstr);
-    EST_LOG_INFO("Peer port      : %d", port);
-
-    conn = (struct mg_connection*)calloc(1, sizeof(*conn) + MAX_REQUEST_SIZE);
-    if (conn == NULL) {
-        cry(fc(ctx->mg_ctx), "%s", "Cannot create new connection struct, OOM");
-	return (EST_ERR_MALLOC);
-    } else {
-        conn->buf_size = MAX_REQUEST_SIZE;
-        conn->buf = (char*)(conn + 1);
-
-        conn->client = accepted;
-        conn->birth_time = time(NULL);
-        conn->ctx = ctx->mg_ctx;
-        conn->read_timeout = ctx->server_read_timeout;
-
-        // Fill in IP, port info early so even if SSL setup below fails,
-        // error handler would have the corresponding info.
-        conn->request_info.remote_port = ntohs(conn->client.rsa.sin.sin_port);
-        memcpy_s(&conn->request_info.remote_ip, 4,
-                 &conn->client.rsa.sin.sin_addr.s_addr, 4);
-        conn->request_info.remote_ip = ntohl(conn->request_info.remote_ip);
-        conn->request_info.is_ssl = 1;
-
+    if (ctx->transport_mode == EST_COAP) {
+        
+#if HAVE_LIBCOAP
+        rv = est_server_coap_handle_request(ctx, fd);
+#else
         /*
-         * EST require TLS,  Setup the TLS tunnel
+         * Should never have gotten this far, but to be sure
          */
-        conn->ssl = SSL_new(conn->ctx->ssl_ctx);
-        if (conn->ssl != NULL) {
-            SSL_set_fd(conn->ssl, conn->client.sock);
-            ssl_err = SSL_accept(conn->ssl); 
-            if (ssl_err <= 0) {
-		err_code = SSL_get_error(conn->ssl, ssl_err);
-		switch (err_code) {
-		case SSL_ERROR_SYSCALL:
-		    EST_LOG_ERR("OpenSSL system call error");
-		    rv = EST_ERR_SYSCALL;
-		    break;
-		case SSL_ERROR_SSL:
-		    /* Some unknown OpenSSL error, dump the 
-		     * OpenSSL error log to learn more about this */
-		    ossl_dump_ssl_errors();
-		    rv = EST_ERR_UNKNOWN;
-		    break;
-		case SSL_ERROR_WANT_READ:
-		case SSL_ERROR_WANT_WRITE:
-		    EST_LOG_INFO("App using non-blocking socket");
-		    process_new_connection(conn);
-		    break;
-		case SSL_ERROR_WANT_X509_LOOKUP:
-		    EST_LOG_ERR("SSL_accept error, wants lookup");
-		    rv = EST_ERR_UNKNOWN;
-		    break;
-		case SSL_ERROR_NONE:
-		default:
-		    break;
-		}
-	    } else {
-		process_new_connection(conn);
-	    }
-            ssl_err = SSL_shutdown(conn->ssl);
-	    switch (ssl_err) {
-	    case 0:
-		/* OpenSSL docs say to call shutdown again for this case */
-		SSL_shutdown(conn->ssl);
-		EST_LOG_INFO("Two-phase SSL_shutdown initiated");
-		break;
-	    case 1:
-		/* Nothing to do, shutdown worked */
-		EST_LOG_INFO("SSL_shutdown succeeded");
-		break;
-	    default:
-		/* Log an error */
-		EST_LOG_WARN("SSL_shutdown failed");
-		break;
-	    }
-            SSL_free(conn->ssl);
-            conn->ssl = NULL;
+        EST_LOG_ERR("CoAP mode configured in EST context but not built into image");
+        rv = EST_ERR_BAD_MODE;
+#endif
+    } else if (ctx->transport_mode == EST_HTTP) {
+    
+        if (!ctx->mg_ctx) {
+            EST_LOG_ERR("Null EST MG context");
+            return (EST_ERR_NO_CTX);
         }
-        memzero_s(conn, sizeof(*conn) + MAX_REQUEST_SIZE);
-        free(conn);
+
+        accepted.sock = fd;
+        accepted.next = NULL;
+    
+        len = sizeof(struct sockaddr_storage);
+        rc = getpeername(fd, (struct sockaddr*)&addr, &len);
+        if (rc < 0) {
+            EST_LOG_ERR("getpeername() failed");
+            /* This should never happen, not sure what would cause this */
+            return (EST_ERR_UNKNOWN);
+        }
+        // deal with both IPv4 and IPv6:
+        if (addr.ss_family == AF_INET) {
+            memcpy_s(&accepted.rsa.sin, sizeof(struct sockaddr_in),
+                     &addr, sizeof(struct sockaddr_in));
+            port = ntohs(accepted.rsa.sin.sin_port);
+            inet_ntop(AF_INET, &accepted.rsa.sin.sin_addr, ipstr, sizeof ipstr);
+        } else { // AF_INET6
+            memcpy_s(&accepted.rsa.sin6, sizeof(struct sockaddr_in6),
+                     &addr, sizeof(struct sockaddr_in6));
+            port = ntohs(accepted.rsa.sin6.sin6_port);
+            inet_ntop(AF_INET6, &accepted.rsa.sin6.sin6_addr, ipstr, sizeof ipstr);
+        }
+        EST_LOG_INFO("Peer IP address: %s", ipstr);
+        EST_LOG_INFO("Peer port      : %d", port);
+
+        conn = (struct mg_connection*)calloc(1, sizeof(*conn) + MAX_REQUEST_SIZE);
+        if (conn == NULL) {
+            cry(fc(ctx->mg_ctx), "%s", "Cannot create new connection struct, OOM");
+            return (EST_ERR_MALLOC);
+        } else {
+            conn->buf_size = MAX_REQUEST_SIZE;
+            conn->buf = (char*)(conn + 1);
+
+            conn->client = accepted;
+            conn->birth_time = time(NULL);
+            conn->ctx = ctx->mg_ctx;
+            conn->read_timeout = ctx->server_read_timeout;
+
+            // Fill in IP, port info early so even if SSL setup below fails,
+            // error handler would have the corresponding info.
+            conn->request_info.remote_port = ntohs(conn->client.rsa.sin.sin_port);
+            memcpy_s(&conn->request_info.remote_ip, 4,
+                     &conn->client.rsa.sin.sin_addr.s_addr, 4);
+            conn->request_info.remote_ip = ntohl(conn->request_info.remote_ip);
+            conn->request_info.is_ssl = 1;
+
+            /*
+             * EST requires TLS,  Setup the TLS tunnel
+             */
+            conn->ssl = SSL_new(conn->ctx->ssl_ctx);
+            if (conn->ssl != NULL) {
+                SSL_set_fd(conn->ssl, conn->client.sock);
+                ssl_err = SSL_accept(conn->ssl); 
+                if (ssl_err <= 0) {
+                    err_code = SSL_get_error(conn->ssl, ssl_err);
+                    switch (err_code) {
+                    case SSL_ERROR_SYSCALL:
+                        EST_LOG_ERR("OpenSSL system call error");
+                        rv = EST_ERR_SYSCALL;
+                        break;
+                    case SSL_ERROR_SSL:
+                        /* Some unknown OpenSSL error, dump the 
+                         * OpenSSL error log to learn more about this */
+                        ossl_dump_ssl_errors();
+                        rv = EST_ERR_UNKNOWN;
+                        break;
+                    case SSL_ERROR_WANT_READ:
+                    case SSL_ERROR_WANT_WRITE:
+                        EST_LOG_INFO("App using non-blocking socket");
+                        process_new_connection(conn);
+                        break;
+                    case SSL_ERROR_WANT_X509_LOOKUP:
+                        EST_LOG_ERR("SSL_accept error, wants lookup");
+                        rv = EST_ERR_UNKNOWN;
+                        break;
+                    case SSL_ERROR_NONE:
+                    default:
+                        break;
+                    }
+                } else {
+                    process_new_connection(conn);
+                }
+                ssl_err = SSL_shutdown(conn->ssl);
+                switch (ssl_err) {
+                case 0:
+                    /* OpenSSL docs say to call shutdown again for this case */
+                    SSL_shutdown(conn->ssl);
+                    EST_LOG_INFO("Two-phase SSL_shutdown initiated");
+                    break;
+                case 1:
+                    /* Nothing to do, shutdown worked */
+                    EST_LOG_INFO("SSL_shutdown succeeded");
+                    break;
+                default:
+                    /* Log an error */
+                    EST_LOG_WARN("SSL_shutdown failed");
+                    break;
+                }
+                SSL_free(conn->ssl);
+                conn->ssl = NULL;
+            }
+            memzero_s(conn, sizeof(*conn) + MAX_REQUEST_SIZE);
+            free(conn);
+        }
+    
     }
     return (rv);
 }
@@ -1875,25 +1853,26 @@ struct mg_context *mg_start (void *user_data)
 EST_ERROR est_send_csrattr_data (EST_CTX *ctx, char *csr_data, int csr_len, void *http_ctx)
 {
    char http_hdr[EST_HTTP_HDR_MAX];
-   int hdrlen;
+   int hdr_len;
 
    if ((csr_len > 0) && csr_data) {
         /*
          * Send HTTP 200 header
          */
-        snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200, EST_HTTP_HDR_EOL,
+        snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200_RESP, EST_HTTP_HDR_EOL,
                  EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
-        hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
+        hdr_len = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
+        snprintf(http_hdr + hdr_len, EST_HTTP_HDR_MAX - hdr_len, "%s: %s%s", EST_HTTP_HDR_CT,
                  EST_HTTP_CT_CSRATTRS, EST_HTTP_HDR_EOL);
-        hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CE,
+        hdr_len = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
+        snprintf(http_hdr + hdr_len, EST_HTTP_HDR_MAX - hdr_len, "%s: %s%s", EST_HTTP_HDR_CE,
                  EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL);
-        hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-        snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
+        hdr_len = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
+        snprintf(http_hdr + hdr_len, EST_HTTP_HDR_MAX - hdr_len, "%s: %d%s%s", EST_HTTP_HDR_CL,
                  csr_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
         if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
             free(csr_data);
+            csr_data = NULL;
             return (EST_ERR_HTTP_WRITE);
         }
 
@@ -1902,15 +1881,18 @@ EST_ERROR est_send_csrattr_data (EST_CTX *ctx, char *csr_data, int csr_len, void
          */
         if (!mg_write(http_ctx, csr_data, csr_len)) {
             free(csr_data);
+            csr_data = NULL;
             return (EST_ERR_HTTP_WRITE);
         }
         free(csr_data);
+        csr_data = NULL;
     } else {
-	if (csr_data) {
+        if (csr_data) {
             free(csr_data);
-	}
+            csr_data = NULL;
+        }
         /* Send a 204 response indicating the server doesn't have a CSR */
-	est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NO_CONTENT);
+        est_send_http_error(ctx, http_ctx, EST_ERR_HTTP_NO_CONTENT);
     }
     return (EST_ERR_NONE);
 }

@@ -123,7 +123,7 @@ static void shutdown_antinat (void)
 {
     int fh;
     char read_pid[MAX_PID_BUF];
-    char cmd[MAX_CMD_BUF];
+    pid_t pid;
     int rv = 0;
     
     fh = open ("./antinat-pid", O_RDWR, 0666);
@@ -131,12 +131,16 @@ static void shutdown_antinat (void)
     (void)read(fh, read_pid, MAX_PID_BUF);    
     printf("pid read back in = %s\n", read_pid);
 
-    snprintf(cmd, MAX_CMD_BUF, "kill %s\n", read_pid);
-    rv = system(cmd);
-
-    if (rv) {
-        printf("Failed to terminate antinat.\n");
+    pid = (pid_t) atoi(read_pid);
+    /* 
+     * Timeout at 1 second
+     * check status every 10 msecs
+     */
+    rv = kill_process(pid, 1000, 10);
+    if(rv) {
+        printf("Failed to terminate antinat properly.\n");
     }
+    return;
 }
 
 static void shutdown_haproxy (void)
@@ -144,21 +148,24 @@ static void shutdown_haproxy (void)
     int fh;
 /*     int readbyte_count = 0; */
     char read_pid[MAX_PID_BUF];
-    char cmd[MAX_CMD_BUF];
+    pid_t pid;
     int rv = 0;
 
     fh = open ("./haproxy.pid", O_RDWR, 0666);
     
-/*     readbyte_count = read(fh, read_pid, MAX_PID_BUF); */
     (void)read(fh, read_pid, MAX_PID_BUF);
     printf("pid read back in = %s\n", read_pid);
 
-    snprintf(cmd, MAX_CMD_BUF, "kill %s\n", read_pid);
-    rv = system(cmd);
-
-    if (rv) {
-        printf("Failed to terminate haproxy.\n");
+    pid = (pid_t) atoi(read_pid);
+    /* 
+     * Timeout at 1 second
+     * check status every 10 msecs
+     */
+    rv = kill_process(pid, 1000, 10);
+    if(rv) {
+        printf("Failed to terminate haproxy properly.\n");
     }
+    return;
 }
 
 
@@ -218,6 +225,8 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
     BIO *bio_err;
     bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
     int approve = 0; 
+    const ASN1_BIT_STRING *cur_cert_sig;
+    const X509_ALGOR *cur_cert_sig_alg;
     
     /*
      * Print out the specifics of this cert
@@ -233,7 +242,15 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
      * This fingerprint can be checked against the anticipated value to determine
      * whether or not the server's cert should be approved.
      */
-    X509_signature_print(bio_err, cur_cert->sig_alg, cur_cert->signature);
+#ifdef HAVE_OLD_OPENSSL    
+    X509_get0_signature((ASN1_BIT_STRING **)&cur_cert_sig,
+                        (X509_ALGOR **)&cur_cert_sig_alg, cur_cert);
+    X509_signature_print(bio_err, (X509_ALGOR *)cur_cert_sig_alg,
+                         (ASN1_BIT_STRING *)cur_cert_sig);
+#else    
+    X509_get0_signature(&cur_cert_sig, &cur_cert_sig_alg, cur_cert);
+    X509_signature_print(bio_err, cur_cert_sig_alg, cur_cert_sig);
+#endif    
 
     if (openssl_cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
         approve = 1;
@@ -1028,7 +1045,7 @@ static void us4020_test9 (void)
 
 #if 0
 /*
- * could be tested, but needs certifcates updated
+ * could be tested, but needs certificates updated
  */
 /*
  * Test for SOCKS 4A mode, with domain name 
@@ -1195,7 +1212,7 @@ int us4020_add_suite (void)
    CU_pSuite pSuite = NULL;
 
    /* add a suite to the registry */
-   pSuite = CU_add_suite("us4020_tok_auth_client", 
+   pSuite = CU_add_suite("us4020_client_proxy", 
 	                  us4020_init_suite, 
 			  us4020_destroy_suite);
    if (NULL == pSuite) {

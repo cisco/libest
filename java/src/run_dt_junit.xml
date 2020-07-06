@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project default="DT" name="CiscoJEST Dev Test Test Cases" xmlns:jacoco="antlib:org.jacoco.ant">
+	<property environment="env"/>
+	<property name="src.dir" location="."/>
+	<property name="result.dir" location="./codecov_dt"/>
+	<property name="result.classes.dir" location="./bin"/>
+	<property name="result.report.dir" location="${result.dir}/site/jacoco"/>    
+	<property name="result.exec.file" location="${result.dir}/jacoco.exec"/>
+	<taskdef uri="antlib:org.jacoco.ant" resource="org/jacoco/ant/antlib.xml">
+	    <classpath path="../lib/jacoco/jacocoant.jar"/>
+	</taskdef>
+	<target name="DT">
+	  <!-- set showoutput to yes so we can get system out messages in the log -->
+	    <jacoco:coverage destfile="${result.exec.file}">
+		<junit fork="yes" printsummary="yes" showoutput="yes">
+			<sysproperty key="java.library.path" value="${env.LD_LIBRARY_PATH}"/>
+			<formatter type="xml"></formatter>
+			<classpath>
+				<pathelement location="../lib/bcpkix-jdk15on-151.jar">
+				</pathelement>
+				<pathelement location="../lib/bcprov-ext-jdk15on-151.jar">
+				</pathelement>
+				<pathelement location="../lib/junit.jar">
+				</pathelement>
+				<pathelement location="../lib/org.hamcrest.core_1.1.0.jar">
+				</pathelement>
+				<pathelement location="bin/ciscojest.jar">
+				</pathelement>
+				<pathelement location="bin">
+				</pathelement>
+				
+			</classpath>
+			<!-- comment out tests except for cacerts -->
+			<test name="com.cisco.c3m.est.test.DT.PKCS10CertificateRequestTest" todir="results"></test>
+			<test name="com.cisco.c3m.est.test.DT.ESTClientTest" todir="results"></test>
+			<test name="com.cisco.c3m.est.test.DT.ESTClientTestNonFIPS" todir="results"></test>
+			<test name="com.cisco.c3m.est.test.DT.CACertsTest" todir="results"></test>
+			<test name="com.cisco.c3m.est.test.DT.CACertsTestNonFIPS" todir="results"></test>
+			<test name="com.cisco.c3m.est.test.DT.FIPSTest" todir="results"></test>
+			<test name="com.cisco.c3m.est.test.DT.ESTClientReEnrollTest" todir="results"></test>
+			<test name="com.cisco.c3m.est.test.DT.ESTClientReEnrollTestNonFIPS" todir="results"></test>
+			<!-- -->
+		</junit>
+	    </jacoco:coverage>
+	</target>
+</project>
+

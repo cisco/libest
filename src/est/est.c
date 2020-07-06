@@ -9,7 +9,7 @@
  *
  * November, 2012
  *
- * Copyright (c) 2012-2014, 2016, 2017 by cisco Systems, Inc.
+ * Copyright (c) 2012-2014, 2016, 2017, 2018, 2019 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -24,6 +24,7 @@
 #endif /*WIN32*/
 #include <stdarg.h>
 #include <string.h>
+#include <ctype.h>
 #include "est.h"
 #include "est_locl.h"
 #include "est_ossl_util.h"
@@ -42,8 +43,10 @@
 #endif  /* DISABLE_BACKTRACE*/
 #endif /* WIN32*/
 
+#ifndef ENABLE_CLIENT_ONLY
 static char hex_chpw[] = {0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 
 			  0xF7, 0x0D, 0x01, 0x09, 0x07};
+#endif
 
 const char *EST_ERR_STRINGS[] = {
     "EST_ERR_NONE",
@@ -53,6 +56,7 @@ const char *EST_ERR_STRINGS[] = {
 static void (*est_log_func)(char *, va_list) = NULL;
 static EST_LOG_LEVEL est_desired_log_lvl = EST_LOG_LVL_ERR;
 static int est_backtrace_enabled = 0;
+
 
 /*
  * This is our default logger routine, which just
@@ -116,6 +120,19 @@ void est_log (EST_LOG_LEVEL lvl, char *format, ...)
     }
     va_end(arguments);
 
+#ifndef ENABLE_CLIENT_ONLY
+    /*
+     * If appropriate, announce that an EST error event occurred.
+     * Make sure this occurs *after* va_end() is called; otherwise
+     * a crash will likely occur when the registered callback
+     * attempts to use the va_list.
+     */
+    va_start(arguments, format);
+    if (lvl == EST_LOG_LVL_ERR) {
+        est_invoke_est_err_event_cb(format, arguments);
+    }
+    va_end(arguments);
+#endif    
 }
 
 #ifdef WIN32
@@ -412,7 +429,7 @@ EVP_PKEY *est_load_key (unsigned char *key, int key_len, int format)
 }
 
 
-
+#ifndef ENABLE_CLIENT_ONLY
 /*
  * This function is used to read the CERTS in a BIO and build a
  * stack of X509* pointers.  This is used during the PEM to
@@ -570,13 +587,10 @@ cleanup:
 
 
 /*
- * Takes a raw char array containg the CA certificates, reads the data
+ * Takes a raw char array containing the CA certificates, reads the data
  * in and loads the certificates on to the context as pkcs7 certs.  This is
  * stored on the EST context and used to respond to the /cacerts request,
  * which requires PKCS7 encoding.
- *
- * This function also loads the x509 store on the context used to
- * verify the peer.
  */
 EST_ERROR est_load_ca_certs (EST_CTX *ctx, unsigned char *raw, int size)
 {
@@ -617,7 +631,7 @@ EST_ERROR est_load_ca_certs (EST_CTX *ctx, unsigned char *raw, int size)
         return (EST_ERR_LOAD_CACERTS);
     }
 
-    ctx->ca_certs = malloc(ctx->ca_certs_len);
+    ctx->ca_certs = calloc(ctx->ca_certs_len + 1, sizeof(char));
     if (!ctx->ca_certs) {
         EST_LOG_ERR("malloc failed");
         BIO_free_all(cacerts);
@@ -629,10 +643,11 @@ EST_ERROR est_load_ca_certs (EST_CTX *ctx, unsigned char *raw, int size)
     BIO_free(in);
     return (EST_ERR_NONE);
 }
+#endif
 
 /*
  * Takes a char array containing the PEM encoded CA certificates,
- * both implicit and explict certs.  These are decoded and loaded
+ * both implicit and explicit certs.  These are decoded and loaded
  * into the trusted_certs_store member on the EST context.  This cert
  * store is used by the TLS stack for peer verification at the TLS
  * layer.
@@ -764,8 +779,31 @@ EST_ERROR est_destroy (EST_CTX *ctx)
         free(ctx->uri_path_segment);
     }
 
+    if(ctx->brski_retrieved_cacert) {
+        free(ctx->brski_retrieved_cacert);
+    }
+
+    if(ctx->brski_retrieved_voucher) {
+        free(ctx->brski_retrieved_voucher);
+    }
+    
+    if (ctx->client_cert_ser_num) {
+        free(ctx->client_cert_ser_num);
+    }
+#if HAVE_LIBCOAP
+    if (ctx->coap_req_array) {
+        free(ctx->coap_req_array);
+    }
+    if(ctx->coap_ctx) {
+        coap_free_context(ctx->coap_ctx);
+    }
+#endif /* HAVE_LIBCOAP */
+#ifndef ENABLE_CLIENT_ONLY
+    mfg_info_list_destroy(ctx);
+#endif
+    
     if (ctx->dh_tmp) {
-	DH_free(ctx->dh_tmp);
+        DH_free(ctx->dh_tmp);
     }
 
     /* Only free the SSL context when acting as a client.  When
@@ -775,8 +813,8 @@ EST_ERROR est_destroy (EST_CTX *ctx)
         ((ctx->est_mode == EST_CLIENT)||(ctx->est_mode == EST_PROXY))) {
         /*
          * If the SSL session had been cached, this means that
-         * SSL_get1_session() has been called, so now it needs to be explictly
-         * freed to get its ref count decrememnted.
+         * SSL_get1_session() has been called, so now it needs to be explicitly
+         * freed to get its ref count decremented.
          */
         if (ctx->sess) {
             SSL_SESSION_free(ctx->sess);
@@ -784,10 +822,12 @@ EST_ERROR est_destroy (EST_CTX *ctx)
         SSL_CTX_free(ctx->ssl_ctx);
     }
 
+#ifndef ENABLE_CLIENT_ONLY
     if (ctx->est_mode == EST_PROXY) {
         proxy_cleanup(ctx);
     }
-
+#endif
+    
     /*
      * And finally free the EST context itself
      */
@@ -795,40 +835,36 @@ EST_ERROR est_destroy (EST_CTX *ctx)
     return (EST_ERR_NONE);
 }
 
-
 /*
- * This routine is used to determine whether the BIO_FLAGS_BASE64_NO_NL 
- * option needs to be used when using the OpenSSL
- * base64 decoder.  It takes a string as input and
- * checks if it contains newline characters.
- *
- * Returns 1 if OpenSSL should use the BIO_FLAGS_BASE64_NO_NL option
- * Returns 0 otherwise
+ * Counts amount of non whitespace characters in src buffer and
+ * also total length of buffer. Instead of traversing the buffer
+ * twice for len and len_no_whitespace, just do it this one time.
  */
-static int est_base64_contains_nl (const char *src, int len)
+static void est_base64_str_analyze (const char *src, int *len_no_whitespace,
+                                     int *len, unsigned char *contains_newline)
 {
-    int i;
-
-    if (len < 64) {
-	/* 
-	 * Any base64 less than 64 bytes shouldn't be a 
-	 * problem for OpenSSL since this is the minimum
-	 * line length for base64 encoding.
-	 */
-	return 0;
+    int i = 0;
+    int temp = -1;
+    *len_no_whitespace = 0;
+    while (src[i]) {
+        if (!isspace(src[i])) {
+            (*len_no_whitespace)++;
+        } else if(src[i] == '\n' && temp == -1) {
+            temp = i;
+        }
+        i++;
     }
-
-    /*
-     * Start looking for newlines at the 64th position
+    /* 
+     * Check to make sure that the newline we found was not
+     * only the last character
      */
-    for (i = 63; i < len-1; i++) {
-	if (src[i] == 0xA) {
-	    return 1;
-	}
+    if(temp != -1 && temp != i - 1) {
+        *contains_newline = 1;
+    } else {
+        *contains_newline = 0;
     }
-    return 0;
+    *len = i;
 }
-
 
 /*
  * This routine is used to decode base64 encoded data.
@@ -843,61 +879,100 @@ int est_base64_decode (const char *src, char *dst, int dst_size)
     BIO *b64, *b64in;
     int len;
     int max_in;
+    int len_no_whitespace;
+    int pad;
+    int expected_decode_len;
+    unsigned char contains_newline;
+    int last_non_whitespace_idx;
 
     /*
-     * When decoding base64, the output will always be smaller by a
-     * ratio of 4:3.  Determine what the max size can be for the input
-     * based on the size of the given output buffer and then make sure that
-     * the actual input buffer is not too big.
+     * Get the length of the base64 encoded data and the length without whitespace.
+     * Make sure it's not too big
      */
-    max_in = ((dst_size * 4) / 3) + 1;
+    est_base64_str_analyze(src, &len_no_whitespace, &len, &contains_newline);
     /*
-     * Get the length of the base64 encoded data.  Make sure it's not too
-     * big
+     * First we have to check how many blocks of 4 there should be 
+     * if a buffer of this size was being base64 encoded
+     * if it was divisible by 3, then divide it by 3 to get the number
+     * of 4-byte blocks, if it was not divisible by 3, add an extra block for padding.
      */
-    len = strnlen_s(src, max_in+1); 
-    if (len > max_in) {
-        EST_LOG_ERR("Source buffer for base64 decode is loo large for destination buffer. "
-                    "source buf len = %d, max input len = %d, max dest len = %d",
-                    len, max_in, dst_size);
-	return (0);
+    max_in = dst_size % 3
+                ? ((dst_size / 3) + 1) * 4
+                : (dst_size / 3) * 4;
+    if (len_no_whitespace > max_in) {
+        EST_LOG_ERR("Source buffer for base64 decode is too large for "
+                    "destination buffer. source buf len_no_whitespace = %d, "
+                    "max input len = %d, max dest len = %d",
+                    len_no_whitespace, max_in, dst_size);
+        return 0;
     }
 
     b64 = BIO_new(BIO_f_base64());
     if (b64 == NULL) {
         EST_LOG_ERR("BIO_new failed while attempting to create base64 BIO");
         ossl_dump_ssl_errors();
-	return (0);
+        return 0;
     }
     b64in = BIO_new_mem_buf((char *)src, len); 
     if (b64in == NULL) {
         EST_LOG_ERR("BIO_new failed while attempting to create mem BIO");
         ossl_dump_ssl_errors();
-	return (0);
+        return 0;
     }
-    if (!est_base64_contains_nl (src, len)) {
-	/*
-	 * Enable the no newlines option if the input
-	 * data doesn't contain any newline characters.
-	 * It's too bad OpenSSL doesn't do this implicitly.
-	 */
+    if (!contains_newline) {
+    /*
+     * Enable the no newlines option if the input
+     * data doesn't contain any newline characters.
+     * It's too bad OpenSSL doesn't do this implicitly.
+     */
         BIO_set_flags(b64,BIO_FLAGS_BASE64_NO_NL);
     }
+    /* Base64 decode will not work properly unless length is divisible by 4 */
+    if(len_no_whitespace % 4) {
+        EST_LOG_ERR("Source buffer length not divisible by 4.");
+        return 0;
+    }
+    /*
+     * Before we count the amount of padding we must ignore
+     * however much whitespace/newlines there are at the end
+     */
+    last_non_whitespace_idx = len - 1;
+    while(isspace(src[last_non_whitespace_idx]) && last_non_whitespace_idx >= 0) {
+        last_non_whitespace_idx--;
+    }
+    /* Check to make sure index is valid */
+    if(last_non_whitespace_idx < 2) {
+        EST_LOG_ERR("Index invalid (%d)", last_non_whitespace_idx);
+        return 0;
+    }
+    /* Count how much padding there is */
+    if(src[last_non_whitespace_idx] == '=') {
+        pad = 1;
+        if (src[last_non_whitespace_idx - 1] == '=') {
+            pad = 2;
+        }
+    } else {
+        pad = 0;
+    }
+    
+    /* 
+     * Calculate final decoded base64 length
+     * so we can later check if the lengths match 
+     */
+    expected_decode_len = ((3 * len_no_whitespace) / 4) - pad;
     b64in = BIO_push(b64, b64in);
     len = BIO_read(b64in, dst, dst_size);
-    if (len <= 0) {
-	EST_LOG_WARN("BIO_read failed while decoding base64 data (%d)", len);
-    } else {
-        /*
-         * Make sure the response is null terminated
-         */
-        dst[len] = 0;
+    if (len != expected_decode_len) {
+	    EST_LOG_WARN("BIO_read failed while decoding base64 data (%d)", len);
+        return 0;
     }
 
     BIO_free_all(b64in);
-    return (len);
+    if (len == 0) {
+        EST_LOG_WARN("%s: returning a len = %d", __FUNCTION__, len);
+    }
+    return len;
 }
-
 
 /*
  * This routine is used to encode base64 data.
@@ -905,10 +980,10 @@ int est_base64_decode (const char *src, char *dst, int dst_size)
  * and a pointer to a buffer to receive the encoded data.
  * The length of the encoded data is returned.  If the return value
  * is zero, then an error occurred.  The max_dest_len parameter
- * is the maximum allowed size of the encoded data.
+ * is the maximum allowed size of the encoded data. The nl param
+ * is whether new lines are wanted.
  */
-int est_base64_encode (const char *src, int actual_src_len, char *dst,
-                       int max_dst_len)
+int est_base64_encode(const char *src, int actual_src_len, char *dst, int max_dst_len, int nl)
 {
     BIO *b64;
     BIO *out;
@@ -916,7 +991,11 @@ int est_base64_encode (const char *src, int actual_src_len, char *dst,
     int actual_dst_len = 0;
     int write_cnt = 0;
     BUF_MEM *bptr = NULL;
-    
+
+    if (!dst) {
+        EST_LOG_ERR("dst is NULL");
+        return 0;
+    }
     /*
      * When encoding base64, the output will always be larger by a
      * ratio of 3:4.  Determine what the max size can be for the input
@@ -950,7 +1029,9 @@ int est_base64_encode (const char *src, int actual_src_len, char *dst,
     /*
      * We don't ever insert new lines
      */
-    BIO_set_flags(out, BIO_FLAGS_BASE64_NO_NL);
+    if (!nl) {
+        BIO_set_flags(out, BIO_FLAGS_BASE64_NO_NL);
+    }
 
     /*
      * Write the source buffer through the BIOs and then get a pointer
@@ -986,14 +1067,18 @@ int est_base64_encode (const char *src, int actual_src_len, char *dst,
  * used for the PoP check.
  */
 #define MAX_FINISHED  100
-char * est_get_tls_uid (SSL *ssl, int is_client)
+char * est_get_tls_uid (SSL *ssl, int *uid_len, int is_client)
 {
     char finished[MAX_FINISHED];
     BIO *bio = NULL, *b64 = NULL;
     BUF_MEM *bptr = NULL;
     int len;
     char *rv = NULL;
+    int version;
+    size_t max_len = 0;
 
+    *uid_len = 0;
+    
     /*
      * RFC5929 states the *first* finished message is used
      * to derive the tls-unique-id.  When session resumption
@@ -1026,21 +1111,40 @@ char * est_get_tls_uid (SSL *ssl, int is_client)
     BIO_get_mem_ptr(bio, &bptr);
 
     /*
+     * Double check the length of the finish message that was
+     * returned.  TLS 1.2 and below it will never be more than 12 bytes.
+     * TLS 1.3 it is the size of the hash function used.  We've base64
+     * encoded it so we need to account for that, plus...
      * Be aware that OpenSSL adds a newline character at the
      * end of the base64 encoded data
      */
-    if (bptr->length != EST_TLS_UID_LEN) {
-        EST_LOG_WARN("TLS UID length mismatch (%d/%d)", bptr->length,
-                     EST_TLS_UID_LEN);
+    version = SSL_version(ssl);
+    if (version > TLS1_2_VERSION) {
+        max_len = EVP_MAX_MD_SIZE*(4/3)+1; /* +1 for the newline */
     } else {
-        rv = malloc(EST_TLS_UID_LEN + 1);
+        max_len = EST_TLS_UID_LEN; /* newline is included in this value */
+    }
+
+    if (bptr->length > max_len) {
+        EST_LOG_ERR("TLS UID length exceeds maximum (%d/%d)", bptr->length,
+                    max_len);
+    } else {
+        rv = calloc(max_len + 1, sizeof(char)); /* +1 for the \0 */
         if (rv == NULL) {
             EST_LOG_ERR("Failed to allocate buffer");
+            BIO_free_all(bio);
             return rv;
-        }    
-        memcpy_s(rv, EST_TLS_UID_LEN, bptr->data, EST_TLS_UID_LEN);
-        rv[EST_TLS_UID_LEN-1] = '\0';
-        EST_LOG_INFO("TLS UID was found");
+        }
+        /*
+         * Need to suppress the newline if it exists.
+         */
+	if (bptr->data[bptr->length - 1] == '\n') {
+	    *uid_len = bptr->length - 1;
+        } else {
+            *uid_len = bptr->length;
+        }
+        memcpy_s(rv, max_len, bptr->data, *uid_len);
+        EST_LOG_INFO("TLS UID was obtained");
     }
     BIO_free_all(bio);
     return rv;
@@ -1049,7 +1153,8 @@ char * est_get_tls_uid (SSL *ssl, int is_client)
 /*
  * This is a utility function to convert a hex value
  * to a string. This is used with the HTTP digest
- * authentication logic.
+ * authentication logic and converting a nonce value to
+ * a string.
  */
 void est_hex_to_str (char *dst, unsigned char *src, int len)
 {
@@ -1080,15 +1185,117 @@ void est_hex_to_str (char *dst, unsigned char *src, int len)
     @return EST_ERROR.
  */
 EST_ERROR est_enable_crl (EST_CTX *ctx)
-{
+{   
+    X509_VERIFY_PARAM *vpm;
+    
     if (!ctx) {
 	EST_LOG_ERR("Null context");
         return (EST_ERR_NO_CTX);
     }
 
+    /*
+     * Client code and server code handle the processing of this
+     * flag differently.  The client side looks at the above
+     * flag during est_client_init() so there's effectively no way
+     * to call this function to set the flag and have it be seen by
+     * the code that processes it because you need the context from
+     * the est_client_init(), so for client mode, action must be
+     * taken right here instead of just setting the flag.
+     */
+    if (ctx->est_mode == EST_CLIENT) {
+        vpm = SSL_CTX_get0_param(ctx->ssl_ctx);
+        X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_CRL_CHECK |
+                                    X509_V_FLAG_CRL_CHECK_ALL);
+        SSL_CTX_set1_param(ctx->ssl_ctx, vpm);
+    }
+
     ctx->enable_crl = 1;
     return (EST_ERR_NONE);
 }
+
+#if 0
+/*
+ * This code is taken directly from OpenSSL 1.0.2. At the moment,
+ * the CSR attribute logic relies upon it, and it is no longer
+ * accessible in OpenSSL 1.1.0.  Until the alternative calls can be
+ * figured out for 1.1.0, this code will stay in EST.
+ */
+ASN1_OBJECT *est_c2i_ASN1_OBJECT (ASN1_OBJECT **a, const unsigned char **pp, long len)
+{
+    ASN1_OBJECT *ret = NULL;
+    const unsigned char *p;
+    unsigned char *data;
+    int i, length;
+
+    /*
+     * Sanity check OID encoding. Need at least one content octet. MSB must
+     * be clear in the last octet. can't have leading 0x80 in subidentifiers,
+     * see: X.690 8.19.2
+     */
+    if (len <= 0 || len > INT_MAX || pp == NULL || (p = *pp) == NULL ||
+        p[len - 1] & 0x80) {
+	EST_LOG_ERR("C2I: invalid object encoding");
+/*         ASN1err(ASN1_F_C2I_ASN1_OBJECT, ASN1_R_INVALID_OBJECT_ENCODING); */
+        return NULL;
+    }
+    /* Now 0 < len <= INT_MAX, so the cast is safe. */
+    length = (int)len;
+    for (i = 0; i < length; i++, p++) {
+        if (*p == 0x80 && (!i || !(p[-1] & 0x80))) {
+            EST_LOG_ERR("C2I: invalid object encoding");
+/*             ASN1err(ASN1_F_C2I_ASN1_OBJECT, ASN1_R_INVALID_OBJECT_ENCODING); */
+            return NULL;
+        }
+    }
+
+    /*
+     * only the ASN1_OBJECTs from the 'table' will have values for ->sn or
+     * ->ln
+     */
+    if ((a == NULL) || ((*a) == NULL) ||
+        !((*a)->flags & ASN1_OBJECT_FLAG_DYNAMIC)) {
+        if ((ret = ASN1_OBJECT_new()) == NULL)
+            return (NULL);
+    } else
+        ret = (*a);
+
+    p = *pp;
+    /* detach data from object */
+    data = (unsigned char *)ret->data;
+    ret->data = NULL;
+    /* once detached we can change it */
+    if ((data == NULL) || (ret->length < length)) {
+        ret->length = 0;
+        if (data != NULL)
+            OPENSSL_free(data);
+        data = (unsigned char *)OPENSSL_malloc(length);
+        if (data == NULL) {
+            EST_LOG_ERR("C2I: malloc failure");            
+/*             i = ERR_R_MALLOC_FAILURE; */
+            goto err;
+        }
+        ret->flags |= ASN1_OBJECT_FLAG_DYNAMIC_DATA;
+    }
+    memcpy(data, p, length);
+    /* reattach data to object, after which it remains const */
+    ret->data = data;
+    ret->length = length;
+    ret->sn = NULL;
+    ret->ln = NULL;
+    /* ret->flags=ASN1_OBJECT_FLAG_DYNAMIC; we know it is dynamic */
+    p += length;
+
+    if (a != NULL)
+        (*a) = ret;
+    *pp = p;
+    return (ret);
+ err:
+/*     ASN1err(ASN1_F_C2I_ASN1_OBJECT, i); */
+    if ((ret != NULL) && ((a == NULL) || (*a != ret)))
+        ASN1_OBJECT_free(ret);
+    return (NULL);
+}
+#endif
 
 /*
  * est_asn1_sanity_test - perform a sanity test on the CSR
@@ -1107,6 +1314,8 @@ EST_ERROR est_asn1_sanity_test (const unsigned char *string, long out_len,
     const unsigned char *ostring = string;
     ASN1_OBJECT *a_object;
     int max_len = MAX_CSRATTRS;
+    int curr_len;
+    const unsigned char *curr_string;    
 
     /*
      * Assume the challengePassword OID is not present
@@ -1119,37 +1328,42 @@ EST_ERROR est_asn1_sanity_test (const unsigned char *string, long out_len,
     }
 
     while (out_len > 0) {
-	j = ASN1_get_object(&string, &len, &tag, &xclass, out_len);
-
+        curr_len = out_len;
+        curr_string = string;
+        
+        j = ASN1_get_object(&string, &len, &tag, &xclass, out_len);
+        
 	EST_LOG_INFO("Sanity: tag=%d, len=%d, j=%d, out_len=%d", tag, len, j, out_len);
 	if (j & 0x80) {
 	    return (EST_ERR_BAD_ASN1_HEX);
         }
 	switch (tag)
-	{
-	case V_ASN1_OBJECT:
-            a_object = c2i_ASN1_OBJECT(NULL, &string, len);
-	    if (a_object != NULL) {
-	        nid = OBJ_obj2nid(a_object);
-		EST_LOG_INFO("NID=%d", nid);
-		if (nid == NID_pkcs9_challengePassword) {
-	            EST_LOG_INFO("challengePassword OID found");
-		    *pop_present = 1; /* just signifiy it's there */
-		    max_len = MAX_CSRATTRS_WITHPOP;
-		}
-		ASN1_OBJECT_free(a_object);
+            {
+            case V_ASN1_OBJECT:
+                a_object = d2i_ASN1_OBJECT(NULL, &curr_string, curr_len);
+                if (a_object != NULL) {
+                    nid = OBJ_obj2nid(a_object);
+                    EST_LOG_INFO("NID=%d", nid);
+                    if (nid == NID_pkcs9_challengePassword) {
+                        EST_LOG_INFO("challengePassword OID found");
+                        *pop_present = 1; /* just signify it's there */
+                        max_len = MAX_CSRATTRS_WITHPOP;
+                    }
+                    string = curr_string;
+                    ASN1_OBJECT_free(a_object);
+                }
+                break;
+            default:
+                /* have to adjust string pointer here */
+                string += len;
+                break;
+            case V_ASN1_SET:
+            case V_ASN1_SEQUENCE:
+                break;
             }
-	    break;
-	default:
-	    /* have to adjust string pointer here */
-	    string += len;
-	    break;
-	case V_ASN1_SET:
-	case V_ASN1_SEQUENCE:
-	    break;
-	}
-	out_len = (out_len_save - (string - ostring));	
+        out_len = (out_len_save - (string - ostring));
     }
+
     if (out_len != 0) {
         return (EST_ERR_BAD_ASN1_HEX);
     }
@@ -1159,6 +1373,7 @@ EST_ERROR est_asn1_sanity_test (const unsigned char *string, long out_len,
     return (EST_ERR_NONE);
 }
 
+#ifndef ENABLE_CLIENT_ONLY
 /*
  * est_is_challengePassword_present - take a base64 
  * encoded ASN.1 string and scan through it to see 
@@ -1178,7 +1393,7 @@ EST_ERROR est_is_challengePassword_present (const char *base64_ptr, int b64_len,
     }
     return (est_asn1_parse_attributes(base64_ptr, b64_len, presence));
 }
-
+#endif
 
 /*
  * est_asn1_parse_attributes - base64 decode and sanity test
@@ -1207,22 +1422,23 @@ EST_ERROR est_asn1_parse_attributes (const char *p, int len, int *pop_present)
     der_len = est_base64_decode(p, (char *)der_ptr, len*2);
     if (der_len <= 0) {
         EST_LOG_ERR("Invalid base64 encoded data");
-	free(der_ptr);
+        free(der_ptr);
         return (EST_ERR_BAD_BASE64);
     }
 
     rv = est_asn1_sanity_test(der_ptr, der_len, pop_present);
     if (rv != EST_ERR_NONE) {
-        EST_LOG_ERR("Invalid ASN1 encoded data. rv = %d (%s)",
-                    rv, EST_ERR_NUM_TO_STR(rv));
-	free(der_ptr);
-	return (rv);
+        EST_LOG_ERR("Invalid ASN1 encoded data. rv = %d (%s)", rv,
+                    EST_ERR_NUM_TO_STR(rv));
+        free(der_ptr);
+        return (rv);
     }
     free(der_ptr);
     return (EST_ERR_NONE);
 }
 
 
+#ifndef ENABLE_CLIENT_ONLY
 /* 
  * est_add_challengePassword - caller has verified that challengePassword 
  * is configured and not included, so add it to the attributes here.
@@ -1246,7 +1462,7 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
     der_len = est_base64_decode(base64_ptr, (char *)der_ptr, b64_len*2);
     if (der_len <= 0) {
         EST_LOG_ERR("Malformed base64 data");
-	free((void *)der_ptr);
+        free((void *)der_ptr);
         return (EST_ERR_MALLOC);
     }
 
@@ -1256,7 +1472,7 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
     (void)ASN1_get_object(&der_ptr, &len, &tag, &xclass, der_len);
 
     if (tag != V_ASN1_SEQUENCE) {
-        EST_LOG_ERR("Malformed ASN.1 Hex, no leanding Sequence");
+        EST_LOG_ERR("Malformed ASN.1 Hex, no leading Sequence");
 	free(orig_ptr);
 	return (EST_ERR_BAD_ASN1_HEX);
     }
@@ -1316,7 +1532,7 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
     }
     memzero_s(csrattrs, new_len*2);
     
-    enc_len = est_base64_encode((const char *)new_der, new_len, (char *)csrattrs, new_len*2);
+    enc_len = est_base64_encode((const char *) new_der, new_len, (char *) csrattrs, new_len * 2, 0);
     if (enc_len <= 0) {
         EST_LOG_ERR("Invalid base64 encoded data");
         free(orig_ptr);
@@ -1336,6 +1552,62 @@ EST_ERROR est_add_challengePassword (const char *base64_ptr, int b64_len,
         free(orig_ptr);
     }
     return (EST_ERR_NONE);
+}
+#endif
+
+/*! @brief est_X509_REQ_sign() Sign an X509 certificate request
+    using the digest and the key passed. Returns OpenSSL error
+    code from X509_REQ_sign_ctx();
+
+    @param csr an X509_REQ structure to be signed
+    @param pkey key to sign the request with
+    @param md the signing digest to be used
+
+    @return int
+ */
+int est_X509_REQ_sign (X509_REQ *csr, EVP_PKEY *pkey, const EVP_MD *md)
+{
+    int rv;
+    EVP_PKEY_CTX *pkctx = NULL;
+#ifdef HAVE_OLD_OPENSSL
+    EVP_MD_CTX md_ctx;
+    EVP_MD_CTX *mctx = &md_ctx;
+    
+    EVP_MD_CTX_init(mctx);    
+#else
+    EVP_MD_CTX *mctx;
+
+    mctx = EVP_MD_CTX_new();
+    if (mctx == NULL) {
+        return 0;
+    }
+#endif
+
+    if (!EVP_DigestSignInit(mctx, &pkctx, md, NULL, pkey)) {
+        return 0;
+    }
+
+    /*
+     * Encode using DER (ASN.1)
+     *
+     * We have to set the modified flag on the X509_REQ because
+     * OpenSSL keeps a cached copy of the DER encoded data in some
+     * cases.  Setting this flag tells OpenSSL to run the ASN
+     * encoding again rather than using the cached copy.
+     */
+#ifdef HAVE_OLD_OPENSSL 
+    csr->req_info->enc.modified = 1;
+#endif
+    
+    rv = X509_REQ_sign_ctx(csr, mctx);
+
+#ifdef HAVE_OLD_OPENSSL
+    EVP_MD_CTX_cleanup(mctx);
+#else
+    EVP_MD_CTX_free(mctx);
+#endif
+    
+    return (rv);
 }
 
 /*! @brief est_add_attributes_helper() Add a NID and its character string to
@@ -1424,15 +1696,14 @@ EST_ERROR est_decode_attributes_helper (char *csrattrs, int csrattrs_len,
     der_len = est_base64_decode(csrattrs, (char *)der_ptr, csrattrs_len*2);
     if (der_len <= 0) {
         EST_LOG_WARN("Invalid base64 encoded data");
-	free(der_ptr);
-	return (EST_ERR_BAD_BASE64);
+        free(der_ptr);
+        return (EST_ERR_BAD_BASE64);
     }
 
     *der = der_ptr;
     *len = der_len;
 
     return (EST_ERR_NONE);
-
 }
 
 
@@ -1458,7 +1729,8 @@ EST_ERROR est_get_attributes_helper (unsigned char **der_ptr, int *der_len, int 
     const unsigned char *string;
     const unsigned char *ostring;
     ASN1_OBJECT *a_object = NULL;
-
+    int curr_len;
+    const unsigned char *curr_string;
 
     if (der_ptr == NULL) {
         return (EST_ERR_INVALID_PARAMETERS);
@@ -1477,34 +1749,38 @@ EST_ERROR est_get_attributes_helper (unsigned char **der_ptr, int *der_len, int 
     }
 
     while (out_len > 0) {
-	j = ASN1_get_object(&string, &len, &tag, &xclass, out_len);
+        curr_len = out_len;
+        curr_string = string;
+        
+        j = ASN1_get_object(&string, &len, &tag, &xclass, out_len);
 
-	if (j & 0x80) {
-	    return (EST_ERR_BAD_ASN1_HEX);
+        if (j & 0x80) {
+            return (EST_ERR_BAD_ASN1_HEX);
         }
-	switch (tag) {
+        switch (tag) {
 
-	case V_ASN1_OBJECT:
-            a_object = c2i_ASN1_OBJECT(NULL, &string, len);
-	    if (a_object != NULL) {
-	        nid = OBJ_obj2nid(a_object);
-		EST_LOG_INFO("NID=%d", nid);
-		*new_nid = nid;
-		*der_len = (out_len_save - (int) (string - ostring));
-		*der_ptr = (unsigned char *)string;
-	        ASN1_OBJECT_free(a_object);
-		return (EST_ERR_NONE);
+        case V_ASN1_OBJECT:
+            a_object = d2i_ASN1_OBJECT(NULL, &curr_string, curr_len);
+            if (a_object != NULL) {
+                nid = OBJ_obj2nid(a_object);
+                EST_LOG_INFO("NID=%d", nid);
+                *new_nid = nid;
+                *der_len = (out_len_save - (int) (curr_string - ostring));
+                *der_ptr = (unsigned char *)curr_string;
+                ASN1_OBJECT_free(a_object);
+                string = curr_string;
+                return (EST_ERR_NONE);
             }
-	    break;
-	default:
-	    /* have to adjust string pointer here */
-	    string += len;
-	    break;
-	case V_ASN1_SET:
-	case V_ASN1_SEQUENCE:
-	    break;
-	}
-	out_len = (out_len_save - (string - ostring));	
+            break;
+        default:
+            /* have to adjust string pointer here */
+            string += len;
+            break;
+        case V_ASN1_SET:
+        case V_ASN1_SEQUENCE:
+            break;
+        }
+        out_len = (out_len_save - (string - ostring));  
     }
 
     return (EST_ERR_NONE);
@@ -1598,6 +1874,16 @@ EST_OPERATION est_parse_operation (char *op_path)
         operation = EST_OP_SIMPLE_ENROLL;
     } else if (!est_strcasecmp_s(op_path, EST_SIMPLE_REENROLL)) {
         operation = EST_OP_SIMPLE_REENROLL;
+    } else if (!est_strcasecmp_s(op_path, EST_SERVER_KEYGEN)) {
+        operation = EST_OP_SERVER_KEYGEN;
+#if ENABLE_BRSKI
+    } else if (!est_strcasecmp_s(op_path, EST_BRSKI_GET_VOUCHER)) {
+        operation = EST_OP_BRSKI_REQ_VOUCHER;
+    } else if (!est_strcasecmp_s(op_path, EST_BRSKI_VOUCHER_STATUS)) {
+        operation = EST_OP_BRSKI_VOUCHER_STATUS;
+    } else if (!est_strcasecmp_s(op_path, EST_BRSKI_ENROLL_STATUS)) {
+        operation = EST_OP_BRSKI_ENROLL_STATUS;
+#endif
     } else {
         operation = EST_OP_MAX;
     }
@@ -1793,6 +2079,16 @@ EST_ERROR est_parse_uri (char *uri, EST_OPERATION *operation,
         *operation = EST_OP_SIMPLE_REENROLL;
     } else if (strncmp(uri, EST_CSR_ATTRS_URI, EST_URI_MAX_LEN) == 0) {
         *operation = EST_OP_CSRATTRS;
+    }  else if (strncmp(uri, EST_KEYGEN_URI, EST_URI_MAX_LEN) == 0) {
+        *operation = EST_OP_SERVER_KEYGEN;
+#if ENABLE_BRSKI
+    } else if (strncmp(uri, EST_BRSKI_GET_VOUCHER_URI, EST_URI_MAX_LEN) == 0) {
+        *operation = EST_OP_BRSKI_REQ_VOUCHER;
+    } else if (strncmp(uri, EST_BRSKI_VOUCHER_STATUS_URI, EST_URI_MAX_LEN) == 0) {
+        *operation = EST_OP_BRSKI_VOUCHER_STATUS;
+    } else if (strncmp(uri, EST_BRSKI_ENROLL_STATUS_URI, EST_URI_MAX_LEN) == 0) {
+        *operation = EST_OP_BRSKI_ENROLL_STATUS;
+#endif        
     } else {
         *operation = EST_OP_MAX;
         rc = EST_ERR_HTTP_INVALID_PATH_SEGMENT;
@@ -1800,6 +2096,71 @@ EST_ERROR est_parse_uri (char *uri, EST_OPERATION *operation,
     }
     
     return rc;
+}
+#endif
+
+#ifdef HAVE_URIPARSER
+EST_ERROR est_parse_path_seg (char *path_seg) 
+{
+    UriParserStateA state;
+    UriUriA parsed_uri;
+    int uriparse_rc;
+    UriPathSegmentA *cur_seg = NULL;
+    char *cur_seg_str = NULL;
+    EST_OPERATION operation;
+    char canned_uri[EST_URI_MAX_LEN];
+
+    /*
+     * build out a canned URI to pass to the uriparser library.
+     * This will cause the incoming path segment to be in the
+     * correct spot within a URI as it gets validated.  Main issue
+     * is the possible use of a ':' in the path segment becoming a
+     * theme delimiter
+     */
+    memzero_s(canned_uri, EST_URI_MAX_LEN);
+    strcpy_s(canned_uri, EST_URI_MAX_LEN, "/.well-known/est/");
+    strcat_s(canned_uri, EST_URI_MAX_LEN, path_seg);
+
+    state.uri = &parsed_uri;
+    uriparse_rc = uriParseUriA(&state, canned_uri);
+    if (uriparse_rc != URI_SUCCESS) {
+        uriFreeUriMembersA(state.uri);
+        return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+    }
+
+    cur_seg = parsed_uri.pathHead;
+    if (cur_seg == NULL) {
+        EST_LOG_ERR("No valid path segment in supplied string");
+        uriFreeUriMembersA(state.uri);
+        return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+    }
+
+    cur_seg = cur_seg->next->next;
+    cur_seg_str = (char *)cur_seg->text.first;
+    operation = est_parse_operation(cur_seg_str);
+        /*
+         * look to see if the operation path comes next:
+         * cacerts, csrattrs, simpleenroll, simplereenroll.
+         * If any of the operations occur in this path segment
+         * string, then this is a problem.
+         */
+    if (operation != EST_OP_MAX) {
+        EST_LOG_ERR("Path segment string contains an operation value. path segment passed in =  %s\n", cur_seg_str);
+        uriFreeUriMembersA(state.uri);
+        return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+    }
+
+    /*
+     * Look to see if there are multiple segments
+     */
+    if ((char *)cur_seg->next != NULL || *(cur_seg->text.afterLast) != '\0') {
+        EST_LOG_ERR("Path segment string contains multiple path segments or more than a path segment");
+        uriFreeUriMembersA(state.uri);        
+        return (EST_ERR_HTTP_INVALID_PATH_SEGMENT);
+    }
+    
+    uriFreeUriMembersA(state.uri);    
+    return (EST_ERR_NONE);
 }
 #endif
 
@@ -1822,8 +2183,8 @@ EST_ERROR est_store_path_segment (EST_CTX *ctx, char *path_segment,
         return EST_ERR_MALLOC;
     }
     
-    if (EOK != strncpy_s(ctx->uri_path_segment, path_segment_len+1,
-                         path_segment, path_segment_len)) {
+    if (EOK != strcpy_s(ctx->uri_path_segment, path_segment_len+1,
+                         path_segment)) {
         return EST_ERR_HTTP_INVALID_PATH_SEGMENT;
     }
     ctx->uri_path_segment[path_segment_len] = '\0';
@@ -1840,12 +2201,479 @@ int est_strcasecmp_s (char *s1, char *s2)
     safec_rc = strcasecmp_s(s1, strnlen_s(s1, RSIZE_MAX_STR), s2, &diff);
 
     if (safec_rc != EOK) {
-    	/*
-    	 * Log that we encountered a SafeC error
-     	 */
-     	EST_LOG_INFO("strcasecmp_s error 0x%xO\n", safec_rc);
+        /*
+         * Log that we encountered a SafeC error
+         */
+        EST_LOG_INFO("strcasecmp_s error 0x%xO\n", safec_rc);
     } 
 
     return diff;
 }
 
+size_t est_strcspn(const char * str1,const char * str2) 
+{
+    rsize_t count;
+    errno_t safec_rc; 
+
+    if ((str1 != NULL) && (str1[0] == '\0')) {
+        return 0; 
+    }
+
+    safec_rc = strcspn_s(str1, strnlen_s(str1, RSIZE_MAX_STR),
+            str2, RSIZE_MAX_STR, &count);
+    if (safec_rc != EOK) {
+        EST_LOG_INFO("strcspn_s error 0x%xO\n", safec_rc);
+        return 0;
+    }
+
+    return count;
+}
+
+
+size_t est_strspn(const char * str1,const char  * str2) 
+{
+    rsize_t count;
+    errno_t safec_rc; 
+
+    if ((str1 != NULL) && (str1[0] == '\0')) {
+        return 0; 
+    }
+
+    safec_rc = strspn_s(str1, strnlen_s(str1, RSIZE_MAX_STR), 
+            str2, RSIZE_MAX_STR, &count);
+    if (safec_rc != EOK) {
+        EST_LOG_INFO("strspn_s error 0x%xO\n", safec_rc);
+        return 0; 
+    }
+
+    return count; 
+
+}
+
+
+// Skip the characters until one of the delimiters characters found.
+// 0-terminate resulting word. Skip the delimiter and following whitespaces.
+// Advance pointer to buffer to the next word. Return found 0-terminated word.
+// Delimiters can be quoted with quotechar.
+char *skip_quoted (char **buf, const char *delimiters,
+                   const char *whitespace, char quotechar)
+{
+    char *p, *begin_word, *end_word, *end_whitespace;
+
+    begin_word = *buf;
+
+    end_word = begin_word + est_strcspn(begin_word,delimiters);
+
+    // Check for quotechar
+    if (end_word > begin_word) {
+        p = end_word - 1;
+        while (*p == quotechar) {
+            // If there is anything beyond end_word, copy it
+            if (*end_word == '\0') {
+                *p = '\0';
+                break;
+            } else {
+
+                rsize_t end_off = (rsize_t) est_strcspn(end_word + 1, delimiters);
+                memmove_s(p, end_off + 1, end_word, end_off + 1);
+                p += end_off; // p must correspond to end_word - 1
+                end_word += end_off + 1;
+            }
+        }
+        for (p++; p < end_word; p++) {
+            *p = '\0';
+        }
+    }
+
+    if (*end_word == '\0') {
+        *buf = end_word;
+    } else {
+
+        end_whitespace = end_word + 1 + est_strspn(end_word + 1, whitespace);
+
+        for (p = end_word; p < end_whitespace; p++) {
+            *p = '\0';
+        }
+
+        *buf = end_whitespace;
+    }
+
+    return begin_word;
+}
+
+// Simplified version of skip_quoted without quote char
+// and whitespace == delimiters
+char *skip (char **buf, const char *delimiters)
+{
+    return skip_quoted(buf, delimiters, delimiters, 0);
+}
+
+/*! @brief est_enable_performance_timers() is used by an application to enable
+    the use and output of the libest performance timers for the given est
+    context. When enabled these timers will output logs that can be parsed to
+    give you performance metrics of different areas of libest as they are
+    executed.
+
+    @param ctx Pointer to the EST context
+
+    The libest performance timers is disabled by default.
+
+    @return EST_ERROR.
+ */
+EST_ERROR est_enable_performance_timers (EST_CTX *ctx)
+{
+#ifndef WIN32
+    if (!ctx) {
+        EST_LOG_ERR("Null context");
+        return (EST_ERR_NO_CTX);
+    }
+
+    ctx->perf_timers_enabled = 1;
+    return (EST_ERR_NONE);
+#else
+    EST_LOG_ERR("Timers are not supported for Windows builds");
+    return EST_ERR_UNKNOWN;
+#endif
+}
+
+/*! @brief est_disable_performance_timers() is used by an application to disable
+    the use and output of the libest performance timers for the given est
+    context.
+
+    @param ctx Pointer to the EST context
+
+    The libest performance timers is disabled by default.
+
+    @return EST_ERROR.
+ */
+EST_ERROR est_disable_performance_timers (EST_CTX *ctx)
+{
+#ifndef WIN32
+    if (!ctx) {
+        EST_LOG_ERR("Null context");
+        return (EST_ERR_NO_CTX);
+    }
+
+    ctx->perf_timers_enabled = 0;
+    return (EST_ERR_NONE);
+#else
+    EST_LOG_ERR("Timers are not supported for Windows builds");
+    return EST_ERR_UNKNOWN;
+#endif
+}
+
+/*
+ * This function creates and starts an EST performance timer when this
+ * functionality is enabled. Pass in the pointer to the timer,the est context,
+ * and the tag you would like to print for this timer. If the input parameters
+ * were NULL an error will be printed, if a timer was given it will be set to
+ * NULL, and a failure (-1) will be returned. If timers are not enabled the tag
+ * stored within the timer will remain NULL, but the ctx will be set to signal
+ * to stop_timer that timers are disabled. The return is an int that signals
+ * success with a 1 and failure with a -1. Note that if the timers are disabled
+ * the function returns a success but doesn't create the full timer.
+ */
+int start_timer (EST_TIMER *timer, EST_CTX *ctx, char *tag) {
+#ifndef WIN32
+    if (timer) {
+        null_timer(timer);
+    }
+    if (!ctx || !tag || !timer) {
+        EST_LOG_ERR("Invalid parameters to start a timer. ctx: (%p) tag: (%p) "
+                    "timer: (%p)",
+                    ctx, tag, timer);
+        return -1;
+    }
+    timer->ctx = ctx;
+    if (!ctx->perf_timers_enabled) {
+        return 1;
+    }
+    gettimeofday(&timer->start, NULL);
+    timer->tag = tag;
+#endif
+    return 1;
+}
+
+#if HAVE_LIBCOAP
+/*
+ * This function creates and starts session, handle request, request gap
+ * performance timers for a coap session, as the session is handling different
+ * requests. Pass in the est context and coap request node to set the timers on.
+ * NOTE: NULL checks of the EST_CTX should be done before making a call to this
+ * function, as this function assumes the context is already set.
+ */
+void start_coap_req_timers (EST_CTX *ctx, coap_req_node_t *req_node) {
+#ifndef WIN32
+    char *tag;
+    if (!req_node) {
+        EST_LOG_ERR("NULL request node given when adding timers");
+        return;
+    }
+    if (!ctx->perf_timers_enabled) {
+        /* 
+         * Add context reference to all timers to tell stop timer that they are
+         * disabled 
+         */
+        req_node->session_timer.ctx = ctx;
+        req_node->handle_req_timer.ctx = ctx;
+        req_node->session_timer.ctx = ctx;
+        return;
+    }
+    switch (req_node->cur_req) {
+    case EST_COAP_REQ_RESET:
+        if (!is_started(&(req_node->session_timer))) {
+            start_timer(&(req_node->session_timer), ctx, "CoAP session_timer");
+            /* capture the starting request gap */
+            start_timer(&(req_node->req_gap_timer), ctx, "CoAP req_gap_timer");
+        } else {
+            /* If the session is started tag is not NULL */
+            EST_LOG_WARN(
+                "Session timer (%s) told to start when already running",
+                req_node->session_timer.tag);
+        }
+        return;
+    case EST_COAP_REQ_CRTS:
+        tag = "CoAP handle_req_timer crts";
+        break;
+    case EST_COAP_REQ_ATT:
+        tag = "CoAP handle_req_timer att";
+        break;
+    case EST_COAP_REQ_SEN:
+        tag = "CoAP handle_req_timer sen";
+        break;
+    case EST_COAP_REQ_SREN:
+        tag = "CoAP handle_req_timer sren";
+        break;
+    case EST_COAP_REQ_SKG:
+        tag = "CoAP handle_req_timer skg";
+        break;
+    default:
+        EST_LOG_ERR("Attempted to start timers on invalid EST_COAP_REQ type");
+        return;
+    }
+    if (!is_started(&(req_node->handle_req_timer))) {
+        start_timer(&(req_node->handle_req_timer), ctx, tag);
+    } else {
+        EST_LOG_WARN("Handler timer (%s) told to start when already running",
+                     req_node->handle_req_timer.tag);
+    }
+#endif
+}
+
+/*
+ * This function stops the handle request, and starts the request gap
+ * performance timers for a coap session, to record the amount of time the
+ * server is waiting on a session. Pass in the est context and coap request node
+ * to enter this state.
+ * NOTE: NULL checks of the EST_CTX should be done before making a call to this
+ * function, as this function assumes the context is already set.
+ */
+void enter_wait_coap_req_timers (EST_CTX *ctx, coap_req_node_t *req_node) {
+#ifndef WIN32
+    char *tag;
+    if (!ctx->perf_timers_enabled)  {
+        return;
+    }
+    switch (req_node->cur_req) {
+    case EST_COAP_REQ_CRTS:
+        tag = "CoAP req_gap_timer crts";
+        break;
+    case EST_COAP_REQ_ATT:
+        tag = "CoAP req_gap_timer att";
+        break;
+    case EST_COAP_REQ_SEN:
+        tag = "CoAP req_gap_timer sen";
+        break;
+    case EST_COAP_REQ_SREN:
+        tag = "CoAP req_gap_timer sren";
+        break;
+    case EST_COAP_REQ_SKG:
+        tag = "CoAP req_gap_timer skg";
+        break;
+    default:
+        EST_LOG_ERR("Attempted to start timers on invalid EST_COAP_REQ type");
+        return;
+    }
+    if (is_started(&(req_node->handle_req_timer))) {
+        stop_timer_with_id(&(req_node->handle_req_timer), req_node->key);
+    } else {
+        /* If the session is started tag is not NULL */
+        EST_LOG_WARN("Handler timer (%s) told to stop when it wasn't started",
+                     req_node->handle_req_timer.tag);
+    }
+    if (!is_started(&(req_node->req_gap_timer))) {
+        start_timer(&(req_node->req_gap_timer), ctx, tag);
+    } else {
+        EST_LOG_WARN("Gap timer (%s) told to start when already running",
+                     req_node->req_gap_timer.tag);
+    }
+#endif
+}
+#endif
+/*
+ * Start the http_req_timer with the applicable tag. Checks for NULL pointers
+ * should be done before calling this function. If timers are disabled this
+ * function is a no-op.
+ * NOTE: NULL checks of the EST_CTX should be done before making a call to this
+ * function, as this function assumes the context is already set.
+ */
+void start_http_req_timer (EST_TIMER *timer, EST_CTX *est_ctx, EST_OPERATION op)
+{
+#ifndef WIN32
+    char *tag;
+    if (!est_ctx->perf_timers_enabled) {
+        /* 
+         * Add context reference to timer to tell stop timer that this timer is
+         * disabled 
+         */
+        timer->ctx = est_ctx;
+        return;
+    }
+    switch (op) {
+    case EST_OP_CACERTS:
+        tag = "HTTP cacerts req";
+        break;
+    case EST_OP_CSRATTRS:
+        tag = "HTTP csrattrs req";
+        break;
+    case EST_OP_SIMPLE_ENROLL:
+        tag = "HTTP simpleenroll req";
+        break;
+    case EST_OP_SIMPLE_REENROLL:
+        tag = "HTTP simplereenroll req";
+        break;
+    case EST_OP_SERVER_KEYGEN:
+        tag = "HTTP serverkeygen req";
+        break;
+    default:
+        EST_LOG_ERR(
+            "Attempted to start request timer for unsupported req type");
+        return;
+    }
+    start_timer(timer, est_ctx, tag);
+#endif
+}
+
+/*
+ * This function stops the passed in EST performance timer and prints out the
+ * log message if performance timers are enabled in the EST context within the
+ * timer. This will print out the elapsed time in seconds down to microseconds
+ * precision. The return is an int that signals success with a 1 and failure
+ * with a -1. Note that if the timers are disabled the function simply returns a
+ * success.
+ */
+int stop_timer (EST_TIMER *timer) {
+#ifndef WIN32
+    struct timeval diff;
+    if (!timer) {
+        EST_LOG_ERR("Attempted to stop a NULL timer. timer: (%p)", timer);
+        return -1;
+    }
+    if (!timer->ctx) {
+        EST_LOG_ERR("Invalid timer being stopped. timer.ctx: (%p)", timer->ctx);
+        return -1;
+    }
+    if (!timer->ctx->perf_timers_enabled) {
+        return 1;
+    }
+    if (!timer->tag) {
+        EST_LOG_ERR("Timer being stopped has no tag. timer.tag: (%p)",
+                    timer->tag);
+        return -1;
+    }
+    gettimeofday(&(timer->end), NULL);
+    timersub(&(timer->end), &(timer->start), &diff);
+    EST_LOG_TIMER("%s => %ld.%06ld seconds", timer->tag, diff.tv_sec,
+                  diff.tv_usec);
+#endif
+    return 1;
+}
+
+/*
+ * This function stops the passed in EST performance timer and prints out the
+ * log message with an appended id string if performance timers are enabled in
+ * the EST context within the timer. This will print out the elapsed time in
+ * seconds down to microseconds precision. The return is an int that signals
+ * success with a 1 and failure with a -1. Note that if the timers are disabled
+ * the function simply returns a success.
+ */
+int stop_timer_with_id (EST_TIMER *timer, char *id) {
+#ifndef WIN32
+    struct timeval diff;
+    if (!timer) {
+        EST_LOG_ERR("Attempted to stop a NULL timer. timer: (%p)", timer);
+        return -1;
+    }
+    if (!timer->ctx) {
+        EST_LOG_ERR("Invalid timer being stopped. timer.ctx: (%p)", timer->ctx);
+        return -1;
+    }
+    if (!id) {
+        EST_LOG_ERR("Asked to print with ID but ID was NULL for timer %s",
+                    timer->tag);
+        return -1;
+    }
+    if (!timer->ctx->perf_timers_enabled) {
+        return 1;
+    }
+    if (!timer->tag) {
+        EST_LOG_ERR("Timer being stopped has no tag. timer.tag: (%p)",
+                    timer->tag);
+        return -1;
+    }
+    gettimeofday(&(timer->end), NULL);
+    timersub(&(timer->end), &(timer->start), &diff);
+    EST_LOG_TIMER("%s--%s => %ld.%06ld seconds", timer->tag, id, diff.tv_sec,
+                  diff.tv_usec);
+#endif
+    return 1;
+}
+
+void null_timer (EST_TIMER *timer) {
+#ifndef WIN32
+    timer->ctx = NULL;
+    timer->tag = NULL;
+    timerclear(&(timer->start));
+    timerclear(&(timer->end));
+#endif
+    return;
+}
+unsigned char is_same_time (struct timeval *time1, struct timeval *time2) {
+    /*
+     * Some platforms have broken timercmp of == >= <=
+     * Use the more portable form 
+     */
+#ifndef WIN32
+    return !timercmp(time1, time2, !=);
+#else 
+    return 0;
+#endif
+}
+unsigned char is_started (EST_TIMER *timer) {
+    /*
+     * timer is started if it is initialized and the start time is set
+     */
+#ifndef WIN32
+    return timer->tag && timerisset(&(timer->start));
+#else
+    return 0;
+#endif
+}
+unsigned char is_stopped (EST_TIMER *timer) {
+    /*
+     * timer is stopped if it is uninitialized or the end time is set
+     */
+#ifndef WIN32
+    return !timer->tag || timerisset(&(timer->end));
+#else
+    return 0;
+#endif
+}
+
+unsigned char is_running (EST_TIMER *timer) {
+#ifndef WIN32
+    return is_started(timer) && !is_stopped(timer);
+#else
+    return 0;
+#endif
+}

@@ -1,0 +1,3 @@
+#openssl CA index file is getting managled 
+#on windows, set it to lf
+index.txt text eol=lf

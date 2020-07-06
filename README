@@ -22,6 +22,12 @@ Getting started
     the sample EST client.  There is a README in this directory
     with detailed instructions.
 
+For further detailed instructions, build the reference manual PDF for
+libEST and refer to it.  Steps to build the reference manual are in 
+README.doxy
+
+
+
 Getting started - Windows
 --------------------------
 libEST can be built natively on Windows, but only client
@@ -69,8 +75,8 @@ build an EST dll with Gradle:
       
 Cross-compiling
 ---------------
-libEST has been cross-compiled for Android, but no testing
-has been performed.  Follow these steps to compile using the 
+It has been quite a while, but libEST has been cross-compiled for Android, 
+but no testing has been performed.  Follow these steps to compile using the 
 Android NDK:
 
 1.  Compile and install OpenSSL for Android.  See OpenSSL docs

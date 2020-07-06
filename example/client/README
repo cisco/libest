@@ -56,7 +56,7 @@ To run the example:
 
     export LD_LIBRARY_PATH=/usr/local/ssl/lib:/usr/local/est/lib
     
-    On Windows, set the PATH enviromnent variables to where 
+    On Windows, set the PATH environment variables to where
     libeay32.dll and ssleay32.dll are installed and where est.dll 
     is installed.
     

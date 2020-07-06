@@ -1,0 +1,2 @@
+V	390422190637Z		01	unknown	/CN=estExampleTestMfg4CA1-0
+V	390422190637Z		02	unknown	/CN=127.0.0.1/uniqueMember=TheSecretCertClub

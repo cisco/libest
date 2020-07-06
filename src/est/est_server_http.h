@@ -8,7 +8,7 @@
  *
  * May, 2013
  *
- * Copyright (c) 2013, 2016 by cisco Systems, Inc.
+ * Copyright (c) 2013, 2016, 2017 by cisco Systems, Inc.
  * All rights reserved.
  **------------------------------------------------------------------
  */
@@ -442,8 +442,6 @@ int mg_write(struct mg_connection *, const void *buf, size_t len);
 #endif
 #endif
 
-int mg_printf(struct mg_connection *conn, const char *fmt, ...);
-
 
 // Send contents of the entire file together with HTTP headers.
 //void mg_send_file(struct mg_connection *conn, const char *path);
@@ -564,9 +562,6 @@ void mg_send_authorization_request(struct mg_connection *conn);
 // NOTE: can't mix use of global_passwords_file with this functionality (mongoose always uses global_passwords_file for all URLs)
 int mg_check_authorization(struct mg_connection *conn, const char *path, int degenerate);
 
-char *skip(char **buf, const char *delimiters);
-char *skip_quoted(char **buf, const char *delimiters,
-                  const char *whitespace, char quotechar);
 EST_HTTP_AUTH_HDR_RESULT mg_parse_auth_header(struct mg_connection *conn, 
                                               EST_HTTP_AUTH_HDR *ah);
 

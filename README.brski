@@ -1,0 +1,115 @@
+
+The BRSKI support in LibEST is a work in progress.  The functionality that's
+implemented does not yet address every aspect of the BRSKI draft and voucher
+profile draft.  In addition, both drafts are continuing to be refined and this
+code will necessarily fall behind the latest versions of the draft as they
+continue to evolve.  This first pass of functionality is implemented to
+version 7 of the BRSKI draft and version 5 of the voucher profile draft.
+
+The BRSKI support is not yet integrated into the full functionality of libest.
+The first phase of support is to add BRSKI pledge support only into EST client
+mode.  There is currently no official support for the BRSKI based primitives
+in EST server or proxy modes of operation.  However, in order to test the
+BRSKI pledge support there does contain experimental functionality in the EST
+server mode to address the BRSKI primitives.
+
+The following work items are currently being worked on and will be made
+available as they are completed,
+
+- Uplift to the lasted version of the BRSKI draft and Voucher profile draft
+- Support for provisional TLS connections
+- Support for signed voucher requests and vouchers
+- Support for mfg credentials in the example applications
+- Support for unprintable ASCII characters in JSON based payloads
+- Support for Registrar Discovery
+
+Current BRSKI Pledge Assumptions
+================================
+
+1. The BRSKI pledge support is integrated into libest and is therefore
+dependent upon OpenSSL and assumes that OpenSSL is available for use.
+
+2. The BRSKI pledge support assumes that a valid realtime clock is available
+in the system, specifically through the use of the Linux time() function.
+
+Building libest
+=================
+
+The following steps are used to build and use the current BRSKI support in
+libest,
+
+1. At a minimum, libest requires OpenSSL.  It's best to get the latest
+OpenSSL, build and install it, and use it in the building of libest.
+
+2. The BRSKI support is conditioned off a compile time flag.  This flag is set
+by adding '--enable-brski' on the configure statement.
+
+./configure --prefix=<intended location of private install of libest> \
+            --with-ssl-dir=<location of installation of OpenSSL> \
+            --enable-brski
+
+3. libest can be conditionally compiled to only include the client side
+functionality.  This is enabled by adding '--enable-client-only' on the
+configure command.  The name of the library that is created changes from
+libest.so to libest_client.so to differentiate it from the full function
+libest library.
+
+Running libest's BRSKI support
+================================
+
+libest is a library and is not a standalone executable.  That being said,
+there are simple example applications that utilize the libest APIs.  Two of
+these applications have been enhanced to make use of the BRSKI APIs,
+estclient_brski and estserver.  estclient_brski is a new example application
+based on the estclient_simple application.
+
+1. It helps to set up the following in the environment before invoking the 
+estserver example application,
+
+export EST_DIR=<path to libest installation>
+export OPENSSL_DIR=<path to OpenSSL installation>
+export CURL_DIR=<path to cURL installation (optional)>
+export URIPARSER_DIR=<path to uriparser library installation (optional)>
+export LD_LIBRARY_PATH=$OPENSSL_DIR/lib:$WORKSPACE/src/est/.libs:$URIPARSER_DIR/lib
+export PATH=$OPENSSL_DIR/bin:$PATH
+
+# set up the keys and certs used by the server
+cd example/server
+echo "S" | ./createCA.sh
+
+export EST_TRUSTED_CERTS=./estCA/cacert.crt
+export EST_CACERTS_RESP=./estCA/cacert.crt
+export EST_OPENSSL_CACONFIG=./estExampleCA.cnf
+
+The server example application is started with BRSKI support using the
+following command,
+
+./estserver -p 9231 -c estCA/private/estservercertandkey.pem -k estCA/private/estservercertandkey.pem -r estrealm -v --enable-brski -n
+
+2. The estclient example with BRSKI support is invoked with the following
+commands,
+
+cd ../client-brski/
+
+# Point to the test CA Cert in the server example app
+export EST_OPENSSL_CACERT=../server/estCA/cacert.crt
+
+# Generate a test manufacturing identity for this test node.
+# - First, generate a key pair and a Certificate Signing Request (CSR)
+openssl req -nodes -days 365 -sha256 -newkey rsa:2048 -subj '/CN=www.iotrus.com/O=IOT-R-US, Inc./C=US/ST=NC/L=RTP/serialNumber=IOTRUS-0123456789'  -keyout ./est_client_mfg_privkey.pem -out ./est_client_mfg_csr.pem
+
+# - Then move over to the test CA to get a certificate generated
+cd ..
+cd server
+openssl ca -config ../server/estExampleCA.cnf -in ../client-brski/est_client_mfg_csr.pem -extensions v3_ca -out ../client-brski/est_client_mfg_cert.pem -batch
+cd ..
+cd client-brski/
+
+# - Finally, invoke the estclient test app with the additional BRSKI calls to 
+#   - Issue a voucher request to obtain a voucher
+#   - Send the voucher status
+#   - Issue an EST /simpleenroll to enroll another new key into the domain
+#   - Send the enroll status
+./estclient_brski -s 127.0.0.1 -p 9231 -c est_client_mfg_cert.pem  -k est_client_mfg_privkey.pem 
+
+

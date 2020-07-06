@@ -1,0 +1,93 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            93:84:dc:1f:9c:87:4a:0b
+    Signature Algorithm: ecdsa-with-SHA256
+        Issuer: CN=est-EXTERNALCA
+        Validity
+            Not Before: Jun 29 20:09:09 2018 GMT
+            Not After : Jun 29 20:09:09 2038 GMT
+        Subject: CN=est-EXTERNALCA
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub: 
+                    04:33:6d:cb:1d:8f:03:b2:d9:58:03:26:1c:ef:90:
+                    4d:80:e6:14:65:39:65:6a:54:4d:30:70:f6:7b:2b:
+                    c5:f4:74:48:14:6c:53:23:d8:8f:cf:6f:4c:2a:64:
+                    76:67:ea:b3:3e:43:56:ab:86:93:86:d1:f1:56:57:
+                    ef:52:a2:8d:09
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:TRUE
+            X509v3 Subject Key Identifier: 
+                1B:29:19:0F:FB:5B:1B:09:C4:92:49:2F:98:A2:6F:A5:95:7F:12:42
+            X509v3 Subject Alternative Name: 
+                DNS:localhost, DNS:ip6-localhost, IP Address:127.0.0.1, IP Address:0:0:0:0:0:0:0:1
+            X509v3 CRL Distribution Points: 
+
+                Full Name:
+                  URI:http://example.com/crl.pem
+
+    Signature Algorithm: ecdsa-with-SHA256
+         30:46:02:21:00:db:6b:f8:08:7f:54:f2:2c:2b:d1:c3:22:13:
+         71:08:2e:21:cf:72:04:12:27:16:7f:9a:81:4b:ab:25:63:f2:
+         74:02:21:00:a6:79:b6:68:e6:b9:bd:a7:0f:12:c3:42:34:85:
+         4c:39:7c:f2:43:21:76:e4:8e:27:97:d5:88:d2:6d:62:71:ce
+-----BEGIN CERTIFICATE-----
+MIIBxTCCAWqgAwIBAgIJAJOE3B+ch0oLMAoGCCqGSM49BAMCMBkxFzAVBgNVBAMM
+DmVzdC1FWFRFUk5BTENBMB4XDTE4MDYyOTIwMDkwOVoXDTM4MDYyOTIwMDkwOVow
+GTEXMBUGA1UEAwwOZXN0LUVYVEVSTkFMQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMB
+BwNCAAQzbcsdjwOy2VgDJhzvkE2A5hRlOWVqVE0wcPZ7K8X0dEgUbFMj2I/Pb0wq
+ZHZn6rM+Q1arhpOG0fFWV+9Soo0Jo4GaMIGXMAwGA1UdEwQFMAMBAf8wHQYDVR0O
+BBYEFBspGQ/7WxsJxJJJL5iib6WVfxJCMDsGA1UdEQQ0MDKCCWxvY2FsaG9zdIIN
+aXA2LWxvY2FsaG9zdIcEfwAAAYcQAAAAAAAAAAAAAAAAAAAAATArBgNVHR8EJDAi
+MCCgHqAchhpodHRwOi8vZXhhbXBsZS5jb20vY3JsLnBlbTAKBggqhkjOPQQDAgNJ
+ADBGAiEA22v4CH9U8iwr0cMiE3EILiHPcgQSJxZ/moFLqyVj8nQCIQCmebZo5rm9
+pw8Sw0I0hUw5fPJDIXbkjieX1YjSbWJxzg==
+-----END CERTIFICATE-----
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            ec:3e:0f:44:8f:aa:d1:ce
+    Signature Algorithm: ecdsa-with-SHA256
+        Issuer: CN=ext-EXTERNALCA
+        Validity
+            Not Before: Jun 29 20:09:09 2018 GMT
+            Not After : Jun 29 20:09:09 2038 GMT
+        Subject: CN=ext-EXTERNALCA
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub: 
+                    04:4c:07:06:bf:21:d1:2e:fb:1c:a9:82:7b:e7:b3:
+                    99:d1:63:d8:dd:d1:65:4f:5f:c0:38:4b:91:7f:2b:
+                    8a:6f:b6:1b:aa:bd:ef:41:8e:aa:6d:dd:b6:c0:3b:
+                    69:e1:cc:da:86:8e:65:b1:50:e7:5e:0c:3f:1c:8d:
+                    72:b2:5b:a3:6c
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:TRUE
+            X509v3 Subject Key Identifier: 
+                7F:0D:8A:F9:08:AE:4A:DA:03:01:8E:E6:A8:66:3E:04:34:96:05:91
+    Signature Algorithm: ecdsa-with-SHA256
+         30:44:02:20:03:02:a4:5f:84:c4:b7:6c:29:32:04:ed:d0:7e:
+         37:38:22:15:b4:7d:f9:2d:95:0f:e4:5a:fc:7d:e7:a8:44:6f:
+         02:20:72:3d:82:b9:8c:87:ac:5e:00:29:b9:73:2f:af:af:6a:
+         21:3c:d9:64:0c:6d:e0:ef:ad:8f:d4:21:9b:d9:2d:ff
+-----BEGIN CERTIFICATE-----
+MIIBVjCB/qADAgECAgkA7D4PRI+q0c4wCgYIKoZIzj0EAwIwGTEXMBUGA1UEAwwO
+ZXh0LUVYVEVSTkFMQ0EwHhcNMTgwNjI5MjAwOTA5WhcNMzgwNjI5MjAwOTA5WjAZ
+MRcwFQYDVQQDDA5leHQtRVhURVJOQUxDQTBZMBMGByqGSM49AgEGCCqGSM49AwEH
+A0IABEwHBr8h0S77HKmCe+ezmdFj2N3RZU9fwDhLkX8rim+2G6q970GOqm3dtsA7
+aeHM2oaOZbFQ514MPxyNcrJbo2yjLzAtMAwGA1UdEwQFMAMBAf8wHQYDVR0OBBYE
+FH8NivkIrkraAwGO5qhmPgQ0lgWRMAoGCCqGSM49BAMCA0cAMEQCIAMCpF+ExLds
+KTIE7dB+NzgiFbR9+S2VD+Ra/H3nqERvAiByPYK5jIesXgApuXMvr69qITzZZAxt
+4O+tj9Qhm9kt/w==
+-----END CERTIFICATE-----

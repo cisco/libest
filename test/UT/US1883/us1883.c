@@ -145,6 +145,8 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
     BIO *bio_err;
     bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
     int approve = 0; 
+    const ASN1_BIT_STRING *cur_cert_sig;
+    const X509_ALGOR *cur_cert_sig_alg;
     
     /*
      * Print out the specifics of this cert
@@ -160,7 +162,15 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
      * This fingerprint can be checked against the anticipated value to determine
      * whether or not the server's cert should be approved.
      */
-    X509_signature_print(bio_err, cur_cert->sig_alg, cur_cert->signature);
+#ifdef HAVE_OLD_OPENSSL    
+    X509_get0_signature((ASN1_BIT_STRING **)&cur_cert_sig,
+                        (X509_ALGOR **)&cur_cert_sig_alg, cur_cert);
+    X509_signature_print(bio_err, (X509_ALGOR *)cur_cert_sig_alg,
+                         (ASN1_BIT_STRING *)cur_cert_sig);
+#else    
+    X509_get0_signature(&cur_cert_sig, &cur_cert_sig_alg, cur_cert);
+    X509_signature_print(bio_err, cur_cert_sig_alg, cur_cert_sig);
+#endif    
 
     if (openssl_cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
         approve = 1;
@@ -311,7 +321,7 @@ EST_HTTP_AUTH_CRED_RC auth_credentials_basic_cb(EST_HTTP_AUTH_HDR *auth_credenti
 
 /*
  * auth_credentials_digest_cb() is the same as the basic based one above, but
- * instead verfies that the auth_mode passed is digest
+ * instead verifies that the auth_mode passed is digest
  */
 EST_HTTP_AUTH_CRED_RC auth_credentials_digest_cb(EST_HTTP_AUTH_HDR *auth_credentials)
 {
@@ -394,7 +404,6 @@ static void us1883_simple_enroll (char *cn, char *server, EST_ERROR expected_enr
     EVP_PKEY *key;
     EST_ERROR rv;
     int pkcs7_len = 0;
-    unsigned char *new_cert = NULL;
     EST_ERROR e_rc; 
 
     /*
@@ -429,7 +438,6 @@ static void us1883_simple_enroll (char *cn, char *server, EST_ERROR expected_enr
      * Cleanup
      */
     EVP_PKEY_free(key);
-    if (new_cert) free(new_cert);
     est_destroy(ectx);
 }
 
@@ -506,80 +514,86 @@ void us1883_simple_reenroll (char *cn, char *server, EST_ERROR expected_enroll_r
 
     est_destroy(ectx);
     ectx = NULL;
-    /*
-     * Create a client context 
-     */
-    ectx = est_client_init(cacerts, cacerts_len, 
-                           EST_CERT_FORMAT_PEM,
-                           client_manual_cert_verify);
-    CU_ASSERT(ectx != NULL);    
-    
-    /*
-     * Now that we have the cert, switch the server over to token mode
-     */
-    st_enable_http_token_auth();
-    
-    e_rc = est_client_set_auth_cred_cb(ectx, callback);
-    CU_ASSERT(e_rc == EST_ERR_NONE);
 
     /*
-     * Set the EST server address/port
+     * did we get the cert?
      */
-    est_client_set_server(ectx, server, US1883_TCP_PORT, NULL);
-    
-    /*
-     * And attempt a reenroll while in token mode
-     *
-     * Convert the cert to an X509.  Be warned this is
-     * pure hackery.
-     * PDB: This conversion code comes from other test cases.
-     */
-    b64 = BIO_new(BIO_f_base64());
-    out = BIO_new_mem_buf(new_cert, pkcs7_len);
-    out = BIO_push(b64, out);
-    p7 = d2i_PKCS7_bio(out,NULL);
-    CU_ASSERT(p7 != NULL);
-    BIO_free_all(out);
-    i=OBJ_obj2nid(p7->type);
-    switch (i) {
-    case NID_pkcs7_signed:
-	certs = p7->d.sign->cert;
-	break;
-    case NID_pkcs7_signedAndEnveloped:
-	certs = p7->d.signed_and_enveloped->cert;
-	break;
-    default:
-	break;
+    if (new_cert) {
+        
+        /*
+         * Create a client context 
+         */
+        ectx = est_client_init(cacerts, cacerts_len, 
+                               EST_CERT_FORMAT_PEM,
+                               client_manual_cert_verify);
+        CU_ASSERT(ectx != NULL);    
+        
+        /*
+         * Now that we have the cert, switch the server over to token mode
+         */
+        st_enable_http_token_auth();
+        
+        e_rc = est_client_set_auth_cred_cb(ectx, callback);
+        CU_ASSERT(e_rc == EST_ERR_NONE);
+        
+        /*
+         * Set the EST server address/port
+         */
+        est_client_set_server(ectx, server, US1883_TCP_PORT, NULL);
+        
+        /*
+         * And attempt a reenroll while in token mode
+         *
+         * Convert the cert to an X509.  Be warned this is
+         * pure hackery.
+         * PDB: This conversion code comes from other test cases.
+         */
+        b64 = BIO_new(BIO_f_base64());
+        out = BIO_new_mem_buf(new_cert, pkcs7_len);
+        out = BIO_push(b64, out);
+        p7 = d2i_PKCS7_bio(out,NULL);
+        CU_ASSERT(p7 != NULL);
+        BIO_free_all(out);
+        i=OBJ_obj2nid(p7->type);
+        switch (i) {
+        case NID_pkcs7_signed:
+            certs = p7->d.sign->cert;
+            break;
+        case NID_pkcs7_signedAndEnveloped:
+            certs = p7->d.signed_and_enveloped->cert;
+            break;
+        default:
+            break;
+        }
+        CU_ASSERT(certs != NULL);
+        if (!certs) {
+            EVP_PKEY_free(key);
+            est_destroy(ectx);
+            return;
+        }
+        
+        /* our new cert should be the one and only
+         * cert in the pkcs7 blob.  We shouldn't have to
+         * iterate through the full list to find it. */
+        cert = sk_X509_value(certs, 0);
+        CU_ASSERT(cert != NULL);
+
+        rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
+        CU_ASSERT(rv == expected_enroll_rv);
+        
+        /*
+         * Cleanup
+         */
+        EVP_PKEY_free(key);
+        if (new_cert) free(new_cert);
+        est_destroy(ectx);
     }
-    CU_ASSERT(certs != NULL);
-    if (!certs) return;
-    /* our new cert should be the one and only
-     * cert in the pkcs7 blob.  We shouldn't have to
-     * iterate through the full list to find it. */
-    cert = sk_X509_value(certs, 0);
-    CU_ASSERT(cert != NULL);
-
-    /*
-     * PDB NOTE: At the moment, this is expected to fail since
-     * the server does not yet understand requests with token authentication.
-     * Once 1884 is complete, the below ASSERT will begin to fail and will need
-     * to be changed to a passing response.
-     */
-    rv = est_client_reenroll(ectx, cert, &pkcs7_len, key);
-    CU_ASSERT(rv == expected_enroll_rv);
-    
-    /*
-     * Cleanup
-     */
-    EVP_PKEY_free(key);
-    if (new_cert) free(new_cert);
-    est_destroy(ectx);
 }
 
 
 /*
  * Test2 - Application layer did not register callback, causing an
- *         HTTP Aithentication header with an empty token credential
+ *         HTTP Authentication header with an empty token credential
  *         
  * In this test,
  * - application layer DOES NOT register its callback
@@ -942,7 +956,7 @@ static void us1883_test9 (void)
 
 
 /*
- * Test4 - Valid token is provided by appliaction callback, but it's the WRONG
+ * Test4 - Valid token is provided by application callback, but it's the WRONG
  *         token
  *
  * In this test,

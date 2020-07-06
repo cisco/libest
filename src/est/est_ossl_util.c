@@ -45,7 +45,7 @@
  *    must display the following acknowledgement:
  *    "This product includes cryptographic software written by
  *     Eric Young (eay@cryptsoft.com)"
- *    The word 'cryptographic' can be left out if the rouines from the library
+ *    The word 'cryptographic' can be left out if the routines from the library
  *    being used are not cryptographic related :-).
  * 4. If you include any Windows specific code (or a derivative thereof) from
  *    the apps directory (application code) you must include an acknowledgement:
@@ -74,14 +74,81 @@
  * the library. */
 
 
-#include <stdio.h>
-#include <openssl/x509v3.h>
+#ifndef WIN32
 #include <openssl/pem.h>
 #include <openssl/err.h>
-#include "est_ossl_util.h"
+#else
+#include <Ws2tcpip.h>
+#endif
+#include <stdio.h>
+#include <openssl/x509v3.h>
 #include "est.h"
 #include "est_locl.h"
+#include "est_ossl_util.h"
 #include "safe_mem_lib.h"
+
+/*
+ * Extract out the subject field from either a certificate or a
+ * CSR.
+ * cert_csr - pointer to the OpenSSL structure to be parsed, either
+ *            a X509* or a X509_REQ*
+ * cert_or_csr - indicates whether it's a cert or a csr
+ * name/len - pointer to destination buffer to hold the subj and the
+ *            length of the buffer. Name does not have to zeroed out.
+ */
+EST_ERROR est_get_subj_fld_from_cert (void *cert_csr, EST_CERT_OR_CSR cert_or_csr,
+                                      char *name, int len)
+{
+    X509_NAME *subject_nm;
+    BIO *out;
+    BUF_MEM *bm;
+    errno_t safec_rc;
+    int src_len;
+
+    /*
+     * Extract the subject name from the X509, read it in through
+     * a BIO, and then copy out the data from inside the BIO
+     */
+    if (cert_or_csr == EST_CSR) {
+        subject_nm = X509_REQ_get_subject_name((X509_REQ *)cert_csr);
+    } else {
+        subject_nm = X509_get_subject_name((X509*) cert_csr);
+    }
+    
+    out = BIO_new(BIO_s_mem());
+    if (out == NULL) {
+        EST_LOG_ERR("BIO_new failed");
+        ossl_dump_ssl_errors();
+        return(EST_ERR_MALLOC);
+    }
+
+    X509_NAME_print_ex(out, subject_nm, 0,
+                       XN_FLAG_ONELINE & ~ASN1_STRFLGS_ESC_MSB);
+
+    /*
+     * copy out the subject field buffer to be returned
+     */
+    BIO_get_mem_ptr(out, &bm);
+    if (bm->length > len) {
+        src_len = len;
+    } else {
+        src_len = bm->length;
+    }
+    safec_rc = memcpy_s(name, len, bm->data, src_len);
+    if (safec_rc != EOK) {
+        EST_LOG_ERR("memcpy_s error 0x%xO\n", safec_rc);
+        BIO_free(out);
+        return (EST_ERR_SYSCALL);
+    }
+    if (bm->length < len) {
+        name[bm->length] = 0;
+    } else {
+        name[len] = 0;
+    }
+
+    BIO_free(out);
+    return (EST_ERR_NONE);
+}
 
 /*****************************************************************************************
 * Authorization routines
@@ -95,10 +162,11 @@ int ossl_verify_cb (int ok, X509_STORE_CTX *ctx)
 
     if (!ok) {
         if (current_cert) {
-            X509_NAME_print_ex_fp(stdout,
-                                  X509_get_subject_name(current_cert),
-                                  0, XN_FLAG_ONELINE);
-            printf("\n");
+            char *subj = calloc(EST_MAX_CERT_SUBJ_LEN, sizeof(char));
+            est_get_subj_fld_from_cert(current_cert, EST_CERT,
+                                       &subj[0], EST_MAX_CERT_SUBJ_LEN);
+            EST_LOG_INFO("Cert: %s ", subj);
+            free(subj);
         }
         EST_LOG_INFO("%serror %d at %d depth lookup:%s\n",
                      X509_STORE_CTX_get0_parent_ctx(ctx) ? "[CRL path]" : "",
@@ -179,7 +247,15 @@ static int ossl_init_cert_store_from_raw (X509_STORE *store,
     while (sk_X509_INFO_num(sk)) {
         xi = sk_X509_INFO_shift(sk);
         if (xi->x509 != NULL) {
+#ifdef HAVE_OLD_OPENSSL
             EST_LOG_INFO("Adding cert to store (%s)", xi->x509->name);
+#else
+            char *subj = calloc(EST_MAX_CERT_SUBJ_LEN, sizeof(char));
+            est_get_subj_fld_from_cert(xi->x509, EST_CERT, &subj[0],
+                                       EST_MAX_CERT_SUBJ_LEN);
+            EST_LOG_INFO("Cert being added to trust store: %s ", subj);
+            free(subj);            
+#endif
             X509_STORE_add_cert(store, xi->x509);
 	    cert_cnt++;
         }
@@ -215,10 +291,10 @@ EST_ERROR ossl_init_cert_store (X509_STORE *store,
 
     if (raw1) {
         cnt = ossl_init_cert_store_from_raw(store, raw1, size1);
-	if (!cnt) {
-	    EST_LOG_ERR("Cert count is zero for store");
-	    return (EST_ERR_NO_CERTS_FOUND);
-	}
+        if (!cnt) {
+            EST_LOG_ERR("Cert count is zero for store");
+            return (EST_ERR_NO_CERTS_FOUND);
+        }
     }
     return (EST_ERR_NONE);
 }
@@ -244,6 +320,15 @@ void ossl_dump_ssl_errors ()
     (void)BIO_flush(e);
     BIO_get_mem_ptr(e, &bptr);
     EST_LOG_WARN("OSSL error: %s", bptr->data); 
+
+#if !(ENABLE_CLIENT_ONLY)
+    /*
+     * If in server or proxy mode, announce that an SSL protocol error event
+     * occurred.
+     */
+    est_invoke_ssl_proto_err_event_cb(bptr->data);
+#endif
+    
     BIO_free_all(e);
 }
 
@@ -321,7 +406,7 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
     
     /*
      * Now that we've decoded the certs, get a reference
-     * the the stack of certs
+     * to the stack of certs
      */
     nid=OBJ_obj2nid(p7->type);
     switch (nid)
@@ -340,7 +425,7 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
         }
 
     if (!certs) {
-        EST_LOG_ERR("Failed to attain X509 cert stack from PKCS7 data");
+        EST_LOG_ERR("Failed to obtain X509 cert stack from PKCS7 data");
 	PKCS7_free(p7);
 	return (-1);
     }
@@ -384,3 +469,33 @@ int est_convert_p7b64_to_pem (unsigned char *certs_p7, int certs_len, unsigned c
     return (pem_len);
 }
 
+#if ENABLE_BRSKI
+
+char *est_find_ser_num_in_subj(X509 *cert)
+{
+    X509_NAME *subj = X509_get_subject_name(cert);
+    ASN1_STRING *ser_num_asn1 = NULL;
+    X509_NAME_ENTRY *entry;
+    int i;
+    char *ser_num_str;
+    
+    i = X509_NAME_get_index_by_NID(subj, NID_serialNumber, -1);
+    if (i == -1) {
+        EST_LOG_ERR("Serial Number element not defined in certificate subject attribute");
+        return (NULL);
+    }
+    
+    /*
+     * Serial number exists in the subject.  Extract the value and return it
+     */
+    entry = X509_NAME_get_entry(subj, i);
+    ser_num_asn1 = X509_NAME_ENTRY_get_data(entry);
+#ifdef HAVE_OLD_OPENSSL
+    ser_num_str = (char *)ASN1_STRING_data(ser_num_asn1);
+#else
+    ser_num_str = (char *)ASN1_STRING_get0_data(ser_num_asn1);
+#endif
+    EST_LOG_INFO("Found Serial Number.  Serial number = %s", ser_num_str);
+    return(ser_num_str);
+}
+#endif

@@ -286,8 +286,9 @@ X509 *load_cert(BIO *err, const char *file, int format,
 
 	if 	(format == FORMAT_ASN1)
 		x=d2i_X509_bio(cert,NULL);
-	else if (format == FORMAT_NETSCAPE)
-		{
+	else
+#ifdef HAVE_OLD_OPENSSL            
+            if (format == FORMAT_NETSCAPE) {
 		NETSCAPE_X509 *nx;
 		nx=ASN1_item_d2i_bio(ASN1_ITEM_rptr(NETSCAPE_X509),cert,NULL);
 		if (nx == NULL)
@@ -303,8 +304,9 @@ X509 *load_cert(BIO *err, const char *file, int format,
 		x=nx->cert;
 		nx->cert = NULL;
 		NETSCAPE_X509_free(nx);
-		}
-	else if (format == FORMAT_PEM)
+                } else
+#endif
+                if (format == FORMAT_PEM)
 		x=PEM_read_bio_X509_AUX(cert,NULL,
 			(pem_password_cb *)password_callback, NULL);
 	else if (format == FORMAT_PKCS12)
@@ -1558,12 +1560,27 @@ static int do_X509_sign(BIO *err, X509 *x, EVP_PKEY *pkey, const EVP_MD *md,
 			STACK_OF(OPENSSL_STRING) *sigopts)
 {
 	int rv;
-	EVP_MD_CTX mctx;
-	EVP_MD_CTX_init(&mctx);
-	rv = do_sign_init(err, &mctx, pkey, md, sigopts);
-	if (rv > 0)
-		rv = X509_sign_ctx(x, &mctx);
-	EVP_MD_CTX_cleanup(&mctx);
+#ifdef HAVE_OLD_OPENSSL
+    EVP_MD_CTX md_ctx;
+    EVP_MD_CTX *mctx = &md_ctx;
+    
+    EVP_MD_CTX_init(mctx);    
+#else
+    EVP_MD_CTX *mctx;
+
+    mctx = EVP_MD_CTX_new();
+    if (mctx == NULL) {
+        return 0;
+    }
+#endif    
+    rv = do_sign_init(err, mctx, pkey, md, sigopts);
+    if (rv > 0)
+            rv = X509_sign_ctx(x, mctx);
+#ifdef HAVE_OLD_OPENSSL
+        EVP_MD_CTX_cleanup(mctx);
+#else    
+        EVP_MD_CTX_free(mctx);
+#endif
 	return rv > 0 ? 1 : 0;
 }
 
@@ -1583,7 +1600,9 @@ static int do_body(X509 **xret, EVP_PKEY *pkey, X509 *x509, const EVP_MD *dgst,
 	ASN1_STRING *str,*str2;
 	ASN1_OBJECT *obj;
 	X509 *ret=NULL;
+#ifdef HAVE_OLD_OPENSSL        
 	X509_CINF *ci;
+#endif
 	X509_NAME_ENTRY *ne;
 	X509_NAME_ENTRY *tne,*push;
 	EVP_PKEY *pktmp;
@@ -1615,7 +1634,9 @@ static int do_body(X509 **xret, EVP_PKEY *pkey, X509 *x509, const EVP_MD *dgst,
 			goto err;
 			}
 		X509_REQ_set_subject_name(req,n);
-		req->req_info->enc.modified = 1;
+#ifdef HAVE_OLD_OPENSSL
+                req->req_info->enc.modified = 1; 
+#endif
 		X509_NAME_free(n);
 		}
 
@@ -1632,8 +1653,11 @@ static int do_body(X509 **xret, EVP_PKEY *pkey, X509 *x509, const EVP_MD *dgst,
 		if (msie_hack)
 			{
 			/* assume all type should be strings */
-			nid=OBJ_obj2nid(ne->object);
-
+#ifdef HAVE_OLD_OPENSSL            
+                            nid = OBJ_obj2nid(ne->object);                      
+#else            
+                            nid = OBJ_obj2nid(X509_NAME_ENTRY_get_object(ne));
+#endif
 			if (str->type == V_ASN1_UNIVERSALSTRING)
 				ASN1_UNIVERSALSTRING_to_string(str);
 
@@ -1684,8 +1708,13 @@ static int do_body(X509 **xret, EVP_PKEY *pkey, X509 *x509, const EVP_MD *dgst,
 	/* take a copy of the issuer name before we mess with it. */
 	if (selfsign)
 		CAname=X509_NAME_dup(name);
-	else
-		CAname=X509_NAME_dup(x509->cert_info->subject);
+	else {
+#ifdef HAVE_OLD_OPENSSL        
+            CAname = X509_NAME_dup(x509->cert_info->subject);
+#else        
+            CAname = X509_NAME_dup(X509_get_subject_name(x509));
+#endif
+        }
 	if (CAname == NULL) goto err;
 	str=str2=NULL;
 
@@ -1890,13 +1919,22 @@ again2:
 		BIO_printf(bio_err,"Everything appears to be ok, creating and signing the certificate\n");
 
 	if ((ret=X509_new()) == NULL) goto err;
-	ci=ret->cert_info;
+#ifdef HAVE_OLD_OPENSSL    
+        ci = ret->cert_info;
+#endif
 
 	/* Make it an X509 v3 certificate. */
 	if (!X509_set_version(ret,2)) goto err;
 
-	if (BN_to_ASN1_INTEGER(serial,ci->serialNumber) == NULL)
-		goto err;
+#ifdef HAVE_OLD_OPENSSL    
+        if (BN_to_ASN1_INTEGER(serial, ci->serialNumber) == NULL) {
+            goto err;
+        }
+#else        
+        if (BN_to_ASN1_INTEGER(serial, X509_get_serialNumber(ret)) == NULL) {
+            goto err;
+        }
+#endif        
 	if (selfsign)
 		{
 		if (!X509_set_issuer_name(ret,subject))
@@ -1924,22 +1962,35 @@ again2:
 	if (!i) goto err;
 
 	/* Lets add the extensions, if there are any */
-	if (ext_sect)
-		{
-		X509V3_CTX ctx;
-		if (ci->version == NULL)
-			if ((ci->version=ASN1_INTEGER_new()) == NULL)
-				goto err;
-		ASN1_INTEGER_set(ci->version,2); /* version 3 certificate */
+	if (ext_sect) {
+            X509V3_CTX ctx;
+#ifdef HAVE_OLD_OPENSSL        
+            if (ci->version == NULL)
+                if ((ci->version=ASN1_INTEGER_new()) == NULL)
+                    goto err;
+            ASN1_INTEGER_set(ci->version,2); /* version 3 certificate */
+#else
+            if (!X509_set_version(ret, 2))
+                goto err;
+#endif
 
-		/* Free the current entries if any, there should not
-		 * be any I believe */
-		if (ci->extensions != NULL)
-			sk_X509_EXTENSION_pop_free(ci->extensions,
-						   X509_EXTENSION_free);
+#ifdef HAVE_OLD_OPENSSL
 
-		ci->extensions = NULL;
-
+            /* Free the current entries if any, there should not
+             * be any I believe */            
+            if (ci->extensions != NULL) {   
+                sk_X509_EXTENSION_pop_free(ci->extensions, X509_EXTENSION_free);
+            }
+            ci->extensions = NULL;
+#else
+            {
+                int ext_cnt = 0;
+                ext_cnt = X509_get_ext_count(ret);
+                for (i=0; i<ext_cnt; i++) {
+                    X509_delete_ext(ret, i);
+                }
+            }
+#endif            
 		/* Initialize the context structure */
 		if (selfsign)
 			X509V3_set_ctx(&ctx, ret, ret, req, NULL, 0);
@@ -2284,7 +2335,7 @@ static int check_time_format(const char *str)
 
 
 /*
- * This function is used to statisfy the callback request from the EST
+ * This function is used to satisfy the callback request from the EST
  * stack when a simple enrollment request needs to be serviced.
  * The EST stack will receive PKCS10 data from the HTTP layer and
  * forward it to this function.  This function returns the signed
@@ -2365,6 +2416,7 @@ BIO * ossl_simple_enroll (const char *p10buf, int p10len, char *configfile)
 	conf = NULL;
 	key = NULL;
 	section = NULL;
+        memset(buf[2], 0, sizeof(buf[2]));
 
 	preserve=0;
 	msie_hack=0;
@@ -2701,7 +2753,11 @@ BIO * ossl_simple_enroll (const char *p10buf, int p10len, char *configfile)
 		}
 		if (verbose)
 			BIO_printf(bio_err,"message digest is %s\n",
-				OBJ_nid2ln(dgst->type));
+#ifdef HAVE_OLD_OPENSSL                       
+                                   OBJ_nid2ln(dgst->type));
+#else        
+                                   OBJ_nid2ln(EVP_MD_type(dgst)));
+#endif    
 		if ((policy == NULL) && ((policy=NCONF_get_string(conf,
 			section,ENV_POLICY)) == NULL)) {
 			lookup_fail(section,ENV_POLICY);
@@ -2833,10 +2889,15 @@ BIO * ossl_simple_enroll (const char *p10buf, int p10len, char *configfile)
 
 			x=sk_X509_value(cert_sk,i);
 
-			j=x->cert_info->serialNumber->length;
-			p=(const char *)x->cert_info->serialNumber->data;
-			
-
+#ifdef HAVE_OLD_OPENSSL
+                        j = x->cert_info->serialNumber->length;
+                        p = (const char *) x->cert_info->serialNumber->data;
+#else            
+                        ASN1_INTEGER *serialNumber = X509_get_serialNumber(x);
+                        j = ASN1_STRING_length(serialNumber);
+                        p = (const char *)ASN1_STRING_get0_data(serialNumber);
+#endif
+                        
 			BUF_strlcat(buf[2],"/",sizeof(buf[2]));
 
 			n=(char *)&(buf[2][strlen(buf[2])]);

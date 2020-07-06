@@ -18,7 +18,7 @@ package com.cisco.c3m.est;
  * the EST server will notify the EST client that it should retry the enrollment request
  * at a later time.  This allows time for the security officer to manually approve the 
  * certificate request.  When the EST client retries the enrollment request, the same CSR and
- * key pair should be used.  The application using JEST is responsible for persisting
+ * key pair should be used.  The application using CiscoJEST is responsible for persisting
  * the CSR and key pair between the initial enrollment request and the retry request. 
  * 
  * @author foleyj

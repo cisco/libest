@@ -21,6 +21,6 @@
               <attribute name="Version-Micro" value="${rmicro}" />
               <attribute name="SVN-Revision" value="${svnr}" />
     </manifest>
-    <jar jarfile="bin/jest.jar" manifest="bin/MANIFEST.MF" basedir="./bin" includes="com/cisco/c3m/est/*.class" />
+    <jar jarfile="bin/ciscojest.jar" manifest="bin/MANIFEST.MF" basedir="./bin" includes="com/cisco/c3m/est/*.class" />
   </target>
 </project>

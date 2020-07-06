@@ -108,11 +108,13 @@ static int path_seg_supported(void) {
      */
     cacerts_len = read_binary_file(CLIENT_UT_CACERT, &cacerts);
 
-
     ectx = est_client_init(cacerts, cacerts_len, EST_CERT_FORMAT_PEM,
                            client_manual_cert_verify);
 
+    free(cacerts);
     rc = est_client_set_server(ectx, US3496_SERVER_IP, US3496_SERVER_PORT, "test_segment");
+
+    if (ectx) est_destroy(ectx);
 
     if (rc == EST_ERR_NONE) {
         return 1;
@@ -186,7 +188,9 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
 {
     BIO *bio_err;
     bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
-    int approve = 0; 
+    int approve = 0;
+    const ASN1_BIT_STRING *cur_cert_sig;
+    const X509_ALGOR *cur_cert_sig_alg;
     
     /*
      * Print out the specifics of this cert
@@ -202,7 +206,15 @@ static int client_manual_cert_verify (X509 *cur_cert, int openssl_cert_error)
      * This fingerprint can be checked against the anticipated value to determine
      * whether or not the server's cert should be approved.
      */
-    X509_signature_print(bio_err, cur_cert->sig_alg, cur_cert->signature);
+#ifdef HAVE_OLD_OPENSSL    
+    X509_get0_signature((ASN1_BIT_STRING **)&cur_cert_sig,
+                        (X509_ALGOR **)&cur_cert_sig_alg, cur_cert);
+    X509_signature_print(bio_err, (X509_ALGOR *)cur_cert_sig_alg,
+                         (ASN1_BIT_STRING *)cur_cert_sig);
+#else    
+    X509_get0_signature(&cur_cert_sig, &cur_cert_sig_alg, cur_cert);
+    X509_signature_print(bio_err, cur_cert_sig_alg, cur_cert_sig);
+#endif    
 
     if (openssl_cert_error == X509_V_ERR_UNABLE_TO_GET_CRL) {
         approve = 1;
