@@ -130,11 +130,18 @@ static int jni_est_client_X509_REQ_sign (X509_REQ *x, EVP_PKEY *pkey, const EVP_
 {
     int rv;
     EVP_PKEY_CTX *pkctx = NULL;
-    EVP_MD_CTX mctx;
+    EVP_MD_CTX *mctx;
 
-    EVP_MD_CTX_init(&mctx);
+#ifdef HAVE_OLD_OPENSSL
+    EVP_MD_CTX md_ctx;
+    mctx = &md_ctx;
 
-    if (!EVP_DigestSignInit(&mctx, &pkctx, md, NULL, pkey)) {
+    EVP_MD_CTX_init(mctx);
+#else
+    mctx = EVP_MD_CTX_new();
+#endif
+
+    if (!EVP_DigestSignInit(mctx, &pkctx, md, NULL, pkey)) {
         return 0;
     }
 
@@ -150,9 +157,13 @@ static int jni_est_client_X509_REQ_sign (X509_REQ *x, EVP_PKEY *pkey, const EVP_
     x->req_info->enc.modified = 1;
 #endif
 
-    rv = X509_REQ_sign_ctx(x, &mctx);
+    rv = X509_REQ_sign_ctx(x, mctx);
 
-    EVP_MD_CTX_cleanup(&mctx);
+#ifdef HAVE_OLD_OPENSSL
+    EVP_MD_CTX_cleanup(mctx);
+#else
+    EVP_MD_CTX_free(mctx);
+#endif
 
     return (rv);
 }

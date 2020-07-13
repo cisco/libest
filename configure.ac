@@ -35,9 +35,9 @@ AM_COND_IF([FREEBSD], AC_MSG_RESULT([Skipping libdl check]),
 AC_ARG_ENABLE([jni], 
 	       [AS_HELP_STRING([--enable-jni],
 			       [Enable support for JNI library])],
-		[jni_on=1],
-		[jni_on=0])
-AM_CONDITIONAL([ENABLE_JNI], [test x$jni_on = x1])
+		[],
+		[enable_jni="no"])
+AM_CONDITIONAL([ENABLE_JNI], [test "$enable_jni" = "yes"])
 AM_COND_IF([ENABLE_JNI], 
 	   AC_MSG_RESULT([JNI support enabled])
 	   AC_DEFINE([ENABLE_JNI]),
@@ -198,5 +198,7 @@ AC_PREFIX_DEFAULT([/usr/local/est])
 
 cp confdefs.h est_config.h
 
-AC_CONFIG_FILES([Makefile version safe_c_stub/Makefile safe_c_stub/lib/Makefile java/jni/Makefile src/Makefile src/est/Makefile example/client/Makefile example/client-simple/Makefile example/client-brski/Makefile example/server/Makefile example/proxy/Makefile])
+AC_CONFIG_FILES([Makefile version safe_c_stub/Makefile safe_c_stub/lib/Makefile src/Makefile src/est/Makefile example/client/Makefile example/client-simple/Makefile example/client-brski/Makefile example/server/Makefile example/proxy/Makefile])
+AM_COND_IF([ENABLE_JNI],
+           [AC_CONFIG_FILES([java/jni/Makefile])])
 AC_OUTPUT
