@@ -4,10 +4,13 @@ if ENABLE_JNI
 libest_jni = java/jni
 endif
 
-if ENABLE_CLIENT_ONLY 
-SUBDIRS = safe_c_stub src $(libest_jni) example/client example/client-simple example/client-brski
-else 
-SUBDIRS = safe_c_stub src $(libest_jni) example/client example/client-simple example/server example/proxy example/client-brski
+if ENABLE_EXAMPLES
+if ENABLE_CLIENT_ONLY
+examples = example/client example/client-simple example/client-brski
+else
+examples = example/client example/client-simple example/client-brski example/server example/proxy
+endif
 endif
 
+SUBDIRS = safe_c_stub src $(libest_jni) $(examples)
 EXTRA_DIST = autogen.sh example/util LICENSE README.brski $(srcdir)/build.gradle $(srcdir)/example/build_examples.gradle

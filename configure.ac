@@ -2,11 +2,6 @@ dnl Process this file with autoconf to produce a configure script.
 AC_INIT([libest],[3.2.0p],[libest-dev])
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(src/est/est.c)
-AC_CONFIG_SRCDIR(example/client/estclient.c)
-AC_CONFIG_SRCDIR(example/client-simple/estclient-simple.c)
-AC_CONFIG_SRCDIR(example/client-brski/estclient-brski.c)
-AC_CONFIG_SRCDIR(example/server/estserver.c)
-AC_CONFIG_SRCDIR(example/proxy/estproxy.c)
 AC_CONFIG_MACRO_DIR([m4])
 
 AM_INIT_AUTOMAKE
@@ -79,6 +74,15 @@ AM_COND_IF([DISABLE_PTHREAD],
 AM_COND_IF([DISABLE_PTHREAD], [], 
 	    [AC_CHECK_LIB([pthread], [pthread_create], [],
              [AC_MSG_FAILURE([can't find pthread lib])])])
+
+AC_ARG_ENABLE([examples],
+	       [AS_HELP_STRING([--disable-examples],
+			       [Disable examples compilation])],
+		[],
+		[enable_examples="yes"])
+AC_MSG_CHECKING(whether to build examples)
+AM_CONDITIONAL([ENABLE_EXAMPLES], [test "$enable_examples" = "yes"])
+AM_COND_IF([ENABLE_EXAMPLES], AC_MSG_RESULT([yes]), AC_MSG_RESULT([no]))
 
 AC_ARG_WITH([ssl-dir],
 	    [AS_HELP_STRING([--with-ssl-dir],
@@ -198,7 +202,15 @@ AC_PREFIX_DEFAULT([/usr/local/est])
 
 cp confdefs.h est_config.h
 
-AC_CONFIG_FILES([Makefile version safe_c_stub/Makefile safe_c_stub/lib/Makefile src/Makefile src/est/Makefile example/client/Makefile example/client-simple/Makefile example/client-brski/Makefile example/server/Makefile example/proxy/Makefile])
+AC_CONFIG_FILES([Makefile version safe_c_stub/Makefile safe_c_stub/lib/Makefile src/Makefile src/est/Makefile])
 AM_COND_IF([ENABLE_JNI],
            [AC_CONFIG_FILES([java/jni/Makefile])])
+AM_COND_IF([ENABLE_EXAMPLES],
+[
+            AC_CONFIG_FILES([example/client/Makefile example/client-simple/Makefile example/client-brski/Makefile])
+            AM_COND_IF([ENABLE_CLIENT_ONLY],
+                       [],
+                       [AC_CONFIG_FILES([example/server/Makefile example/proxy/Makefile])])
+])
+
 AC_OUTPUT
