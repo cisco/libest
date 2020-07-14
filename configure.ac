@@ -10,6 +10,7 @@ AM_INIT_AUTOMAKE([subdir-objects])
 
 AC_PROG_CC
 AM_PROG_CC_C_O
+PKG_PROG_PKG_CONFIG
 LT_INIT
 AC_CANONICAL_HOST
 case $host in
@@ -187,22 +188,39 @@ AC_ARG_WITH([libcoap-dir],
         ]
        )
 
-SAFEC_STUB_DIR='$(abs_top_builddir)/safe_c_stub'
-AC_SUBST(SAFEC_STUB_DIR)
-safecdir="$SAFEC_STUB_DIR" 
-AC_SUBST([SAFEC_DIR], "$safecdir")
-AC_SUBST([SAFEC_CFLAGS], "$safecdir/include")
-AC_SUBST([SAFEC_LDFLAGS], "$safecdir/lib")
+AC_ARG_WITH(system-libsafec,
+            AS_HELP_STRING([--with-system-libsafec],
+                           [select to use libsafec installed in the system]),
+            [],
+            [with_system_libsafec="no"])
 
-CFLAGS="$CFLAGS -Wall -I$safecdir/include"
-LDFLAGS="$LDFLAGS -L$safecdir/lib"
-LIBS="$LIBS -lsafe_lib"
+AC_MSG_CHECKING(which libsafec to use)
+AM_CONDITIONAL([WITH_SYSTEM_LIBSAFEC], [test "$with_system_libsafec" = "yes"])
+AM_COND_IF([WITH_SYSTEM_LIBSAFEC], AC_MSG_RESULT([system]), AC_MSG_RESULT([built-in]))
+AM_COND_IF([WITH_SYSTEM_LIBSAFEC],
+[
+           PKG_CHECK_MODULES([libsafec], [libsafec])
+           LIBS="$LIBS $libsafec_LIBS"
+           CFLAGS="$CFLAGS $libsafec_CFLAGS"
+           CPPFLAGS="$CPPFLAGS $libsafec_CFLAGS"
+],[
+           SAFEC_STUB_DIR='$(abs_top_builddir)/safe_c_stub'
+           AC_SUBST(SAFEC_STUB_DIR)
+           safecdir="$SAFEC_STUB_DIR"
+           AC_SUBST([SAFEC_DIR], "$safecdir")
+           AC_SUBST([SAFEC_CFLAGS], "$safecdir/include")
+           AC_SUBST([SAFEC_LDFLAGS], "$safecdir/lib")
+
+           CFLAGS="$CFLAGS -Wall -I$safecdir/include"
+           LDFLAGS="$LDFLAGS -L$safecdir/lib"
+           LIBS="$LIBS -lsafe_lib"
+])
 
 AC_PREFIX_DEFAULT([/usr/local/est])
 
 cp confdefs.h est_config.h
 
-AC_CONFIG_FILES([Makefile version safe_c_stub/Makefile safe_c_stub/lib/Makefile src/Makefile src/est/Makefile])
+AC_CONFIG_FILES([Makefile version src/Makefile src/est/Makefile])
 AM_COND_IF([ENABLE_JNI],
            [AC_CONFIG_FILES([java/jni/Makefile])])
 AM_COND_IF([ENABLE_EXAMPLES],
@@ -212,5 +230,8 @@ AM_COND_IF([ENABLE_EXAMPLES],
                        [],
                        [AC_CONFIG_FILES([example/server/Makefile example/proxy/Makefile])])
 ])
+AM_COND_IF([WITH_SYSTEM_LIBSAFEC],
+           [],
+           [AC_CONFIG_FILES([safe_c_stub/Makefile safe_c_stub/lib/Makefile])])
 
 AC_OUTPUT

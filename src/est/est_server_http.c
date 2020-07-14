@@ -36,15 +36,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include "safe_lib.h"
-#include "safe_str_lib.h"
-#include "safe_mem_lib.h"
 #ifdef WIN32
 #include <WS2tcpip.h>
 #endif 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
+#include "safe_lib.h"
+#include "safe_str_lib.h"
+#include "safe_mem_lib.h"
 #if defined(_WIN32)
 #define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
 #else

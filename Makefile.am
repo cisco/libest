@@ -12,5 +12,9 @@ examples = example/client example/client-simple example/client-brski example/ser
 endif
 endif
 
-SUBDIRS = safe_c_stub src $(libest_jni) $(examples)
+if ! WITH_SYSTEM_LIBSAFEC
+builtin_libsafec = safe_c_stub
+endif
+
+SUBDIRS = $(builtin_libsafec) src $(libest_jni) $(examples)
 EXTRA_DIST = autogen.sh example/util LICENSE README.brski $(srcdir)/build.gradle $(srcdir)/example/build_examples.gradle
