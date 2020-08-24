@@ -158,8 +158,8 @@ ETAGS = etags
 CTAGS = ctags
 CSCOPE = cscope
 DIST_SUBDIRS = safe_c_stub src java/jni example/client \
-	example/client-simple example/server example/proxy \
-	example/client-brski
+	example/client-simple example/client-brski example/server \
+	example/proxy
 am__DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/version.in \
 	$(top_srcdir)/config/compile $(top_srcdir)/config/config.guess \
 	$(top_srcdir)/config/config.sub \
@@ -268,6 +268,9 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
 PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
+PKG_CONFIG = @PKG_CONFIG@
+PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
+PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
 SAFEC_CFLAGS = @SAFEC_CFLAGS@
 SAFEC_DIR = @SAFEC_DIR@
@@ -315,6 +318,8 @@ infodir = @infodir@
 install_sh = @install_sh@
 libdir = @libdir@
 libexecdir = @libexecdir@
+libsafec_CFLAGS = @libsafec_CFLAGS@
+libsafec_LIBS = @libsafec_LIBS@
 localedir = @localedir@
 localstatedir = @localstatedir@
 mandir = @mandir@
@@ -334,8 +339,11 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 ACLOCAL_AMFLAGS = -I m4
-@ENABLE_CLIENT_ONLY_FALSE@SUBDIRS = safe_c_stub src java/jni example/client example/client-simple example/server example/proxy example/client-brski
-@ENABLE_CLIENT_ONLY_TRUE@SUBDIRS = safe_c_stub src java/jni example/client example/client-simple example/client-brski
+@ENABLE_JNI_TRUE@libest_jni = java/jni
+@BUILTIN_LIBSAFEC_TRUE@stub_safec_dir = safe_c_stub
+@ENABLE_CLIENT_ONLY_FALSE@@ENABLE_EXAMPLES_TRUE@examples = example/client example/client-simple example/client-brski example/server example/proxy
+@ENABLE_CLIENT_ONLY_TRUE@@ENABLE_EXAMPLES_TRUE@examples = example/client example/client-simple example/client-brski
+SUBDIRS = $(stub_safec_dir) src $(libest_jni) $(examples)
 EXTRA_DIST = autogen.sh example/util LICENSE README.brski $(srcdir)/build.gradle $(srcdir)/example/build_examples.gradle
 all: all-recursive
 

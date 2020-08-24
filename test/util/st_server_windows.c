@@ -471,6 +471,10 @@ static void st_notify_est_err_cb(char *format, ...) {
 
 static void st_notify_ssl_proto_err_cb(char *err_msg) {
 
+    if (err_msg == NULL) {
+        err_msg = "NULL err_msg";
+    }
+
     /*
      * Print the incoming SSL protocol error message.
      */

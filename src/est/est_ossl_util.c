@@ -86,6 +86,7 @@
 #include "est_locl.h"
 #include "est_ossl_util.h"
 #include "safe_mem_lib.h"
+#include "safe_str_lib.h"
 
 /*
  * Extract out the subject field from either a certificate or a

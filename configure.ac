@@ -2,11 +2,6 @@ dnl Process this file with autoconf to produce a configure script.
 AC_INIT([libest],[3.2.0p],[libest-dev])
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(src/est/est.c)
-AC_CONFIG_SRCDIR(example/client/estclient.c)
-AC_CONFIG_SRCDIR(example/client-simple/estclient-simple.c)
-AC_CONFIG_SRCDIR(example/client-brski/estclient-brski.c)
-AC_CONFIG_SRCDIR(example/server/estserver.c)
-AC_CONFIG_SRCDIR(example/proxy/estproxy.c)
 AC_CONFIG_MACRO_DIR([m4])
 
 AM_INIT_AUTOMAKE
@@ -15,6 +10,7 @@ AM_INIT_AUTOMAKE([subdir-objects])
 
 AC_PROG_CC
 AM_PROG_CC_C_O
+PKG_PROG_PKG_CONFIG
 LT_INIT
 AC_CANONICAL_HOST
 case $host in
@@ -35,9 +31,9 @@ AM_COND_IF([FREEBSD], AC_MSG_RESULT([Skipping libdl check]),
 AC_ARG_ENABLE([jni], 
 	       [AS_HELP_STRING([--enable-jni],
 			       [Enable support for JNI library])],
-		[jni_on=1],
-		[jni_on=0])
-AM_CONDITIONAL([ENABLE_JNI], [test x$jni_on = x1])
+		[],
+		[enable_jni="no"])
+AM_CONDITIONAL([ENABLE_JNI], [test "$enable_jni" = "yes"])
 AM_COND_IF([ENABLE_JNI], 
 	   AC_MSG_RESULT([JNI support enabled])
 	   AC_DEFINE([ENABLE_JNI]),
@@ -47,9 +43,9 @@ AM_CONDITIONAL([JAVA_HOME_SET], [test ! -z "$JAVA_HOME"])
 AC_ARG_ENABLE([client-only], 
 	       [AS_HELP_STRING([--enable-client-only],
 			       [Enable the building of only the client mode of libEST])],
-		[clientonly_on=1],
-		[clientonly_on=0])
-AM_CONDITIONAL([ENABLE_CLIENT_ONLY], [test x$clientonly_on = x1])
+		[],
+		[enable_client_only="no"])
+AM_CONDITIONAL([ENABLE_CLIENT_ONLY], [test "$enable_client_only" = "yes"])
 AM_COND_IF([ENABLE_CLIENT_ONLY], 
 	   AC_MSG_RESULT([Client only build enabled])
 	   AC_DEFINE([ENABLE_CLIENT_ONLY]),
@@ -58,20 +54,20 @@ AM_COND_IF([ENABLE_CLIENT_ONLY],
 AC_ARG_ENABLE([brski], 
 	       [AS_HELP_STRING([--enable-brski],
 			       [Enable support for brski bootstrap functionality])],
-		[brski_on=1],
-		[brski_on=0])
-AM_CONDITIONAL([ENABLE_BRSKI], [test x$brski_on = x1])
+		[],
+		[enable_brski="no"])
+AM_CONDITIONAL([ENABLE_BRSKI], [test "$enable_brski" = "yes"])
 AM_COND_IF([ENABLE_BRSKI], 
-	   AC_MSG_RESULT([BRSKI support enabled])
+	   AC_MSG_RESULT([BRSKI support is enabled])
 	   AC_DEFINE([ENABLE_BRSKI]),
 	   AC_MSG_RESULT([BRSKI support is disabled]))
 
 AC_ARG_ENABLE([pthreads], 
 	       [AS_HELP_STRING([--disable-pthreads],
 			       [Disable support for pthreads])],
-		[pthreads_on=1],
-		[pthreads_on=0])
-AM_CONDITIONAL([DISABLE_PTHREAD], [test x$pthreads_on = x1])
+		[],
+		[enable_pthreads="yes"])
+AM_CONDITIONAL([DISABLE_PTHREAD], [test "$enable_pthreads" = "no"])
 AM_COND_IF([DISABLE_PTHREAD], 
 	   AC_MSG_RESULT([pthread support disabled])
 	   AC_DEFINE([DISABLE_PTHREADS]), 
@@ -80,16 +76,25 @@ AM_COND_IF([DISABLE_PTHREAD], [],
 	    [AC_CHECK_LIB([pthread], [pthread_create], [],
              [AC_MSG_FAILURE([can't find pthread lib])])])
 
+AC_ARG_ENABLE([examples],
+	       [AS_HELP_STRING([--disable-examples],
+			       [Disable examples compilation])],
+		[],
+		[enable_examples="yes"])
+AC_MSG_CHECKING(whether to build examples)
+AM_CONDITIONAL([ENABLE_EXAMPLES], [test "$enable_examples" = "yes"])
+AM_COND_IF([ENABLE_EXAMPLES], AC_MSG_RESULT([yes]), AC_MSG_RESULT([no]))
+
 AC_ARG_WITH([ssl-dir],
 	    [AS_HELP_STRING([--with-ssl-dir],
 		[location of OpenSSL install folder, defaults to /usr/local/ssl])],
-	    [ssldir="$withval"],
-	    [ssldir="/usr/local/ssl"])
-AC_SUBST([SSL_CFLAGS], "$ssldir/include")
-AC_SUBST([SSL_LDFLAGS], "$ssldir/lib")
+	    [],
+	    [with_ssl_dir="/usr/local/ssl"])
+AC_SUBST([SSL_CFLAGS], "$with_ssl_dir/include")
+AC_SUBST([SSL_LDFLAGS], "$with_ssl_dir/lib")
 
-CFLAGS="$CFLAGS -Wall -I$ssldir/include"
-LDFLAGS="$LDFLAGS -L$ssldir/lib"
+CFLAGS="$CFLAGS -Wall -I$with_ssl_dir/include"
+LDFLAGS="$LDFLAGS -L$with_ssl_dir/lib"
 if test "$is_freebsd" = "1" ; then
 AC_CHECK_LIB([crypto], [EVP_EncryptInit], [],
              [AC_MSG_FAILURE([can't find openssl crypto lib])]
@@ -115,13 +120,13 @@ AC_CHECK_LIB([crypto], [EVP_CIPHER_CTX_reset], [],
 AC_ARG_WITH([libcurl-dir],
  [AS_HELP_STRING([--with-libcurl-dir],
 				 [enable support for client proxy using libcurl])],
- [libcurldir="$withval"],
- [with_libcurldir=no])
+ [],
+ [with_libcurl_dir=no])
 
   AS_IF(
-        [test "x$with_libcurldir" != xno],
-        [[CFLAGS="$CFLAGS -I$libcurldir/include"]
-         [LDFLAGS="$LDFLAGS -L$libcurldir/lib -lcurl"]
+        [test "$with_libcurl_dir" != "no"],
+        [[CFLAGS="$CFLAGS -I$with_libcurl_dir/include"]
+         [LDFLAGS="$LDFLAGS -L$with_libcurl_dir/lib -lcurl"]
          AC_CHECK_LIB(
               [curl],
               [curl_easy_init],
@@ -138,17 +143,17 @@ AC_ARG_WITH([libcurl-dir],
 AC_ARG_WITH([uriparser-dir],
  [AS_HELP_STRING([--with-uriparser-dir],
 				 [enable support for path segments using uriparser])],
- [uriparserdir="$withval"],
- [with_uriparserdir=no])
+ [],
+ [with_uriparser_dir=no])
           
  dnl CFLAGS="$CFLAGS -Wall -I$uriparserdir/include"
  dnl CPPFLAGS="$CPPFLAGS -I$uriparser/include"
  dnl LDFLAGS="$LDFLAGS -L$uriparserdir/lib -luriparser"
 
   AS_IF(
-        [test "x$with_uriparserdir" != xno],
-        [[CFLAGS="$CFLAGS -I$uriparserdir/include"]
-         [LDFLAGS="$LDFLAGS -L$uriparserdir/lib -luriparser"]
+        [test "$with_uriparser_dir" != "no"],
+        [[CFLAGS="$CFLAGS -I$with_uriparser_dir/include"]
+         [LDFLAGS="$LDFLAGS -L$with_uriparser_dir/lib -luriparser"]
          AC_CHECK_LIB(
               [uriparser], 
               [uriParseUriA],
@@ -165,13 +170,13 @@ AC_ARG_WITH([uriparser-dir],
 AC_ARG_WITH([libcoap-dir],
  [AS_HELP_STRING([--with-libcoap-dir],
 				 [enable support for ESToCoAP using libcoap library])],
- [libcoapdir="$withval"],
- [with_libcoapdir=no])          
+ [],
+ [with_libcoap_dir=no])
 
   AS_IF(
-        [test "x$with_libcoapdir" != xno],
-        [[CFLAGS="$CFLAGS -I$libcoapdir/include"]
-         [LDFLAGS="$LDFLAGS -L$libcoapdir/lib -lcoap-2-openssl"]
+        [test "$with_libcoap_dir" != "no"],
+        [[CFLAGS="$CFLAGS -I$with_libcoap_dir/include"]
+         [LDFLAGS="$LDFLAGS -L$with_libcoap_dir/lib -lcoap-2-openssl"]
          AC_CHECK_LIB(
               [coap-2-openssl], 
               [coap_startup],
@@ -183,20 +188,90 @@ AC_ARG_WITH([libcoap-dir],
         ]
        )
 
+
 SAFEC_STUB_DIR='$(abs_top_builddir)/safe_c_stub'
 AC_SUBST(SAFEC_STUB_DIR)
-safecdir="$SAFEC_STUB_DIR" 
-AC_SUBST([SAFEC_DIR], "$safecdir")
-AC_SUBST([SAFEC_CFLAGS], "$safecdir/include")
-AC_SUBST([SAFEC_LDFLAGS], "$safecdir/lib")
+# check for each of the possible safec options
+AC_ARG_WITH(system-libsafec,
+            AS_HELP_STRING([--with-system-libsafec],
+                           [select to use libsafec installed in the system]),
+            [with_system_libsafec="yes"],
+            [with_system_libsafec="no"])
 
-CFLAGS="$CFLAGS -Wall -I$safecdir/include"
-LDFLAGS="$LDFLAGS -L$safecdir/lib"
-LIBS="$LIBS -lsafe_lib"
+AC_ARG_WITH([safec-dir],
+            [AS_HELP_STRING([--with-safec-dir=],
+                            [location of SAFEC private installation])],
+                            [safecdir="$withval"],
+                            [safecdir="no"])    
+            
+AC_ARG_ENABLE(safec,
+            [AS_HELP_STRING([--disable-safec],
+                            [disable SAFEC use: **WARNING** this is not recommended])],
+                            [disable_safec="yes"],
+                            [disable_safec="no"]) 
+
+AC_MSG_CHECKING(which libsafec to use)
+if test "x$with_system_libsafec" = "xyes"; then
+
+       AC_MSG_RESULT(system installation);
+   
+       PKG_CHECK_MODULES([libsafec], [libsafec])
+       LIBS="$LIBS $libsafec_LIBS"
+       CFLAGS="$CFLAGS $libsafec_CFLAGS"
+       CPPFLAGS="$CPPFLAGS $libsafec_CFLAGS"
+
+       AC_DEFINE([SYSTEM_LIBSAFEC],[1],[Define if using system installed SafeC]) 
+
+else if test "x$safecdir" != "xno"; then
+
+       # a local installation of safec has been specified
+       AC_MSG_RESULT(private installation);
+
+       AC_SUBST([SAFEC_DIR], "$safecdir")
+       AC_SUBST([SAFEC_CFLAGS], "$safecdir/include")
+       AC_SUBST([SAFEC_LDFLAGS], "$safecdir/lib")
+       LDFLAGS="$LDFLAGS -L$safecdir/lib"
+
+       # make sure it's there and linkable.
+       AC_CHECK_LIB([ciscosafec], [memset_s], 
+                    [], [AC_MSG_FAILURE([can't find CiscoSafeC lib])] [])
+
+       AC_DEFINE([CISCO_LIBSAFEC],[1],[Define if using Cisco installed SafeC]) 
+
+else if test "x$disable_safec" = "xyes"; then
+
+       AC_MSG_RESULT(builtin);
+
+       safecdir="$SAFEC_STUB_DIR"
+       AC_SUBST([SAFEC_DIR], "$safecdir")
+       AC_SUBST([SAFEC_CFLAGS], "$safecdir/include")
+       AC_SUBST([SAFEC_LDFLAGS], "$safecdir/lib")
+       LDFLAGS="$LDFLAGS -L$safecdir/lib"
+       LIBS="$LIBS -lsafe_lib"
+
+else 
+
+       AC_MSG_RESULT();
+       AC_MSG_FAILURE([No libsafec option specified. Must be one of: --with-system-libsafec, --with-safec-dir, --disable-safec])
+
+fi 
+fi
+fi
 
 AC_PREFIX_DEFAULT([/usr/local/est])
 
 cp confdefs.h est_config.h
 
-AC_CONFIG_FILES([Makefile version safe_c_stub/Makefile safe_c_stub/lib/Makefile java/jni/Makefile src/Makefile src/est/Makefile example/client/Makefile example/client-simple/Makefile example/client-brski/Makefile example/server/Makefile example/proxy/Makefile])
+AC_CONFIG_FILES([Makefile version src/Makefile src/est/Makefile safe_c_stub/Makefile safe_c_stub/lib/Makefile java/jni/Makefile])
+
+AM_CONDITIONAL([BUILTIN_LIBSAFEC], [test "x$disable_safec" = "xyes"])
+
+AM_COND_IF([ENABLE_EXAMPLES],
+           [
+            AC_CONFIG_FILES([example/client/Makefile example/client-simple/Makefile example/client-brski/Makefile])
+            AM_COND_IF([ENABLE_CLIENT_ONLY],
+                       [],
+                       [AC_CONFIG_FILES([example/server/Makefile example/proxy/Makefile])])
+           ])
+
 AC_OUTPUT
