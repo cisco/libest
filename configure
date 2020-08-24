@@ -595,11 +595,6 @@ PACKAGE_BUGREPORT='libest-dev'
 PACKAGE_URL=''
 
 ac_unique_file="src/est/est.c"
-ac_unique_file="example/client/estclient.c"
-ac_unique_file="example/client-simple/estclient-simple.c"
-ac_unique_file="example/client-brski/estclient-brski.c"
-ac_unique_file="example/server/estserver.c"
-ac_unique_file="example/proxy/estproxy.c"
 # Factoring default headers for most tests.
 ac_includes_default="\
 #include <stdio.h>
@@ -641,12 +636,18 @@ ac_subst_vars='am__EXEEXT_FALSE
 am__EXEEXT_TRUE
 LTLIBOBJS
 LIBOBJS
+BUILTIN_LIBSAFEC_FALSE
+BUILTIN_LIBSAFEC_TRUE
 SAFEC_LDFLAGS
 SAFEC_CFLAGS
 SAFEC_DIR
+libsafec_LIBS
+libsafec_CFLAGS
 SAFEC_STUB_DIR
 SSL_LDFLAGS
 SSL_CFLAGS
+ENABLE_EXAMPLES_FALSE
+ENABLE_EXAMPLES_TRUE
 DISABLE_PTHREAD_FALSE
 DISABLE_PTHREAD_TRUE
 ENABLE_BRSKI_FALSE
@@ -690,6 +691,9 @@ build_vendor
 build_cpu
 build
 LIBTOOL
+PKG_CONFIG_LIBDIR
+PKG_CONFIG_PATH
+PKG_CONFIG
 am__fastdepCC_FALSE
 am__fastdepCC_TRUE
 CCDEPMODE
@@ -794,10 +798,14 @@ enable_jni
 enable_client_only
 enable_brski
 enable_pthreads
+enable_examples
 with_ssl_dir
 with_libcurl_dir
 with_uriparser_dir
 with_libcoap_dir
+with_system_libsafec
+with_safec_dir
+enable_safec
 '
       ac_precious_vars='build_alias
 host_alias
@@ -807,8 +815,13 @@ CFLAGS
 LDFLAGS
 LIBS
 CPPFLAGS
+PKG_CONFIG
+PKG_CONFIG_PATH
+PKG_CONFIG_LIBDIR
 LT_SYS_LIBRARY_PATH
-CPP'
+CPP
+libsafec_CFLAGS
+libsafec_LIBS'
 
 
 # Initialize some variables set by options.
@@ -1457,6 +1470,9 @@ Optional Features:
                           libEST
   --enable-brski          Enable support for brski bootstrap functionality
   --disable-pthreads      Disable support for pthreads
+  --disable-examples      Disable examples compilation
+  --disable-safec         disable SAFEC use: **WARNING** this is not
+                          recommended
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -1474,6 +1490,8 @@ Optional Packages:
   --with-libcurl-dir      enable support for client proxy using libcurl
   --with-uriparser-dir    enable support for path segments using uriparser
   --with-libcoap-dir      enable support for ESToCoAP using libcoap library
+  --with-system-libsafec  select to use libsafec installed in the system
+  --with-safec-dir=       location of SAFEC private installation
 
 Some influential environment variables:
   CC          C compiler command
@@ -1483,9 +1501,18 @@ Some influential environment variables:
   LIBS        libraries to pass to the linker, e.g. -l<library>
   CPPFLAGS    (Objective) C/C++ preprocessor flags, e.g. -I<include dir> if
               you have headers in a nonstandard directory <include dir>
+  PKG_CONFIG  path to pkg-config utility
+  PKG_CONFIG_PATH
+              directories to add to pkg-config's search path
+  PKG_CONFIG_LIBDIR
+              path overriding pkg-config's built-in search path
   LT_SYS_LIBRARY_PATH
               User-defined run-time library search path.
   CPP         C preprocessor
+  libsafec_CFLAGS
+              C compiler flags for libsafec, overriding pkg-config
+  libsafec_LIBS
+              linker flags for libsafec, overriding pkg-config
 
 Use these variables to override the choices made by `configure' or to help
 it to find libraries and programs with nonstandard names/locations.
@@ -2206,11 +2233,6 @@ fi
 ac_config_guess="$SHELL $ac_aux_dir/config.guess"  # Please don't use this var.
 ac_config_sub="$SHELL $ac_aux_dir/config.sub"  # Please don't use this var.
 ac_configure="$SHELL $ac_aux_dir/configure"  # Please don't use this var.
-
-
-
-
-
 
 
 
@@ -4102,6 +4124,126 @@ fi
 
 
 
+
+
+
+
+
+
+
+if test "x$ac_cv_env_PKG_CONFIG_set" != "xset"; then
+	if test -n "$ac_tool_prefix"; then
+  # Extract the first word of "${ac_tool_prefix}pkg-config", so it can be a program name with args.
+set dummy ${ac_tool_prefix}pkg-config; ac_word=$2
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
+$as_echo_n "checking for $ac_word... " >&6; }
+if ${ac_cv_path_PKG_CONFIG+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  case $PKG_CONFIG in
+  [\\/]* | ?:[\\/]*)
+  ac_cv_path_PKG_CONFIG="$PKG_CONFIG" # Let the user override the test with a path.
+  ;;
+  *)
+  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+for as_dir in $PATH
+do
+  IFS=$as_save_IFS
+  test -z "$as_dir" && as_dir=.
+    for ac_exec_ext in '' $ac_executable_extensions; do
+  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
+    ac_cv_path_PKG_CONFIG="$as_dir/$ac_word$ac_exec_ext"
+    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
+    break 2
+  fi
+done
+  done
+IFS=$as_save_IFS
+
+  ;;
+esac
+fi
+PKG_CONFIG=$ac_cv_path_PKG_CONFIG
+if test -n "$PKG_CONFIG"; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $PKG_CONFIG" >&5
+$as_echo "$PKG_CONFIG" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+fi
+
+
+fi
+if test -z "$ac_cv_path_PKG_CONFIG"; then
+  ac_pt_PKG_CONFIG=$PKG_CONFIG
+  # Extract the first word of "pkg-config", so it can be a program name with args.
+set dummy pkg-config; ac_word=$2
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
+$as_echo_n "checking for $ac_word... " >&6; }
+if ${ac_cv_path_ac_pt_PKG_CONFIG+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  case $ac_pt_PKG_CONFIG in
+  [\\/]* | ?:[\\/]*)
+  ac_cv_path_ac_pt_PKG_CONFIG="$ac_pt_PKG_CONFIG" # Let the user override the test with a path.
+  ;;
+  *)
+  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+for as_dir in $PATH
+do
+  IFS=$as_save_IFS
+  test -z "$as_dir" && as_dir=.
+    for ac_exec_ext in '' $ac_executable_extensions; do
+  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
+    ac_cv_path_ac_pt_PKG_CONFIG="$as_dir/$ac_word$ac_exec_ext"
+    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
+    break 2
+  fi
+done
+  done
+IFS=$as_save_IFS
+
+  ;;
+esac
+fi
+ac_pt_PKG_CONFIG=$ac_cv_path_ac_pt_PKG_CONFIG
+if test -n "$ac_pt_PKG_CONFIG"; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_pt_PKG_CONFIG" >&5
+$as_echo "$ac_pt_PKG_CONFIG" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+fi
+
+  if test "x$ac_pt_PKG_CONFIG" = x; then
+    PKG_CONFIG=""
+  else
+    case $cross_compiling:$ac_tool_warned in
+yes:)
+{ $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: using cross tools not prefixed with host triplet" >&5
+$as_echo "$as_me: WARNING: using cross tools not prefixed with host triplet" >&2;}
+ac_tool_warned=yes ;;
+esac
+    PKG_CONFIG=$ac_pt_PKG_CONFIG
+  fi
+else
+  PKG_CONFIG="$ac_cv_path_PKG_CONFIG"
+fi
+
+fi
+if test -n "$PKG_CONFIG"; then
+	_pkg_min_version=0.9.0
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: checking pkg-config is at least version $_pkg_min_version" >&5
+$as_echo_n "checking pkg-config is at least version $_pkg_min_version... " >&6; }
+	if $PKG_CONFIG --atleast-pkgconfig-version $_pkg_min_version; then
+		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+	else
+		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+		PKG_CONFIG=""
+	fi
+fi
 case `pwd` in
   *\ * | *\	*)
     { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: Libtool does not cope well with whitespace in \`pwd\`" >&5
@@ -12257,12 +12399,12 @@ fi
 
 # Check whether --enable-jni was given.
 if test "${enable_jni+set}" = set; then :
-  enableval=$enable_jni; jni_on=1
+  enableval=$enable_jni;
 else
-  jni_on=0
+  enable_jni="no"
 fi
 
- if test x$jni_on = x1; then
+ if test "$enable_jni" = "yes"; then
   ENABLE_JNI_TRUE=
   ENABLE_JNI_FALSE='#'
 else
@@ -12290,12 +12432,12 @@ fi
 
 # Check whether --enable-client-only was given.
 if test "${enable_client_only+set}" = set; then :
-  enableval=$enable_client_only; clientonly_on=1
+  enableval=$enable_client_only;
 else
-  clientonly_on=0
+  enable_client_only="no"
 fi
 
- if test x$clientonly_on = x1; then
+ if test "$enable_client_only" = "yes"; then
   ENABLE_CLIENT_ONLY_TRUE=
   ENABLE_CLIENT_ONLY_FALSE='#'
 else
@@ -12315,12 +12457,12 @@ fi
 
 # Check whether --enable-brski was given.
 if test "${enable_brski+set}" = set; then :
-  enableval=$enable_brski; brski_on=1
+  enableval=$enable_brski;
 else
-  brski_on=0
+  enable_brski="no"
 fi
 
- if test x$brski_on = x1; then
+ if test "$enable_brski" = "yes"; then
   ENABLE_BRSKI_TRUE=
   ENABLE_BRSKI_FALSE='#'
 else
@@ -12329,8 +12471,8 @@ else
 fi
 
 if test -z "$ENABLE_BRSKI_TRUE"; then :
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: BRSKI support enabled" >&5
-$as_echo "BRSKI support enabled" >&6; }
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: BRSKI support is enabled" >&5
+$as_echo "BRSKI support is enabled" >&6; }
 	   $as_echo "#define ENABLE_BRSKI 1" >>confdefs.h
 
 else
@@ -12340,12 +12482,12 @@ fi
 
 # Check whether --enable-pthreads was given.
 if test "${enable_pthreads+set}" = set; then :
-  enableval=$enable_pthreads; pthreads_on=1
+  enableval=$enable_pthreads;
 else
-  pthreads_on=0
+  enable_pthreads="yes"
 fi
 
- if test x$pthreads_on = x1; then
+ if test "$enable_pthreads" = "no"; then
   DISABLE_PTHREAD_TRUE=
   DISABLE_PTHREAD_FALSE='#'
 else
@@ -12416,21 +12558,46 @@ fi
 
 fi
 
+# Check whether --enable-examples was given.
+if test "${enable_examples+set}" = set; then :
+  enableval=$enable_examples;
+else
+  enable_examples="yes"
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to build examples" >&5
+$as_echo_n "checking whether to build examples... " >&6; }
+ if test "$enable_examples" = "yes"; then
+  ENABLE_EXAMPLES_TRUE=
+  ENABLE_EXAMPLES_FALSE='#'
+else
+  ENABLE_EXAMPLES_TRUE='#'
+  ENABLE_EXAMPLES_FALSE=
+fi
+
+if test -z "$ENABLE_EXAMPLES_TRUE"; then :
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+fi
+
 
 # Check whether --with-ssl-dir was given.
 if test "${with_ssl_dir+set}" = set; then :
-  withval=$with_ssl_dir; ssldir="$withval"
+  withval=$with_ssl_dir;
 else
-  ssldir="/usr/local/ssl"
+  with_ssl_dir="/usr/local/ssl"
 fi
 
-SSL_CFLAGS="$ssldir/include"
+SSL_CFLAGS="$with_ssl_dir/include"
 
-SSL_LDFLAGS="$ssldir/lib"
+SSL_LDFLAGS="$with_ssl_dir/lib"
 
 
-CFLAGS="$CFLAGS -Wall -I$ssldir/include"
-LDFLAGS="$LDFLAGS -L$ssldir/lib"
+CFLAGS="$CFLAGS -Wall -I$with_ssl_dir/include"
+LDFLAGS="$LDFLAGS -L$with_ssl_dir/lib"
 if test "$is_freebsd" = "1" ; then
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for EVP_EncryptInit in -lcrypto" >&5
 $as_echo_n "checking for EVP_EncryptInit in -lcrypto... " >&6; }
@@ -12648,15 +12815,15 @@ fi
 
 # Check whether --with-libcurl-dir was given.
 if test "${with_libcurl_dir+set}" = set; then :
-  withval=$with_libcurl_dir; libcurldir="$withval"
+  withval=$with_libcurl_dir;
 else
-  with_libcurldir=no
+  with_libcurl_dir=no
 fi
 
 
-  if test "x$with_libcurldir" != xno; then :
-  CFLAGS="$CFLAGS -I$libcurldir/include"
-         LDFLAGS="$LDFLAGS -L$libcurldir/lib -lcurl"
+  if test "$with_libcurl_dir" != "no"; then :
+  CFLAGS="$CFLAGS -I$with_libcurl_dir/include"
+         LDFLAGS="$LDFLAGS -L$with_libcurl_dir/lib -lcurl"
          { $as_echo "$as_me:${as_lineno-$LINENO}: checking for curl_easy_init in -lcurl" >&5
 $as_echo_n "checking for curl_easy_init in -lcurl... " >&6; }
 if ${ac_cv_lib_curl_curl_easy_init+:} false; then :
@@ -12716,16 +12883,16 @@ fi
 
 # Check whether --with-uriparser-dir was given.
 if test "${with_uriparser_dir+set}" = set; then :
-  withval=$with_uriparser_dir; uriparserdir="$withval"
+  withval=$with_uriparser_dir;
 else
-  with_uriparserdir=no
+  with_uriparser_dir=no
 fi
 
 
 
-  if test "x$with_uriparserdir" != xno; then :
-  CFLAGS="$CFLAGS -I$uriparserdir/include"
-         LDFLAGS="$LDFLAGS -L$uriparserdir/lib -luriparser"
+  if test "$with_uriparser_dir" != "no"; then :
+  CFLAGS="$CFLAGS -I$with_uriparser_dir/include"
+         LDFLAGS="$LDFLAGS -L$with_uriparser_dir/lib -luriparser"
          { $as_echo "$as_me:${as_lineno-$LINENO}: checking for uriParseUriA in -luriparser" >&5
 $as_echo_n "checking for uriParseUriA in -luriparser... " >&6; }
 if ${ac_cv_lib_uriparser_uriParseUriA+:} false; then :
@@ -12785,15 +12952,15 @@ fi
 
 # Check whether --with-libcoap-dir was given.
 if test "${with_libcoap_dir+set}" = set; then :
-  withval=$with_libcoap_dir; libcoapdir="$withval"
+  withval=$with_libcoap_dir;
 else
-  with_libcoapdir=no
+  with_libcoap_dir=no
 fi
 
 
-  if test "x$with_libcoapdir" != xno; then :
-  CFLAGS="$CFLAGS -I$libcoapdir/include"
-         LDFLAGS="$LDFLAGS -L$libcoapdir/lib -lcoap-2-openssl"
+  if test "$with_libcoap_dir" != "no"; then :
+  CFLAGS="$CFLAGS -I$with_libcoap_dir/include"
+         LDFLAGS="$LDFLAGS -L$with_libcoap_dir/lib -lcoap-2-openssl"
          { $as_echo "$as_me:${as_lineno-$LINENO}: checking for coap_startup in -lcoap-2-openssl" >&5
 $as_echo_n "checking for coap_startup in -lcoap-2-openssl... " >&6; }
 if ${ac_cv_lib_coap_2_openssl_coap_startup+:} false; then :
@@ -12848,25 +13015,267 @@ fi
 
 fi
 
+
 SAFEC_STUB_DIR='$(abs_top_builddir)/safe_c_stub'
 
-safecdir="$SAFEC_STUB_DIR"
-SAFEC_DIR="$safecdir"
+# check for each of the possible safec options
 
-SAFEC_CFLAGS="$safecdir/include"
+# Check whether --with-system-libsafec was given.
+if test "${with_system_libsafec+set}" = set; then :
+  withval=$with_system_libsafec; with_system_libsafec="yes"
+else
+  with_system_libsafec="no"
+fi
 
-SAFEC_LDFLAGS="$safecdir/lib"
 
 
-CFLAGS="$CFLAGS -Wall -I$safecdir/include"
-LDFLAGS="$LDFLAGS -L$safecdir/lib"
-LIBS="$LIBS -lsafe_lib"
+# Check whether --with-safec-dir was given.
+if test "${with_safec_dir+set}" = set; then :
+  withval=$with_safec_dir; safecdir="$withval"
+else
+  safecdir="no"
+fi
+
+
+# Check whether --enable-safec was given.
+if test "${enable_safec+set}" = set; then :
+  enableval=$enable_safec; disable_safec="yes"
+else
+  disable_safec="no"
+fi
+
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking which libsafec to use" >&5
+$as_echo_n "checking which libsafec to use... " >&6; }
+if test "x$with_system_libsafec" = "xyes"; then
+
+       { $as_echo "$as_me:${as_lineno-$LINENO}: result: system installation" >&5
+$as_echo "system installation" >&6; };
+
+
+pkg_failed=no
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for libsafec" >&5
+$as_echo_n "checking for libsafec... " >&6; }
+
+if test -n "$libsafec_CFLAGS"; then
+    pkg_cv_libsafec_CFLAGS="$libsafec_CFLAGS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"libsafec\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "libsafec") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_libsafec_CFLAGS=`$PKG_CONFIG --cflags "libsafec" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+if test -n "$libsafec_LIBS"; then
+    pkg_cv_libsafec_LIBS="$libsafec_LIBS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"libsafec\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "libsafec") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_libsafec_LIBS=`$PKG_CONFIG --libs "libsafec" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+
+
+
+if test $pkg_failed = yes; then
+   	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+
+if $PKG_CONFIG --atleast-pkgconfig-version 0.20; then
+        _pkg_short_errors_supported=yes
+else
+        _pkg_short_errors_supported=no
+fi
+        if test $_pkg_short_errors_supported = yes; then
+	        libsafec_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "libsafec" 2>&1`
+        else
+	        libsafec_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "libsafec" 2>&1`
+        fi
+	# Put the nasty error message in config.log where it belongs
+	echo "$libsafec_PKG_ERRORS" >&5
+
+	as_fn_error $? "Package requirements (libsafec) were not met:
+
+$libsafec_PKG_ERRORS
+
+Consider adjusting the PKG_CONFIG_PATH environment variable if you
+installed software in a non-standard prefix.
+
+Alternatively, you may set the environment variables libsafec_CFLAGS
+and libsafec_LIBS to avoid the need to call pkg-config.
+See the pkg-config man page for more details." "$LINENO" 5
+elif test $pkg_failed = untried; then
+     	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+	{ { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "The pkg-config script could not be found or is too old.  Make sure it
+is in your PATH or set the PKG_CONFIG environment variable to the full
+path to pkg-config.
+
+Alternatively, you may set the environment variables libsafec_CFLAGS
+and libsafec_LIBS to avoid the need to call pkg-config.
+See the pkg-config man page for more details.
+
+To get pkg-config, see <http://pkg-config.freedesktop.org/>.
+See \`config.log' for more details" "$LINENO" 5; }
+else
+	libsafec_CFLAGS=$pkg_cv_libsafec_CFLAGS
+	libsafec_LIBS=$pkg_cv_libsafec_LIBS
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+
+fi
+       LIBS="$LIBS $libsafec_LIBS"
+       CFLAGS="$CFLAGS $libsafec_CFLAGS"
+       CPPFLAGS="$CPPFLAGS $libsafec_CFLAGS"
+
+
+$as_echo "#define SYSTEM_LIBSAFEC 1" >>confdefs.h
+
+
+else if test "x$safecdir" != "xno"; then
+
+       # a local installation of safec has been specified
+       { $as_echo "$as_me:${as_lineno-$LINENO}: result: private installation" >&5
+$as_echo "private installation" >&6; };
+
+       SAFEC_DIR="$safecdir"
+
+       SAFEC_CFLAGS="$safecdir/include"
+
+       SAFEC_LDFLAGS="$safecdir/lib"
+
+       LDFLAGS="$LDFLAGS -L$safecdir/lib"
+
+       # make sure it's there and linkable.
+       { $as_echo "$as_me:${as_lineno-$LINENO}: checking for memset_s in -lciscosafec" >&5
+$as_echo_n "checking for memset_s in -lciscosafec... " >&6; }
+if ${ac_cv_lib_ciscosafec_memset_s+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lciscosafec  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char memset_s ();
+int
+main ()
+{
+return memset_s ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_ciscosafec_memset_s=yes
+else
+  ac_cv_lib_ciscosafec_memset_s=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_ciscosafec_memset_s" >&5
+$as_echo "$ac_cv_lib_ciscosafec_memset_s" >&6; }
+if test "x$ac_cv_lib_ciscosafec_memset_s" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBCISCOSAFEC 1
+_ACEOF
+
+  LIBS="-lciscosafec $LIBS"
+
+else
+  { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "can't find CiscoSafeC lib
+See \`config.log' for more details" "$LINENO" 5; }
+fi
+
+
+
+$as_echo "#define CISCO_LIBSAFEC 1" >>confdefs.h
+
+
+else if test "x$disable_safec" = "xyes"; then
+
+       { $as_echo "$as_me:${as_lineno-$LINENO}: result: builtin" >&5
+$as_echo "builtin" >&6; };
+
+       safecdir="$SAFEC_STUB_DIR"
+       SAFEC_DIR="$safecdir"
+
+       SAFEC_CFLAGS="$safecdir/include"
+
+       SAFEC_LDFLAGS="$safecdir/lib"
+
+       LDFLAGS="$LDFLAGS -L$safecdir/lib"
+       LIBS="$LIBS -lsafe_lib"
+
+else
+
+       { $as_echo "$as_me:${as_lineno-$LINENO}: result: " >&5
+$as_echo "" >&6; };
+       { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "No libsafec option specified. Must be one of: --with-system-libsafec, --with-safec-dir, --disable-safec
+See \`config.log' for more details" "$LINENO" 5; }
+
+fi
+fi
+fi
 
 
 
 cp confdefs.h est_config.h
 
-ac_config_files="$ac_config_files Makefile version safe_c_stub/Makefile safe_c_stub/lib/Makefile java/jni/Makefile src/Makefile src/est/Makefile example/client/Makefile example/client-simple/Makefile example/client-brski/Makefile example/server/Makefile example/proxy/Makefile"
+ac_config_files="$ac_config_files Makefile version src/Makefile src/est/Makefile safe_c_stub/Makefile safe_c_stub/lib/Makefile java/jni/Makefile"
+
+
+ if test "x$disable_safec" = "xyes"; then
+  BUILTIN_LIBSAFEC_TRUE=
+  BUILTIN_LIBSAFEC_FALSE='#'
+else
+  BUILTIN_LIBSAFEC_TRUE='#'
+  BUILTIN_LIBSAFEC_FALSE=
+fi
+
+
+if test -z "$ENABLE_EXAMPLES_TRUE"; then :
+
+            ac_config_files="$ac_config_files example/client/Makefile example/client-simple/Makefile example/client-brski/Makefile"
+
+            if test -z "$ENABLE_CLIENT_ONLY_TRUE"; then :
+  else
+  ac_config_files="$ac_config_files example/server/Makefile example/proxy/Makefile"
+
+fi
+
+fi
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
@@ -13075,6 +13484,14 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${DISABLE_PTHREAD_TRUE}" && test -z "${DISABLE_PTHREAD_FALSE}"; then
   as_fn_error $? "conditional \"DISABLE_PTHREAD\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${ENABLE_EXAMPLES_TRUE}" && test -z "${ENABLE_EXAMPLES_FALSE}"; then
+  as_fn_error $? "conditional \"ENABLE_EXAMPLES\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${BUILTIN_LIBSAFEC_TRUE}" && test -z "${BUILTIN_LIBSAFEC_FALSE}"; then
+  as_fn_error $? "conditional \"BUILTIN_LIBSAFEC\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 
@@ -13936,11 +14353,11 @@ do
     "libtool") CONFIG_COMMANDS="$CONFIG_COMMANDS libtool" ;;
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
     "version") CONFIG_FILES="$CONFIG_FILES version" ;;
+    "src/Makefile") CONFIG_FILES="$CONFIG_FILES src/Makefile" ;;
+    "src/est/Makefile") CONFIG_FILES="$CONFIG_FILES src/est/Makefile" ;;
     "safe_c_stub/Makefile") CONFIG_FILES="$CONFIG_FILES safe_c_stub/Makefile" ;;
     "safe_c_stub/lib/Makefile") CONFIG_FILES="$CONFIG_FILES safe_c_stub/lib/Makefile" ;;
     "java/jni/Makefile") CONFIG_FILES="$CONFIG_FILES java/jni/Makefile" ;;
-    "src/Makefile") CONFIG_FILES="$CONFIG_FILES src/Makefile" ;;
-    "src/est/Makefile") CONFIG_FILES="$CONFIG_FILES src/est/Makefile" ;;
     "example/client/Makefile") CONFIG_FILES="$CONFIG_FILES example/client/Makefile" ;;
     "example/client-simple/Makefile") CONFIG_FILES="$CONFIG_FILES example/client-simple/Makefile" ;;
     "example/client-brski/Makefile") CONFIG_FILES="$CONFIG_FILES example/client-brski/Makefile" ;;

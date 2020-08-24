@@ -36,9 +36,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include "safe_lib.h"
-#include "safe_str_lib.h"
-#include "safe_mem_lib.h"
 #ifdef WIN32
 #include <WS2tcpip.h>
 #endif 
@@ -87,6 +84,11 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdio.h>
+
+#include "safe_lib.h"
+#include "safe_str_lib.h"
+#include "safe_mem_lib.h"
+
 #include "est.h"
 #include "est_locl.h"
 #include "est_ossl_util.h"
