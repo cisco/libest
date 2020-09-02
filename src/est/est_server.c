@@ -152,7 +152,7 @@ error:
 }
 
 /*
- * This function sends a HTTP 202 Accepted response to the 
+ * This function sends a HTTP 202 Accepted response to the
  * client with the retry-after value from the CA. This
  * notifies the client that it should check back later to
  * see if the CSR was approved.
@@ -162,14 +162,14 @@ EST_ERROR est_server_send_http_retry_after (EST_CTX *ctx, void *http_ctx, int de
     char http_hdr[EST_HTTP_HDR_MAX];
     struct mg_connection *conn = (struct mg_connection*)http_ctx;
 
-    snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s%s: %d%s%s", 
+    snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s%s: %d%s%s",
 	EST_HTTP_HDR_202_RESP,
-        EST_HTTP_HDR_EOL, 
-	EST_HTTP_HDR_STAT_202, 
+        EST_HTTP_HDR_EOL,
+	EST_HTTP_HDR_STAT_202,
 	EST_HTTP_HDR_EOL,
-	EST_HTTP_HDR_RETRY_AFTER, 
-	delay, 
-	EST_HTTP_HDR_EOL, 
+	EST_HTTP_HDR_RETRY_AFTER,
+	delay,
+	EST_HTTP_HDR_EOL,
 	EST_HTTP_HDR_EOL);
 
     conn->status_code = EST_HTTP_STAT_202;
@@ -188,12 +188,12 @@ int est_handle_cacerts (EST_CTX *ctx, unsigned char *ca_certs, int ca_certs_len,
                         void *http_ctx, char *path_seg)
 {
     char http_hdr[EST_HTTP_HDR_MAX];
-    int hdrlen;    
-    
+    int hdrlen;
+
     if (ca_certs  == NULL) {
         return (EST_ERR_HTTP_NOT_FOUND);
     }
-        
+
     /*
      * Send HTTP header
      */
@@ -273,7 +273,7 @@ int est_server_handle_cacerts (EST_CTX *ctx, void *http_ctx,
                             "Cannot retrieve cacerts.");
                 rv = EST_ERR_BAD_MODE;
             }
-            
+
         } else {
             /*
              * send the error back to the client
@@ -281,7 +281,7 @@ int est_server_handle_cacerts (EST_CTX *ctx, void *http_ctx,
             rv = EST_ERR_HTTP_NO_CONTENT;
         }
     } else if (ctx->ca_certs) {
-        
+
         EST_LOG_INFO("Server: CA certs set locally, responding with "
                      "locally set CA certs response");
 
@@ -292,7 +292,7 @@ int est_server_handle_cacerts (EST_CTX *ctx, void *http_ctx,
             rv = est_handle_cacerts(ctx, ctx->ca_certs, ctx->ca_certs_len,
                                     http_ctx, path_seg);
         } else if (ctx->transport_mode == EST_COAP) {
-            /* 
+            /*
              * since the certs are already in the context,
              * there is nothing to do here (the coap crts
              * handler uses the certs stored in the context)
@@ -337,10 +337,10 @@ EST_ERROR est_server_set_key_generation_cb (EST_CTX *ctx,
     return EST_ERR_NONE;
 }
 
-/*! @brief est_server_generate_auth_digest() is used by an application 
+/*! @brief est_server_generate_auth_digest() is used by an application
     to calculate the HTTP Digest value based on the header values
-    provided by an EST client.  
- 
+    provided by an EST client.
+
     @param ah Authentication header values from client, provided by libEST
     @param HA1 The precalculated HA1 value for the user.  HA1 is defined in
            RFC 2617.  It's the MD5 calculation of the user's ID, HTTP realm,
@@ -348,15 +348,15 @@ EST_ERROR est_server_set_key_generation_cb (EST_CTX *ctx,
 
     This is a helper function that an application can use to calculate
     the HTTP Digest value when performing HTTP Digest Authentication
-    of an EST client.  libEST does not maintain a user database. 
-    This is left up to the application, with the intent of integrating  
+    of an EST client.  libEST does not maintain a user database.
+    This is left up to the application, with the intent of integrating
     an external user database (e.g. Radius/AAA).
-    
+
     The HA1 value should be calculated by the application as
     defined in RFC 2617.  HA1 is the MD5 hash of the user ID, HTTP realm,
     and user password.  This MD5 value is then converted to a hex string.
     HA1 is expected to be 32 bytes long.
- 
+
     @return char* containing the digest, or NULL if an error occurred.
  */
 char *est_server_generate_auth_digest (EST_HTTP_AUTH_HDR *ah, char *HA1)
@@ -385,7 +385,7 @@ char *est_server_generate_auth_digest (EST_HTTP_AUTH_HDR *ah, char *HA1)
      */
     mdctx = EVP_MD_CTX_create();
     EVP_DigestInit_ex(mdctx, md, NULL);
-    EVP_DigestUpdate(mdctx, "POST", 4); 
+    EVP_DigestUpdate(mdctx, "POST", 4);
     EVP_DigestUpdate(mdctx, ":", 1);
     EVP_DigestUpdate(mdctx, ah->uri, strnlen_s(ah->uri, MAX_REALM));
     EVP_DigestFinal(mdctx, ha2, &ha2_len);
@@ -397,7 +397,7 @@ char *est_server_generate_auth_digest (EST_HTTP_AUTH_HDR *ah, char *HA1)
      */
     mdctx = EVP_MD_CTX_create();
     EVP_DigestInit_ex(mdctx, md, NULL);
-    EVP_DigestUpdate(mdctx, HA1, 32); 
+    EVP_DigestUpdate(mdctx, HA1, 32);
     EVP_DigestUpdate(mdctx, ":", 1);
     EVP_DigestUpdate(mdctx, ah->nonce, strnlen_s(ah->nonce, MAX_NONCE));
     EVP_DigestUpdate(mdctx, ":", 1);
@@ -443,7 +443,7 @@ static void est_destroy_ah(EST_HTTP_AUTH_HDR *ah)
     if (ah->user) free(ah->user);
     if (ah->pwd) {
 	/*
-	 * Get the length of the password so it can be zeroized 
+	 * Get the length of the password so it can be zeroized
 	 */
 	len = strnlen_s(ah->pwd, MAX_UIDPWD);
 	if (len) {
@@ -578,9 +578,9 @@ static unsigned char check_for_TLS_cert_auth (SSL *ssl, X509 **peer,
 /*
  * This function verifies that the peer either provided a certificate
  * that was verified by the TLS stack, or HTTP authentication
- * credentials were provided. 
+ * credentials were provided.
  *
- * Returns a EST_AUTH_STATE authorization result 
+ * Returns a EST_AUTH_STATE authorization result
  */
 EST_AUTH_STATE est_enroll_auth (EST_CTX *ctx, void *http_ctx, SSL *ssl,
                                 char *path_seg, EST_ENROLL_REQ_TYPE enroll_req,
@@ -856,7 +856,7 @@ EST_AUTH_STATE est_brski_auth (EST_CTX *ctx, void *http_ctx, SSL *ssl,
         } else if (ctx->enhanced_cert_auth_enabled ==
                    ENHANCED_CERT_AUTH_ENABLED) {
             ah = est_create_ah();
-            /* 
+            /*
              * CSR Check cannot be performed in brski since no CSR is provided
              */
             pr = handle_enhanced_cert_auth(ctx, ssl, peer, NULL, 0, NULL, ah,
@@ -952,14 +952,14 @@ est_server_set_enhcd_cert_auth_local_pki_nid (EST_CTX *ctx,
  * This function is used to determine if the EST client, which could be
  * an RA, is using a certificate that contains the id-kp-cmcRA usage
  * extension.  When this usage bit is present, the PoP check is disabled
- * to allow the RA use case. 
+ * to allow the RA use case.
  *
  * This logic was taken from x509v3_cache_extensions() in v3_purp.c (OpenSSL).
  *
  * Returns 1 if the cert contains id-kp-cmcRA extended key usage extension.
  * Otherwise it returns 0.
  */
-static int est_check_cmcRA (X509 *cert) 
+static int est_check_cmcRA (X509 *cert)
 {
     int cmcRA_found = 0;
     EXTENDED_KEY_USAGE *extusage;
@@ -982,7 +982,7 @@ static int est_check_cmcRA (X509 *cert)
 	     * id-kp-cmcRA value that was created earlier
 	     */
             if (!OBJ_cmp(obj, o_cmcRA)) {
-                cmcRA_found = 1; 
+                cmcRA_found = 1;
                 break;
             }
         }
@@ -1019,10 +1019,10 @@ X509_REQ *est_server_parse_csr (unsigned char *pkcs10, int pkcs10_len,
             EST_LOG_ERR("Unable to open PKCS10 b64 buffer");
             BIO_free(in);
             return (NULL);
-        }        
+        }
         in = BIO_push(b64, in);
     }
-    
+
     /*
      * Read the PEM encoded pkcs10 cert request
      */
@@ -1060,18 +1060,18 @@ X509_REQ *est_server_parse_csr (unsigned char *pkcs10, int pkcs10_len,
  * Return value:
  *	EST_ERR_NONE when PoP check passes
  */
-int est_tls_uid_auth (EST_CTX *ctx, SSL *ssl, X509_REQ *req) 
+int est_tls_uid_auth (EST_CTX *ctx, SSL *ssl, X509_REQ *req)
 {
     X509_ATTRIBUTE *attr;
-#ifdef HAVE_OLD_CISCOSSL    
+#ifdef HAVE_OLD_CISCOSSL
     int i, j;
-#else        
+#else
     int i;
-#endif    
+#endif
 
     ASN1_TYPE *at;
     ASN1_BIT_STRING *bs = NULL;
-#ifdef HAVE_OLD_CISCOSSL    
+#ifdef HAVE_OLD_CISCOSSL
     ASN1_TYPE *t;
 #endif
     int rv = EST_ERR_NONE;
@@ -1107,7 +1107,7 @@ int est_tls_uid_auth (EST_CTX *ctx, SSL *ssl, X509_REQ *req)
          * If we found the attribute, get the actual value of the challengePassword
          */
         if (attr) {
-#ifdef HAVE_OLD_CISCOSSL    
+#ifdef HAVE_OLD_CISCOSSL
             if (attr->single) {
                 t = attr->value.single;
                 bs = t->value.bit_string;
@@ -1119,7 +1119,7 @@ int est_tls_uid_auth (EST_CTX *ctx, SSL *ssl, X509_REQ *req)
 #else
             at = X509_ATTRIBUTE_get0_type(attr, 0);
             bs = at->value.asn1_string;
-#endif            
+#endif
         } else {
             EST_LOG_WARN("PoP challengePassword attribute not found in client cert request");
             return (EST_ERR_AUTH_FAIL_TLSUID);
@@ -1156,7 +1156,7 @@ int est_tls_uid_auth (EST_CTX *ctx, SSL *ssl, X509_REQ *req)
  * CSR.  It will check the signature in the CSR.
  * Returns 0 for success, non-zero if the sanity check failed.
  */
-int est_server_check_csr (X509_REQ *req) 
+int est_server_check_csr (X509_REQ *req)
 {
     EVP_PKEY *pub_key = NULL;
     int rc;
@@ -1170,7 +1170,7 @@ int est_server_check_csr (X509_REQ *req)
     }
 
     /*
-     * Verify the signature in the CSR 
+     * Verify the signature in the CSR
      */
     rc = X509_REQ_verify(req, pub_key);
     EVP_PKEY_free(pub_key);
@@ -1215,7 +1215,7 @@ static void est_server_free_csr_oid_list (EST_OID_LIST *head)
  * Adds a new entry to the tail of the list of attributes
  * in the client CSR.
  */
-static void est_server_add_oid_to_list (EST_OID_LIST **list, EST_OID_LIST *new_entry) 
+static void est_server_add_oid_to_list (EST_OID_LIST **list, EST_OID_LIST *new_entry)
 {
     EST_OID_LIST *head = *list;
 
@@ -1223,7 +1223,7 @@ static void est_server_add_oid_to_list (EST_OID_LIST **list, EST_OID_LIST *new_e
      * If the list doesn't have a head yet, the new entry
      * simply becomes the head
      */
-    if (head == NULL) { 
+    if (head == NULL) {
 	*list = new_entry;
     } else {
 	/*
@@ -1253,7 +1253,7 @@ static int est_server_csr_asn1_parse (EST_OID_LIST **list, const unsigned char *
     int tag, xclass;
     int hl, j, r;
     ASN1_OBJECT *a_object = NULL;
-    errno_t safec_rc; 
+    errno_t safec_rc;
 
     ptr = *blob;
     tot = ptr + length;
@@ -1262,7 +1262,7 @@ static int est_server_csr_asn1_parse (EST_OID_LIST **list, const unsigned char *
 	op = ptr;
 	j = ASN1_get_object(&ptr, &len, &tag, &xclass, length);
 	if (j & 0x80) {
-	    EST_LOG_ERR("Error in encoding"); 
+	    EST_LOG_ERR("Error in encoding");
 	    *blob = ptr;
 	    return (0);
 	}
@@ -1278,7 +1278,7 @@ static int est_server_csr_asn1_parse (EST_OID_LIST **list, const unsigned char *
 	    }
 	    if ((j == 0x21) && (len == 0)) {
 		r = est_server_csr_asn1_parse(list, &ptr, (long)(tot-ptr), offset+(ptr - *blob));
-		if (r == 0) { 
+		if (r == 0) {
 		    *blob = ptr;
 		    return (0);
 		}
@@ -1286,7 +1286,7 @@ static int est_server_csr_asn1_parse (EST_OID_LIST **list, const unsigned char *
 	    } else {
 		while (ptr < ep) {
 		    r = est_server_csr_asn1_parse(list, &ptr, (long)len, offset+(ptr - *blob));
-		    if (r == 0) { 
+		    if (r == 0) {
 			*blob = ptr;
 			return (0);
 		    }
@@ -1323,7 +1323,7 @@ static int est_server_csr_asn1_parse (EST_OID_LIST **list, const unsigned char *
 		    *blob = ptr;
 		    return (0);
 		}
-	    } 
+	    }
 	    ptr += len;
 	    if ((tag == V_ASN1_EOC) && (xclass == 0)) {
 		*blob = ptr;
@@ -1402,7 +1402,7 @@ static EST_ERROR est_server_all_csrattrs_present(EST_CTX *ctx, char *body, int b
     int comparator;
     EST_ERROR rv;
     int curr_len;
-    const unsigned char *curr_string;    
+    const unsigned char *curr_string;
 
     EST_LOG_INFO("CSR attributes enforcement is enabled");
 
@@ -1536,7 +1536,7 @@ static EST_ERROR est_server_all_csrattrs_present(EST_CTX *ctx, char *body, int b
                     return (EST_ERR_UNKNOWN);
                 }
                 der_ptr = (unsigned char *)curr_string;
-                
+
                 /*
                  * If this is the challengePassword, no need to check it.
                  * This is already covered when authenticating the client
@@ -1644,7 +1644,7 @@ EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
     X509_REQ *csr = NULL;
     int client_is_ra = 0;
     int reenroll;
-    
+
     /* Performance Timers */
     EST_TIMER enroll_timer;
 
@@ -1661,8 +1661,8 @@ EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
         conn = (struct mg_connection*)http_ctx;
         user_id = conn->user_id;
     }
-    
-    
+
+
     if (!reenroll && !ctx->est_enroll_pkcs10_cb) {
         EST_LOG_ERR("Null enrollment callback");
         return (EST_ERR_NULL_CALLBACK);
@@ -1761,7 +1761,7 @@ EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
         } else {
             start_timer(&enroll_timer, ctx, "CoAP est_reenroll_pkcs10_cb");
         }
-        rv = ctx->est_reenroll_pkcs10_cb((unsigned char*)body, body_len, 
+        rv = ctx->est_reenroll_pkcs10_cb((unsigned char*)body, body_len,
                                          &cert, (int*)&cert_len,
                                          user_id, peer_cert,
                                          path_seg, ctx->ex_data);
@@ -1771,7 +1771,7 @@ EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
         } else {
             start_timer(&enroll_timer, ctx, "CoAP est_enroll_pkcs10_cb");
         }
-        rv = ctx->est_enroll_pkcs10_cb((unsigned char*)body, body_len, 
+        rv = ctx->est_enroll_pkcs10_cb((unsigned char*)body, body_len,
                                        &cert, (int*)&cert_len,
                                        user_id, peer_cert,
                                        path_seg, ctx->ex_data);
@@ -1795,12 +1795,12 @@ EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
             EST_LOG_ERR("Null pointers for return cert values");
             return (EST_ERR_INVALID_PARAMETERS);
         }
-        
+
         *returned_cert = cert;
         *returned_cert_len = cert_len;
-        
+
         if (ctx->transport_mode == EST_HTTP) {
-            
+
             /*
              * Send HTTP header
              */
@@ -1819,7 +1819,7 @@ EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
                 X509_REQ_free(csr);
                 return (EST_ERR_HTTP_WRITE);
             }
-            
+
             /*
              * Send the signed PKCS7 certificate in the body
              */
@@ -1828,7 +1828,7 @@ EST_ERROR est_handle_simple_enroll (EST_CTX *ctx, void *http_ctx,
                 return (EST_ERR_HTTP_WRITE);
             }
 
-        }   
+        }
     } else if (rv == EST_ERR_CA_ENROLL_RETRY) {
         /*
          * The CA did not sign the request and has asked the
@@ -1903,7 +1903,7 @@ EST_ERROR est_handle_server_keygen (EST_CTX *ctx, void *http_ctx,
      * Make sure the client has sent us a PKCS10 CSR request
      */
     if ((ctx->transport_mode == EST_HTTP) &&
-        (strncmp(ct, "application/pkcs10", 18))) { 
+        (strncmp(ct, "application/pkcs10", 18))) {
         return (EST_ERR_BAD_CONTENT_TYPE);
     }
 
@@ -2065,7 +2065,7 @@ EST_ERROR est_handle_server_keygen (EST_CTX *ctx, void *http_ctx,
         }
     }
 
-    /* 
+    /*
      * body now points to the pkcs10 data, pass
      * this to the enrollment routine
      */
@@ -2094,15 +2094,22 @@ EST_ERROR est_handle_server_keygen (EST_CTX *ctx, void *http_ctx,
                     EST_HTTP_CT_MULTI_MIXED, EST_HTTP_BOUNDARY,EST_HTTP_HDR_EOL);
             hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
             snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
-                    b64der_len+cert_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
-            hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-            snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "\n--%s%s", EST_HTTP_BOUNDARY, EST_HTTP_HDR_EOL);
+                    b64der_len+cert_len+EST_HTTP_HDR_LEN_CONST, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
+
+            /*
+             * mg_write returns total amount of bytes sent, either 0 or a positive number
+             */
+            if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
+                return_code = EST_ERR_HTTP_WRITE;
+                goto free_buffers;
+            }
 
             /*
             * private key header info
             */
+            snprintf(http_hdr, EST_HTTP_HDR_MAX, "--%s%s", EST_HTTP_BOUNDARY, EST_HTTP_HDR_EOL);
             hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-            snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
+            snprintf(http_hdr+ hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
                     EST_HTTP_CT_PKCS8, EST_HTTP_HDR_EOL);
             hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
             snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s%s", EST_HTTP_HDR_CE,
@@ -2269,7 +2276,7 @@ int est_handle_csr_attrs (EST_CTX *ctx, void *http_ctx, SSL *ssl, X509 *peer_cer
             EST_LOG_ERR("Cannot parse csr attrs.");
             return rv;
         }
-        
+
         ctx->csr_pop_present = 0;
         if (ctx->server_enable_pop) {
             rv = est_is_challengePassword_present(csr_data, csr_len, &pop_present);
@@ -2442,7 +2449,7 @@ static EST_ERROR est_brski_handle_voucher_req (EST_CTX *ctx, void *http_ctx, SSL
          */
         if (!mg_write(http_ctx, voucher, voucher_len)) {
             free(voucher);
-            ossl_dump_ssl_errors();            
+            ossl_dump_ssl_errors();
             return (EST_ERR_HTTP_WRITE);
         }
     } else if (rv == EST_BRSKI_CB_RETRY) {
@@ -2455,10 +2462,10 @@ static EST_ERROR est_brski_handle_voucher_req (EST_CTX *ctx, void *http_ctx, SSL
          * voucher within a set time frame.  Send the HTTP retry response to
          * the client.
          */
-        if (EST_ERR_NONE != est_server_send_http_retry_after(ctx, http_ctx, ctx->brski_retry_period)) { 
+        if (EST_ERR_NONE != est_server_send_http_retry_after(ctx, http_ctx, ctx->brski_retry_period)) {
             return (EST_ERR_HTTP_WRITE);
         }
-        
+
     } else {
         if (rv == EST_BRSKI_CB_INVALID_PARAMETER) {
             /*
@@ -2468,7 +2475,7 @@ static EST_ERROR est_brski_handle_voucher_req (EST_CTX *ctx, void *http_ctx, SSL
         }
         if (voucher) {
             free(voucher);
-        }   
+        }
         return (EST_ERR_CA_ENROLL_FAIL);
     }
     if (voucher) {
@@ -2537,7 +2544,7 @@ static EST_ERROR est_brski_handle_voucher_status (EST_CTX *ctx, void *http_ctx, 
      * voucher status callback
      */
     rv = ctx->est_brski_voucher_status_cb(body, body_len, peer_cert);
-    
+
     /*
      * Peer cert is no longer needed, delete it if we have one
      */
@@ -2629,7 +2636,7 @@ static EST_ERROR est_brski_handle_enroll_status (EST_CTX *ctx, void *http_ctx, S
      * voucher status callback
      */
     rv = ctx->est_brski_enroll_status_cb(body, body_len, peer_cert);
-    
+
     /*
      * Peer cert is no longer needed, delete it if we have one
      */
@@ -2726,7 +2733,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
      * we got one.
      */
     peer_cert = SSL_get_peer_certificate(ssl);
-    
+
     /*
      * Announce the 'EST request received from an end point' event.
      */
@@ -2822,7 +2829,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
                 if (event_rc != EST_ERR_NONE) {
                     EST_LOG_WARN("Unable to successfully invoke event notification callback\n");
                 }
-            }      
+            }
 
             rc = est_handle_server_keygen(ctx, http_ctx, ssl, peer_cert,
                                           ct, body, body_len,
@@ -2849,7 +2856,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
                     EST_LOG_WARN("Unable to successfully invoke event notification callback\n");
                 }
             }
-            /* 
+            /*
              * returned_cert and returned_key will only hold data if
              * handle_server_keygen was successful
              */
@@ -2858,7 +2865,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
                 memzero_s(returned_key, returned_key_len);
                 free(returned_key);
             }
-            
+
         } else {
 
             /*
@@ -2891,8 +2898,8 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
                 if (event_rc != EST_ERR_NONE) {
                     EST_LOG_WARN("Unable to successfully invoke event notification callback\n");
                 }
-            }            
-            
+            }
+
             rc = est_handle_simple_enroll(ctx, http_ctx, ssl, peer_cert,
                                           ct, body, body_len, path_seg,
                                           enroll_req, &returned_cert, &returned_cert_len);
@@ -2922,7 +2929,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
 
         }
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
-            EST_LOG_WARN("Enrollment failed with rc=%d (%s)\n", 
+            EST_LOG_WARN("Enrollment failed with rc=%d (%s)\n",
 		         rc, EST_ERR_NUM_TO_STR(rc));
             est_send_http_error(ctx, http_ctx, rc);
             free(path_seg);
@@ -2950,10 +2957,10 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
             stop_timer_with_id(&http_req_timer, pid_str);
             return (EST_ERR_WRONG_METHOD);
         }
-        
+
         rc = est_handle_csr_attrs(ctx, http_ctx, ssl, peer_cert, path_seg, NULL, 0);
         if (rc != EST_ERR_NONE) {
-            est_send_http_error(ctx, http_ctx, rc); 
+            est_send_http_error(ctx, http_ctx, rc);
             free(path_seg);
             path_seg = NULL;
             X509_free(peer_cert);
@@ -2987,11 +2994,11 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
             path_seg = NULL;
             X509_free(peer_cert);
             peer_cert = NULL;
-	    return (EST_ERR_BAD_CONTENT_TYPE); 
+	    return (EST_ERR_BAD_CONTENT_TYPE);
 	}
 
         switch (operation) {
-        case EST_OP_BRSKI_REQ_VOUCHER: 
+        case EST_OP_BRSKI_REQ_VOUCHER:
             rc = est_brski_handle_voucher_req(ctx, http_ctx, ssl, ct,
                                               body, body_len,
                                               path_seg);
@@ -3014,9 +3021,9 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
             EST_LOG_WARN("BRSKI request processing, invalid path\n");
             rc = EST_ERR_HTTP_NOT_FOUND;
         }
-        
+
         if (rc != EST_ERR_NONE && rc != EST_ERR_AUTH_PENDING) {
-            EST_LOG_WARN("Voucher request failed with rc=%d (%s)\n", 
+            EST_LOG_WARN("Voucher request failed with rc=%d (%s)\n",
 		         rc, EST_ERR_NUM_TO_STR(rc));
 	    if (rc == EST_ERR_AUTH_FAIL) {
 		    est_send_http_error(ctx, http_ctx, EST_ERR_AUTH_FAIL);
@@ -3033,7 +3040,7 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
 #endif // BRSKI
     /*
      * Send a 500 error if we got to this state, since
-     * we already checked if the path legitimate 
+     * we already checked if the path legitimate
      */
     else {
         est_send_http_error(ctx, http_ctx, EST_ERR_UNKNOWN);
@@ -3047,12 +3054,12 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
     est_invoke_endpoint_req_event_cb(ctx, peer_cert, ssl, NULL,
                                      (const char *)uri, EST_ENDPOINT_REQ_END);
     stop_timer_with_id(&event_cb_timer, pid_str);
-    
+
     if (peer_cert) {
         X509_free(peer_cert);
         peer_cert = NULL;
     }
-    
+
     free(path_seg);
     path_seg = NULL;
     return (EST_ERR_NONE);
@@ -3062,20 +3069,20 @@ int est_http_request (EST_CTX *ctx, void *http_ctx,
 /*! @brief est_server_start() is used by an application to start
     the EST server after est_server_init() has been called and
     all the required callback functions have been provided by
-    the application.   
- 
+    the application.
+
     @param ctx Pointer to the EST context
 
     libest uses HTTP code from the Mongoose HTTP server.
     This function allows the application to start the HTTP
     services layer, which is required by EST.
- 
+
     @return EST_ERROR.
  */
 EST_ERROR est_server_start (EST_CTX *ctx)
 {
     EST_MG_CONTEXT *mgctx;
-    
+
     if (!ctx) {
 	EST_LOG_ERR("Null context");
 	return (EST_ERR_NO_CTX);
@@ -3092,13 +3099,13 @@ EST_ERROR est_server_start (EST_CTX *ctx)
 
 /*! @brief est_server_stop() is used by an application to stop
     the EST server.  This should be called prior to est_destroy().
- 
+
     @param ctx Pointer to the EST context
 
     libest uses HTTP code from the Mongoose HTTP server.
     This function allows the application to stop the HTTP
     services layer.
- 
+
     @return EST_ERROR.
  */
 EST_ERROR est_server_stop (EST_CTX *ctx)
@@ -3116,7 +3123,7 @@ EST_ERROR est_server_stop (EST_CTX *ctx)
             mg_stop(mgctx);
         }
     } else if (ctx->transport_mode == EST_COAP) {
-#if HAVE_LIBCOAP        
+#if HAVE_LIBCOAP
         coap_context_t *coap_ctx = ctx->coap_ctx;
         coap_free_context(coap_ctx);
         ctx->coap_ctx = NULL;
@@ -3124,22 +3131,22 @@ EST_ERROR est_server_stop (EST_CTX *ctx)
     } else {
         EST_LOG_ERR("Invalid transport mode while attempting to stop server mode");
         return (EST_ERR_BAD_MODE);
-    }        
-    
+    }
+
     return (EST_ERR_NONE);
 }
 
 /*! @brief est_server_init() is used by an application to create
     a context in the EST library when operating as an EST server that
     fronts a CA.  This context is used when invoking other functions in the API.
- 
-    @param ca_chain     Char array containing PEM encoded CA certs & CRL entries 
-    @param ca_chain_len Length of ca_chain char array 
+
+    @param ca_chain     Char array containing PEM encoded CA certs & CRL entries
+    @param ca_chain_len Length of ca_chain char array
     @param cacerts_resp_chain Char array containing PEM encoded CA certs to include
                               in the /cacerts response
     @param cacerts_resp_chain_len Length of cacerts_resp_chain char array
     @param cert_format Specifies the encoding of the local and external
-                       certificate chains (PEM/DER).  
+                       certificate chains (PEM/DER).
     @param http_realm Char array containing HTTP realm name for HTTP auth
     @param tls_id_cert Pointer to X509 that contains the server's certificate
                     for the TLS layer.
@@ -3154,25 +3161,25 @@ EST_ERROR est_server_stop (EST_CTX *ctx)
     of implicit trust anchor certificates, and any intermediate sub-CA
     certificates required to complete the chain of trust between the
     identity certificate passed into the tls_id_cert parameter and the
-    root certificate for that identity certificate.  
+    root certificate for that identity certificate.
     The CA certificates should be encoded using
     the format specified in the cert_format parameter (e.g. PEM) and
     may contain CRL entries that will be used when authenticating
-    EST clients connecting to the server.  
-    The applications must also provide the HTTP realm to use for 
+    EST clients connecting to the server.
+    The applications must also provide the HTTP realm to use for
     HTTP authentication and the server certificate/private key to use
     for the TLS stack to identify the server.
-    
+
     Warning: Including additional intermediate sub-CA certificates that are
              not needed to complete the chain of trust may result in a
-	     potential MITM attack.  
- 
+	     potential MITM attack.
+
     @return EST_CTX.
  */
 EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
                            unsigned char *cacerts_resp_chain, int cacerts_resp_chain_len,
 			   EST_CERT_FORMAT cert_format,
-                           char *http_realm, 
+                           char *http_realm,
 			   X509 *tls_id_cert, EVP_PKEY *tls_id_key)
 {
     EST_CTX *ctx;
@@ -3180,7 +3187,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
 #if HAVE_LIBCOAP
     EST_ERROR rc;
 #endif
-    
+
     est_log_version();
 
     /*
@@ -3195,7 +3202,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
         return NULL;
     }
 
-    /* 
+    /*
      * Check the length value, it should match.
      */
     len = (int) strnlen_s((char *)ca_chain, EST_CA_MAX);
@@ -3203,7 +3210,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
 	EST_LOG_ERR("Length of ca_chain doesn't match ca_chain_len");
         return NULL;
     }
-    if (cacerts_resp_chain) {        
+    if (cacerts_resp_chain) {
         len = (int) strnlen_s((char *)cacerts_resp_chain, EST_CA_MAX);
         if (len != cacerts_resp_chain_len) {
             EST_LOG_ERR("Actual length of cacerts_resp_chain does not match "
@@ -3236,7 +3243,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
     ctx->retry_period = EST_RETRY_PERIOD_DEF;
     ctx->require_http_auth = HTTP_AUTH_REQUIRED;
     ctx->server_read_timeout = EST_SSL_READ_TIMEOUT_DEF;
-    
+
     ctx->brski_retry_period = EST_BRSKI_RETRY_PERIOD_DEF;
     /*
      * Load the CA certificates into local memory and retain
@@ -3244,14 +3251,14 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
      * They are optional parameters.  The alternative is for the
      * app layer to provide a callback and return them on the fly.
      */
-    if (cacerts_resp_chain) {   
+    if (cacerts_resp_chain) {
         if (est_load_ca_certs(ctx, cacerts_resp_chain, cacerts_resp_chain_len)) {
             EST_LOG_ERR("Failed to load CA certificates response buffer");
             free(ctx);
             return NULL;
         }
     }
-    if (est_load_trusted_certs(ctx, ca_chain, ca_chain_len)) {  
+    if (est_load_trusted_certs(ctx, ca_chain, ca_chain_len)) {
         EST_LOG_ERR("Failed to load trusted certificate store");
         free(ctx);
         return NULL;
@@ -3264,8 +3271,8 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
     ctx->server_enable_pop = 1;
     ctx->local_cacerts_processing = 1;
 
-    /* 
-     * Create a new ASN object for the id-kp-cmcRA OID.  
+    /*
+     * Create a new ASN object for the id-kp-cmcRA OID.
      * OpenSSL doesn't define this, so we need to create it
      * ourselves.
      * http://www.openssl.org/docs/crypto/OBJ_nid2obj.html
@@ -3288,7 +3295,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
     ctx->dtls_handshake_timer = EST_DTLS_HANDSHAKE_TIMEOUT_DEF;
     ctx->dtls_handshake_mtu = EST_DTLS_HANDSHAKE_MTU_DEF;
     ctx->dtls_session_max = EST_DTLS_SESSION_MAX_DEF;
-    
+
     /*
      * Initialize the CoAP request array
      */
@@ -3299,7 +3306,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
         return NULL;
     }
     ctx->down_time_timer_initialized = 0;
-#endif    
+#endif
     ctx->perf_timers_enabled = 0;
 
     return (ctx);
@@ -3308,7 +3315,7 @@ EST_CTX * est_server_init (unsigned char *ca_chain, int ca_chain_len,
 /*! @brief est_server_set_auth_mode() is used by an application to configure
     the HTTP authentication method to use for validating the identity of
     an EST client.
- 
+
     @param ctx   Pointer to the EST context
     @param amode Must be one of the following: AUTH_BASIC, AUTH_DIGEST, AUTH_TOKEN
 
@@ -3338,8 +3345,8 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
 	    return (EST_ERR_BAD_MODE);
 	}
         /* fallthrough */
-    case AUTH_BASIC:        
-    case AUTH_TOKEN:        
+    case AUTH_BASIC:
+    case AUTH_TOKEN:
 	ctx->auth_mode = amode;
 	return (EST_ERR_NONE);
 	break;
@@ -3351,8 +3358,8 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
 }
 
 /*! @brief est_set_ca_enroll_cb() is used by an application to install
-    a handler for signing incoming PKCS10 requests.  
- 
+    a handler for signing incoming PKCS10 requests.
+
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
@@ -3365,7 +3372,7 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
     needs to be signed by the CA server.  The application will need
     to forward the request to the signing authority and return
     the response.  The response should be a PKCS7 signed certificate.
- 
+
     @return EST_ERROR.
  */
 EST_ERROR est_set_ca_enroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10, int p10_len,
@@ -3384,8 +3391,8 @@ EST_ERROR est_set_ca_enroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10, i
 }
 
 /*! @brief est_set_ca_reenroll_cb() is used by an application to install
-    a handler for re-enrolling certificates.  
- 
+    a handler for re-enrolling certificates.
+
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
@@ -3394,11 +3401,11 @@ EST_ERROR est_set_ca_enroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10, i
 
         int func(unsigned char*, int, unsigned char**, int*, char*, X509*)
 
-    This function is called by libest when a certificate 
+    This function is called by libest when a certificate
     needs to be renewed by the CA server.  The application will need
     to forward the request to the signing authority and return
     the response.  The response should be a PKCS7 signed certificate.
- 
+
     @return EST_ERROR.
  */
 EST_ERROR est_set_ca_reenroll_cb (EST_CTX *ctx, int (*cb)(unsigned char *pkcs10, int p10_len,
@@ -3451,8 +3458,8 @@ EST_ERROR est_set_server_side_keygen_enroll_cb (EST_CTX *ctx, int (*cb)(unsigned
 
 /*! @brief est_set_csr_cb() is used by an application to install
     a handler for retrieving the CSR attributes from the
-    CA server.  
- 
+    CA server.
+
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
@@ -3461,10 +3468,10 @@ EST_ERROR est_set_server_side_keygen_enroll_cb (EST_CTX *ctx, int (*cb)(unsigned
 
         unsigned char *(*cb)(int*csr_len, char *path_seg, void *ex_data)
 
-    This function is called by libest when a CSR attributes 
+    This function is called by libest when a CSR attributes
     request is received.  The attributes are provided by the CA
     server and returned as a char array.
- 
+
     @return EST_ERROR.
  */
 EST_ERROR est_set_csr_cb (EST_CTX *ctx, unsigned char *(*cb)(int*csr_len, char *path_seg, X509 *peer_cert, void *ex_data))
@@ -3488,7 +3495,7 @@ EST_ERROR est_set_csr_cb (EST_CTX *ctx, unsigned char *(*cb)(int*csr_len, char *
 
 /*! @brief est_set_cacerts_cb() is used by an application to install
     a handler for retrieving the CA certs from the CA server.
- 
+
     @param ctx Pointer to the EST context
     @param cb  Function address of the handler
 
@@ -3497,10 +3504,10 @@ EST_ERROR est_set_csr_cb (EST_CTX *ctx, unsigned char *(*cb)(int*csr_len, char *
 
         unsigned char *(*cb)(int *csr_len, char *path_seg, void *ex_data)
 
-    This function is called by libest when a CAcerts request 
-    is received.  The CA certs chain is provided by the application 
+    This function is called by libest when a CAcerts request
+    is received.  The CA certs chain is provided by the application
     layer and returned as a char array.
- 
+
     @return EST_ERROR.
  */
 EST_ERROR est_set_cacerts_cb (EST_CTX *ctx,
@@ -3525,7 +3532,7 @@ EST_ERROR est_set_cacerts_cb (EST_CTX *ctx,
 
 /*! @brief est_set_http_auth_cb() is used by an application to install
     a handler for authenticating EST clients.
- 
+
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
@@ -3538,17 +3545,17 @@ EST_ERROR est_set_cacerts_cb (EST_CTX *ctx,
     This function is called by libest when performing HTTP authentication.
     libest will pass the EST_HTTP_AUTH_HDR struct to the application,
     allowing the application to hook into a Radius, AAA, or some user
-    authentication database.  The X509 certificate from the TLS 
+    authentication database.  The X509 certificate from the TLS
     peer (EST client) is also provided through this callback facility, allowing
-    the application layer to check for specific attributes in the 
+    the application layer to check for specific attributes in the
     X509 certificate such as an 802.1AR device ID.  In addition,
     the path segment string is passed up if there was one in the
     request URI.
- 
+
     @return EST_ERROR.
  */
-EST_ERROR est_set_http_auth_cb (EST_CTX *ctx, 
-                                int (*cb)(EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah, 
+EST_ERROR est_set_http_auth_cb (EST_CTX *ctx,
+                                int (*cb)(EST_CTX *ctx, EST_HTTP_AUTH_HDR *ah,
                                           X509 *peer_cert, char *path_seg,
 					  void *ex_data))
 {
@@ -3564,12 +3571,12 @@ EST_ERROR est_set_http_auth_cb (EST_CTX *ctx,
 
 /*! @brief est_set_http_auth_required() is used by an application to define whether
     HTTP authentication should be required in addition to using client certificates.
- 
+
     @param ctx Pointer to the EST context
-    @param required Flag indicating that HTTP authentication is required. Set 
-    to HTTP_AUTH_REQUIRED value to require HTTP auth.  Set to HTTP_AUTH_NOT_REQUIRED 
+    @param required Flag indicating that HTTP authentication is required. Set
+    to HTTP_AUTH_REQUIRED value to require HTTP auth.  Set to HTTP_AUTH_NOT_REQUIRED
     if HTTP auth should occur only when TLS client authentication fails.
- 
+
     @return EST_ERROR.
 
     The default mode is HTTP_AUTH_REQUIRED.  This means that HTTP authentication
@@ -3777,32 +3784,32 @@ LIBEST_API EST_ERROR est_server_disable_enhanced_cert_auth (EST_CTX *ctx)
     return (EST_ERR_NONE);
 }
 
-/*! @brief est_server_enable_srp() is used by an application to enable 
-    the TLS-SRP authentication.  This allows EST clients that provide 
+/*! @brief est_server_enable_srp() is used by an application to enable
+    the TLS-SRP authentication.  This allows EST clients that provide
     SRP credentials at the TLS layer to be authenticated by the EST
     server.  This function must be invoked to enable server-side
-    SRP support. 
+    SRP support.
 
     @param ctx Pointer to the EST context
     @param cb Function address of the application specific SRP verifier handler
 
-    This function should be invoked prior to starting the EST server.   
+    This function should be invoked prior to starting the EST server.
     This is used to specify the handler for SRP authentication at the TLS
     layer.  When a TLS-SRP cipher suite is negotiated at the TLS layer,
     the handler will be invoked by libest to retrieve the SRP parameters
     for user authentication.  Your application must provide the SRP parameters
-    for the user.  
-    
+    for the user.
+
     The handler should use the following logic:
 
     1. Invoke SSL_get_srp_username() to get the SRP user name from the
        TLS layer.
     2. Lookup the user's SRP parameters in the application specific
-       user database.  These parameters include the N, g, s, and v 
+       user database.  These parameters include the N, g, s, and v
        parameters.
     3. Invoke SSL_set_srp_server_param() to forward the SRP parameters
        to the TLS layer, allowing the TLS handshake to proceed.
-       
+
     libest includes an example server application that uses this handler
     for SRP support.  This example uses the OpenSSL SRP verifier file capability
     to manage SRP parameters for individual users.  Your application could use
@@ -3831,26 +3838,26 @@ EST_ERROR est_server_enable_srp (EST_CTX *ctx, int (*cb)(SSL *s, int *ad, void *
 }
 
 
-/*! @brief est_server_enable_pop() is used by an application to enable 
-    the proof-of-possession check on the EST server.  This proves the 
+/*! @brief est_server_enable_pop() is used by an application to enable
+    the proof-of-possession check on the EST server.  This proves the
     EST client that sent the CSR to the server is in possession of the
-    private key that was used to sign the CSR.  This binds the TLS 
+    private key that was used to sign the CSR.  This binds the TLS
     session ID to the CSR.
 
-    Note, if the CSR attributes configured on the server require PoP 
+    Note, if the CSR attributes configured on the server require PoP
     checking, then there is no need to call this function to enable
     PoP.  The PoP will be enabled automatically under this scenario.
-    
+
     Note, PoP checking is not possible when an EST proxy is used to
-    between the EST client and EST server.  Since the proxy will not 
+    between the EST client and EST server.  Since the proxy will not
     be in possession of the private key, an EST server would fail the
-    PoP check.  However, an EST proxy can enable this feature to ensure 
+    PoP check.  However, an EST proxy can enable this feature to ensure
     the EST client has the signing key.
 
     @param ctx Pointer to the EST context
 
-    This function may be called at any time.   
- 
+    This function may be called at any time.
+
     @return EST_ERROR.
  */
 EST_ERROR est_server_enable_pop (EST_CTX *ctx)
@@ -3864,15 +3871,15 @@ EST_ERROR est_server_enable_pop (EST_CTX *ctx)
     return (EST_ERR_NONE);
 }
 
-/*! @brief est_server_disable_pop() is used by an application to disable 
+/*! @brief est_server_disable_pop() is used by an application to disable
     the proof-of-possession check on the EST server.  Please see
     the documentation for est_server_enable_pop() for more information
     on the proof-of-possession check.
 
     @param ctx Pointer to the EST context
 
-    This function may be called at any time.   
- 
+    This function may be called at any time.
+
     @return EST_ERROR.
  */
 EST_ERROR est_server_disable_pop (EST_CTX *ctx)
@@ -3886,20 +3893,20 @@ EST_ERROR est_server_disable_pop (EST_CTX *ctx)
     return (EST_ERR_NONE);
 }
 
-/*! @brief est_server_set_retry_period() is used by an application to  
+/*! @brief est_server_set_retry_period() is used by an application to
     change the default retry-after period sent to the EST client when
     the CA server is not configured for auto-enroll.  This retry-after
     value notifies the client about how long it should wait before
-    attempting the enroll operation again to see if the CA has 
-    approved the original CSR. 
- 
+    attempting the enroll operation again to see if the CA has
+    approved the original CSR.
+
     @param ctx Pointer to the EST context
     @param seconds Number of seconds the server will use in the
            retry-after response.
 
     This function may be called at any time after a context has
-    been created.   
- 
+    been created.
+
     @return EST_ERROR.
  */
 EST_ERROR est_server_set_retry_period (EST_CTX *ctx, int seconds)
@@ -3925,25 +3932,25 @@ EST_ERROR est_server_set_retry_period (EST_CTX *ctx, int seconds)
     return (EST_ERR_NONE);
 }
 
-/*! @brief est_server_set_ecdhe_curve() is used by an application to 
+/*! @brief est_server_set_ecdhe_curve() is used by an application to
     specify the ECC curve that should be used for ephemeral diffie-hellman
     keys during the TLS handshake.  Ephemeral diffie-hellman is enabled
     by libest and provides better forward secrecy.  If the curve
     is not specified by the application using this function, then
-    the prime256v1 curve is used as the default curve.  
- 
+    the prime256v1 curve is used as the default curve.
+
     @param ctx Pointer to the EST context
     @param nid OpenSSL NID value for the desired curve
 
-    This function must be called prior to starting the EST server.  
-    The NID values are defined in <openssl/obj_mac.h>.  Typical NID 
+    This function must be called prior to starting the EST server.
+    The NID values are defined in <openssl/obj_mac.h>.  Typical NID
     values provided to this function would include:
-	
+
 	NID_X9_62_prime192v1
 	NID_X9_62_prime256v1
 	NID_secp384r1
 	NID_secp521r1
- 
+
     @return EST_ERROR.
  */
 EST_ERROR est_server_set_ecdhe_curve (EST_CTX *ctx, int nid)
@@ -3961,24 +3968,24 @@ EST_ERROR est_server_set_ecdhe_curve (EST_CTX *ctx, int nid)
     return (EST_ERR_NONE);
 }
 
-/*! @brief est_server_set_dh_parms() is used by an application to 
+/*! @brief est_server_set_dh_parms() is used by an application to
     specify the Diffie-Hellman parameters to be used for single
-    use DH key generation during the TLS handshake.  If these 
+    use DH key generation during the TLS handshake.  If these
     parameters are not used, then single-use DH key generation
-    is not enabled.  This should be enabled to improve the 
-    forward secrecy of the TLS handshake operation.  
-    
+    is not enabled.  This should be enabled to improve the
+    forward secrecy of the TLS handshake operation.
+
     The DH parameters provided through this API should not be
     hard-coded in the application.  The parameters should be
     generated at the time of product installation.  Reusing the
     parameters across multiple installations of the product
-    results in a vulnerable product.  
- 
+    results in a vulnerable product.
+
     @param ctx Pointer to the EST context
     @param parms Pointer to OpenSSL DH parameters
 
-    This function must be called prior to starting the EST server.  
- 
+    This function must be called prior to starting the EST server.
+
     @return EST_ERROR.
  */
 EST_ERROR est_server_set_dh_parms (EST_CTX *ctx, DH *parms)
@@ -3995,7 +4002,7 @@ EST_ERROR est_server_set_dh_parms (EST_CTX *ctx, DH *parms)
     return (EST_ERR_NONE);
 }
 
-/*! @brief est_server_init_csrattrs() is used by an application to 
+/*! @brief est_server_init_csrattrs() is used by an application to
     initialize a fixed set of CSR attributes.  These attributes will
     be used by libest in response to a client CSR attributes
     request.  The attributes must be an ASN.1 base64 encoded character
@@ -4011,10 +4018,10 @@ EST_ERROR est_server_set_dh_parms (EST_CTX *ctx, DH *parms)
     application it will be used.  If not, then libest will use the
     attributes initialized here.
 
-    This function should be called prior to starting the EST server.  
+    This function should be called prior to starting the EST server.
     PoP configuration(est_server_enable_pop or est_server_disable_pop)
     should be called prior to this function.
-    
+
     @return EST_ERROR.
  */
 EST_ERROR est_server_init_csrattrs (EST_CTX *ctx, char *csrattrs, int csrattrs_len)
@@ -4033,7 +4040,7 @@ EST_ERROR est_server_init_csrattrs (EST_CTX *ctx, char *csrattrs, int csrattrs_l
         return (EST_ERR_BAD_MODE);
     }
 
-    EST_LOG_INFO("Attributes pointer is %p, len=%d", 
+    EST_LOG_INFO("Attributes pointer is %p, len=%d",
 		 ctx->server_csrattrs, ctx->server_csrattrs_len);
 
     /* Free old version if previously initialized */
@@ -4049,13 +4056,13 @@ EST_ERROR est_server_init_csrattrs (EST_CTX *ctx, char *csrattrs, int csrattrs_l
     }
 
     /*
-     * In order to run Client negative unit testing the parameter, 
+     * In order to run Client negative unit testing the parameter,
      * PoP and parse checks all need to be disabled via #define
      * in a couple of places here.
      */
 
-    /* 
-     * check smallest possible base64 case here for now 
+    /*
+     * check smallest possible base64 case here for now
      * and sanity test will check min/max value for ASN.1 data
      */
     if (csrattrs_len < MIN_CSRATTRS) {
@@ -4073,7 +4080,7 @@ EST_ERROR est_server_init_csrattrs (EST_CTX *ctx, char *csrattrs, int csrattrs_l
 	ctx->csr_pop_present = pop_present;
 
 	if (!ctx->csr_pop_present) {
-	    rv = est_add_challengePassword(csrattrs, csrattrs_len, 
+	    rv = est_add_challengePassword(csrattrs, csrattrs_len,
 					   &csrattrs_data_pop, &csrattrs_pop_len);
 	    if (rv != EST_ERR_NONE) {
 		EST_LOG_ERR("Error during add PoP");
@@ -4088,7 +4095,7 @@ EST_ERROR est_server_init_csrattrs (EST_CTX *ctx, char *csrattrs, int csrattrs_l
 	    EST_LOG_ERR("Corrupt CSR Attributes");
 	    return (EST_ERR_INVALID_PARAMETERS);
 	}
-    }    
+    }
 
     ctx->server_csrattrs = malloc(csrattrs_len + 1);
     if (!ctx->server_csrattrs) {
@@ -4104,7 +4111,7 @@ EST_ERROR est_server_init_csrattrs (EST_CTX *ctx, char *csrattrs, int csrattrs_l
     if (csrattrs_data_pop) {
       free(csrattrs_data_pop);
     }
-    EST_LOG_INFO("Attributes pointer is %p, len=%d", ctx->server_csrattrs, 
+    EST_LOG_INFO("Attributes pointer is %p, len=%d", ctx->server_csrattrs,
 		 ctx->server_csrattrs_len);
     return (EST_ERR_NONE);
 }
@@ -4112,11 +4119,11 @@ EST_ERROR est_server_init_csrattrs (EST_CTX *ctx, char *csrattrs, int csrattrs_l
 /*! @brief est_server_enable_tls10() is a deprecated function. TLS 1.0
     is a violation of RFC7030 and it is no longer supported by the EST library.
     This function will log an error message and return EST_ERR_BAD_MODE.
-    
+
     @param ctx Pointer to the EST context
 
-    This function must be called prior to starting the EST server.  
- 
+    This function must be called prior to starting the EST server.
+
     @return EST_ERROR.
  */
 EST_ERROR est_server_enable_tls10 (EST_CTX *ctx)
@@ -4126,7 +4133,7 @@ EST_ERROR est_server_enable_tls10 (EST_CTX *ctx)
 
 }
 
-/*! @brief est_server_enforce_csrattrs() is used by an application to 
+/*! @brief est_server_enforce_csrattrs() is used by an application to
     enable checking of the CSR attributes on the EST server.  When
     enabled, the EST client must provide all the CSR attributes that
     were in the /csrattrs response sent by the server.  The enrollment
@@ -4134,11 +4141,11 @@ EST_ERROR est_server_enable_tls10 (EST_CTX *ctx)
     This setting applies to simple enroll and reenroll operations.
     This setting applies only to server mode and has no bearing on
     proxy mode operation.
-    
+
     @param ctx Pointer to the EST context
 
-    This function must be called prior to starting the EST server.  
- 
+    This function must be called prior to starting the EST server.
+
     @return EST_ERROR.
  */
 EST_ERROR est_server_enforce_csrattr (EST_CTX *ctx)
@@ -4161,7 +4168,7 @@ EST_ERROR est_server_enforce_csrattr (EST_CTX *ctx)
     @param timeout Integer value representing the read timeout in seconds.
     The minimum value is EST_SSL_READ_TIMEOUT_MIN and the maximum value is
     EST_SSL_READ_TIMEOUT_MAX.
- 
+
     @return EST_ERROR.
  */
 EST_ERROR est_server_set_read_timeout (EST_CTX *ctx, int timeout)
@@ -4176,15 +4183,15 @@ EST_ERROR est_server_set_read_timeout (EST_CTX *ctx, int timeout)
 	EST_LOG_ERR("Invalid read timeout value passed: %d ", timeout);
         return (EST_ERR_INVALID_PARAMETERS);
     }
-        
+
     ctx->server_read_timeout = timeout;
     return (EST_ERR_NONE);
 }
 
 
 /*! @brief est_set_brski_voucher_req_cb() is used by an application to install
-    a handler for processing incoming BRSKI client voucher requests.  
- 
+    a handler for processing incoming BRSKI client voucher requests.
+
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
@@ -4195,7 +4202,7 @@ EST_ERROR est_server_set_read_timeout (EST_CTX *ctx, int timeout)
     This function is called by libest when in server mode and receives
     a BRSKI /requestvoucher request.  The callback function will be
     passed the JSON based request from the BRSKI client
-    
+
     @return EST_ERROR_NONE on success, or EST based error
  */
 EST_ERROR est_set_brski_voucher_req_cb (EST_CTX *ctx, brski_voucher_req_cb cb)
@@ -4208,8 +4215,8 @@ EST_ERROR est_set_brski_voucher_req_cb (EST_CTX *ctx, brski_voucher_req_cb cb)
     if (cb == NULL) {
         EST_LOG_ERR("EST Server: BRSKI: voucher_req_cb is NULL");
         return EST_ERR_INVALID_PARAMETERS;
-    }    
-    
+    }
+
     ctx->est_brski_voucher_req_cb = cb;
 
     return (EST_ERR_NONE);
@@ -4217,8 +4224,8 @@ EST_ERROR est_set_brski_voucher_req_cb (EST_CTX *ctx, brski_voucher_req_cb cb)
 
 
 /*! @brief est_set_brski_voucher_status_cb() is used by an application to install
-    a handler for processing incoming BRSKI client voucher status indications.  
- 
+    a handler for processing incoming BRSKI client voucher status indications.
+
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
@@ -4229,7 +4236,7 @@ EST_ERROR est_set_brski_voucher_req_cb (EST_CTX *ctx, brski_voucher_req_cb cb)
     This function is called by libest when in server mode and receives
     a BRSKI /voucher_status request.  The callback function will be
     passed the JSON based response from the BRSKI client
-    
+
     @return EST_ERROR_NONE on success, or EST based error
  */
 EST_ERROR est_set_brski_voucher_status_cb (EST_CTX *ctx, brski_voucher_status_cb cb)
@@ -4243,7 +4250,7 @@ EST_ERROR est_set_brski_voucher_status_cb (EST_CTX *ctx, brski_voucher_status_cb
         EST_LOG_ERR("EST Server: BRSKI: voucher_status_cb is NULL");
         return EST_ERR_INVALID_PARAMETERS;
     }
-    
+
     ctx->est_brski_voucher_status_cb = cb;
 
     return (EST_ERR_NONE);
@@ -4251,8 +4258,8 @@ EST_ERROR est_set_brski_voucher_status_cb (EST_CTX *ctx, brski_voucher_status_cb
 
 
 /*! @brief est_set_brski_enroll_status_cb() is used by an application to install
-    a handler for processing incoming BRSKI client certificate status indications.  
- 
+    a handler for processing incoming BRSKI client certificate status indications.
+
     @param ctx Pointer to the EST context
     @param cb Function address of the handler
 
@@ -4263,7 +4270,7 @@ EST_ERROR est_set_brski_voucher_status_cb (EST_CTX *ctx, brski_voucher_status_cb
     This function is called by libest when in server mode and receives
     a BRSKI /enrollstatus primitive.  The callback function will be
     passed the JSON based status from the BRSKI client
-    
+
     @return EST_ERROR_NONE on success, or EST based error
  */
 EST_ERROR est_set_brski_enroll_status_cb (EST_CTX *ctx, brski_enroll_status_cb cb)
@@ -4276,7 +4283,7 @@ EST_ERROR est_set_brski_enroll_status_cb (EST_CTX *ctx, brski_enroll_status_cb c
     if (cb == NULL) {
         EST_LOG_ERR("EST Server: BRSKI: enroll_status_cb is NULL");
         return EST_ERR_INVALID_PARAMETERS;
-    }        
+    }
 
     ctx->est_brski_enroll_status_cb = cb;
 
@@ -4290,14 +4297,14 @@ EST_ERROR est_set_brski_enroll_status_cb (EST_CTX *ctx, brski_enroll_status_cb c
     retry-after value notifies the client how long to wait before attempting
     the voucher request operation again to see if the registrar is ready to
     respond with a voucher.
- 
+
     @param ctx Pointer to the EST context
     @param seconds Number of seconds the server will use in the
            retry-after response.
 
     This function may be called at any time after a context has
-    been created.   
- 
+    been created.
+
     @return EST_ERROR.
  */
 EST_ERROR est_server_set_brski_retry_period (EST_CTX *ctx, int seconds)
@@ -4648,19 +4655,19 @@ EST_ERROR est_invoke_enroll_get_subjs (EST_CTX *ctx, X509 *peer_cert,
     *id_cert_subj = '\0';
     *csr_subj = '\0';
 
-    if (peer_cert) {        
+    if (peer_cert) {
         est_rc = est_get_subj_fld_from_cert((void *)peer_cert, EST_CERT,
                                             id_cert_subj, id_cert_subj_len);
         if (est_rc != EST_ERR_NONE) {
             return (est_rc);
         }
     }
-    
+
     est_rc = est_get_subj_fld_from_cert((void *)csr_x509, EST_CSR,
                                         csr_subj, csr_subj_len);
     if (est_rc != EST_ERR_NONE) {
         return (est_rc);
-    }    
+    }
 
     /*
      * Assume that the subject will never be an empty string
@@ -4669,7 +4676,7 @@ EST_ERROR est_invoke_enroll_get_subjs (EST_CTX *ctx, X509 *peer_cert,
         EST_LOG_ERR("Could not obtain subject field from ID cert or CSR");
         return EST_ERR_UNKNOWN;
     }
-    
+
     return EST_ERR_NONE;
 }
 
@@ -4681,14 +4688,14 @@ EST_ERROR est_invoke_enroll_get_subjs (EST_CTX *ctx, X509 *peer_cert,
  */
 EST_ERROR est_invoke_enroll_get_ip_port (EST_CTX *ctx, SSL *ssl, void *addr_info,
                                          char *src_ipstr, int src_ipstr_len,
-                                         int *src_port) 
+                                         int *src_port)
 {
     EST_ERROR est_rc = EST_ERR_NONE;
     int rc;
 
     src_ipstr[0] = '\0';
     *src_port = 0;
-    
+
     if (ctx->transport_mode == EST_COAP) {
 #if HAVE_LIBCOAP
         /*
@@ -4728,8 +4735,8 @@ EST_ERROR est_invoke_enroll_get_ip_port (EST_CTX *ctx, SSL *ssl, void *addr_info
          * so log it and return an error.
          */
         EST_LOG_ERR("EST over CoAP has not been enabled in this build of libest.");
-        return EST_ERR_CLIENT_COAP_MODE_NOT_SUPPORTED;        
-#endif        
+        return EST_ERR_CLIENT_COAP_MODE_NOT_SUPPORTED;
+#endif
     } else if (ctx->transport_mode == EST_HTTP) {
 
         /*
@@ -4739,9 +4746,9 @@ EST_ERROR est_invoke_enroll_get_ip_port (EST_CTX *ctx, SSL *ssl, void *addr_info
         struct sockaddr_storage addr;
         struct sockaddr_in *addr_in = (struct sockaddr_in *)&addr;
         struct sockaddr_in6 *addr_in6 = (struct sockaddr_in6 *)&addr;
-        socklen_t addr_len = sizeof(addr);        
+        socklen_t addr_len = sizeof(addr);
         int fd;
-        
+
         fd = SSL_get_fd(ssl);
         if (fd == -1) {
             EST_LOG_ERR("Unable to obtain FD from SSL.  Cannot obtain IP address and port number");
@@ -4753,7 +4760,7 @@ EST_ERROR est_invoke_enroll_get_ip_port (EST_CTX *ctx, SSL *ssl, void *addr_info
                 est_rc = EST_ERR_SYSCALL;
             } else {
                 switch (addr.ss_family) {
-                case AF_INET:                
+                case AF_INET:
                     *src_port = ntohs(addr_in->sin_port);
                     if (NULL == inet_ntop(addr_in->sin_family,
                                           &(addr_in->sin_addr),
@@ -4787,7 +4794,7 @@ EST_ERROR est_invoke_enroll_get_ip_port (EST_CTX *ctx, SSL *ssl, void *addr_info
     }
     return(est_rc);
 }
-    
+
 /*
  * Invoke the registered callback for EST enroll, reenroll, or server keygen requests.
  */
@@ -4802,7 +4809,7 @@ EST_ERROR est_invoke_enroll_req_event_cb (EST_CTX *ctx, SSL *ssl, X509 *peer_cer
     int src_port = 0;
     EST_ERROR est_rc;
     EST_CSR_BASE64_DECODE decode_mode;
-        
+
     if (ctx != NULL && ctx->enroll_req_event_cb != NULL) {
 
         /*
@@ -4821,7 +4828,7 @@ EST_ERROR est_invoke_enroll_req_event_cb (EST_CTX *ctx, SSL *ssl, X509 *peer_cer
         if (csr_x509 == NULL) {
             EST_LOG_ERR("Unable to load certificates");
             ossl_dump_ssl_errors();
-            return EST_ERR_UNKNOWN;            
+            return EST_ERR_UNKNOWN;
         }
 
         /*
@@ -4838,7 +4845,7 @@ EST_ERROR est_invoke_enroll_req_event_cb (EST_CTX *ctx, SSL *ssl, X509 *peer_cer
         if (est_rc != EST_ERR_NONE) {
             EST_LOG_ERR("Could not obtain subject fields from ID certificate of requesting node or from CSR");
         } else {
-            
+
             /*
              * Get the IP address and port number of the client node that sent
              * this request
@@ -4879,7 +4886,7 @@ EST_ERROR est_invoke_enroll_rsp_event_cb (EST_CTX *ctx, SSL *ssl, X509 *peer_cer
     int src_port = 0;
     EST_ERROR est_rc;
     EST_CSR_BASE64_DECODE decode_mode;
-   
+
     if (ctx != NULL && ctx->enroll_rsp_event_cb != NULL) {
 
         /*
@@ -4898,7 +4905,7 @@ EST_ERROR est_invoke_enroll_rsp_event_cb (EST_CTX *ctx, SSL *ssl, X509 *peer_cer
         if (csr_x509 == NULL) {
             EST_LOG_ERR("Unable to load certificates");
             ossl_dump_ssl_errors();
-            return EST_ERR_UNKNOWN;            
+            return EST_ERR_UNKNOWN;
         }
         /*
          * Doesn't absolutely need to be done, but better safe than
@@ -4914,7 +4921,7 @@ EST_ERROR est_invoke_enroll_rsp_event_cb (EST_CTX *ctx, SSL *ssl, X509 *peer_cer
         if (est_rc != EST_ERR_NONE) {
             EST_LOG_ERR("Could not obtain subject fields from ID certificate of requesting node or from CSR");
         } else {
-            
+
             /*
              * Get the IP address and port number of the client node that sent
              * this request
@@ -4927,7 +4934,7 @@ EST_ERROR est_invoke_enroll_rsp_event_cb (EST_CTX *ctx, SSL *ssl, X509 *peer_cer
                 EST_LOG_ERR("Could not obtain IP address or port from requesting node");
             }
         }
-        
+
         /*
          * Call the application layer callback
          */
@@ -4951,7 +4958,7 @@ void est_invoke_enroll_auth_result_event_cb (EST_CTX *ctx, X509 *peer_cert,
                                              EST_AUTH_STATE rv)
 {
     EST_ENHANCED_AUTH_TS_AUTH_STATE enh_auth_ts_state;
-    
+
     /*
      * If a callback is registered, call it now.
      */
@@ -4974,7 +4981,7 @@ void est_invoke_enroll_auth_result_event_cb (EST_CTX *ctx, X509 *peer_cert,
             enh_auth_ts_state = EST_ENHANCED_AUTH_TS_NOT_VALIDATED;
             break;
         }
-        
+
         ctx->enroll_auth_result_event_cb(peer_cert, path_seg, enroll_req,
                                          enh_auth_ts_state, rv);
     }
@@ -5001,15 +5008,15 @@ void est_invoke_endpoint_req_event_cb (EST_CTX *ctx, X509 *peer_cert, SSL *ssl,
      */
     if (ctx != NULL && ctx->endpoint_req_event_cb != NULL) {
 
-        memzero_s(id_cert_subj, EST_MAX_CERT_SUBJ_LEN+1);        
+        memzero_s(id_cert_subj, EST_MAX_CERT_SUBJ_LEN+1);
         memzero_s(src_ipstr, INET6_ADDRSTRLEN+1);
-        
+
         /*
          * If a peer cert is available then retrieve the subject field
          * Then retrieve the ip address and port number.  If either fail
          * continue on and report the values that are available.
          */
-        if (peer_cert) {    
+        if (peer_cert) {
             est_rc = est_get_subj_fld_from_cert((void *)peer_cert, EST_CERT,
                                                 &id_cert_subj[0], EST_MAX_CERT_SUBJ_LEN);
             if (est_rc != EST_ERR_NONE) {
@@ -5025,7 +5032,7 @@ void est_invoke_endpoint_req_event_cb (EST_CTX *ctx, X509 *peer_cert, SSL *ssl,
                 EST_LOG_ERR("Could not obtain IP address or port from requesting node");
             }
         }
-        
+
         ctx->endpoint_req_event_cb(id_cert_subj, peer_cert, uri,
                                    src_ipstr, src_port,
                                    event_type);

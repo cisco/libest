@@ -39,20 +39,20 @@ typedef struct est_timer {
 #ifdef WIN32
 #ifdef DEVTEST
 #ifdef DT_EXPORTS
-#define LIBEST_TEST_API __declspec(dllexport) 
+#define LIBEST_TEST_API __declspec(dllexport)
 #else
-#define LIBEST_TEST_API __declspec(dllimport) 
-#endif /* DT_EXPORTS */ 
-#else
-#define LIBEST_TEST_API
-#endif /* DEVTEST */ 
+#define LIBEST_TEST_API __declspec(dllimport)
+#endif /* DT_EXPORTS */
 #else
 #define LIBEST_TEST_API
-#endif /* WIN32 */ 
+#endif /* DEVTEST */
+#else
+#define LIBEST_TEST_API
+#endif /* WIN32 */
 
 #ifndef WIN32
 #include "est_config.h"
-#endif 
+#endif
 
 /*
  * Version identifiers.  These should be updated appropriately
@@ -74,9 +74,9 @@ typedef struct est_timer {
 #define EST_MAX_CERT_SUBJ_LEN 255
 
 /* The retry-after values below are in seconds */
-#define EST_RETRY_PERIOD_DEF	3600 
-#define EST_RETRY_PERIOD_MIN	60 
-#define EST_RETRY_PERIOD_MAX	3600*48 
+#define EST_RETRY_PERIOD_DEF	3600
+#define EST_RETRY_PERIOD_MIN	60
+#define EST_RETRY_PERIOD_MAX	3600*48
 
 /*
  * starting with 1.1.0, depth does not include
@@ -128,9 +128,9 @@ DHE-DSS-AES256-SHA256"
 /*
  * HTTP
  */
-#define EST_HTTP_STAT_202	    202 
-#define EST_HTTP_STAT_204	    204 
-#define EST_HTTP_STAT_400	    400 
+#define EST_HTTP_STAT_202	    202
+#define EST_HTTP_STAT_204	    204
+#define EST_HTTP_STAT_400	    400
 #define EST_HTTP_STAT_401	    401
 #define EST_HTTP_STAT_404	    404
 #define EST_HTTP_STAT_423	    423
@@ -138,18 +138,18 @@ DHE-DSS-AES256-SHA256"
 #define EST_HTTP_STAT_502	    502
 #define EST_HTTP_STAT_504	    504
 
-#define EST_HTTP_STAT_202_TXT	    "Accepted" 
-#define EST_HTTP_STAT_204_TXT	    "No Content" 
-#define EST_HTTP_STAT_400_TXT	    "Bad Request" 
-#define EST_HTTP_STAT_401_TXT	    "Unauthorized" 
-#define EST_HTTP_STAT_404_TXT	    "Not Found" 
-#define EST_HTTP_STAT_423_TXT	    "Locked" 
-#define EST_HTTP_STAT_500_TXT	    "Internal Server Error" 
-#define EST_HTTP_STAT_502_TXT	    "Bad Gateway" 
-#define EST_HTTP_STAT_504_TXT	    "Gateway Time-out" 
+#define EST_HTTP_STAT_202_TXT	    "Accepted"
+#define EST_HTTP_STAT_204_TXT	    "No Content"
+#define EST_HTTP_STAT_400_TXT	    "Bad Request"
+#define EST_HTTP_STAT_401_TXT	    "Unauthorized"
+#define EST_HTTP_STAT_404_TXT	    "Not Found"
+#define EST_HTTP_STAT_423_TXT	    "Locked"
+#define EST_HTTP_STAT_500_TXT	    "Internal Server Error"
+#define EST_HTTP_STAT_502_TXT	    "Bad Gateway"
+#define EST_HTTP_STAT_504_TXT	    "Gateway Time-out"
 
 #define EST_HTTP_MAX_REASON_PHRASE  256
-#define EST_HTTP_HDR_MAX            1024 
+#define EST_HTTP_HDR_MAX            1024
 #define EST_HTTP_HDR_200            "HTTP/1.1 200"
 #define EST_HTTP_HDR_200_RESP       "HTTP/1.1 200 OK"
 #define EST_HTTP_HDR_STAT_200       "Status: 200 OK"
@@ -181,17 +181,22 @@ DHE-DSS-AES256-SHA256"
 
 #define EST_HTTP_CT_PKCS7           "application/pkcs7-mime"
 #define EST_HTTP_CT_PKCS7_CO        "application/pkcs7-mime; smime-type=certs-only"
+#define EST_HTTP_CT_PKCS7_CO_LEN    45
 #define EST_HTTP_CT_CSRATTRS        "application/csrattrs"
 #define EST_HTTP_CE_BASE64          "base64"
+#define EST_HTTP_CE_BASE64_LEN      6
 #define EST_CSRATTRS_POP            "MAsGCSqGSIb3DQEJBw=="
-#define EST_CSRATTRS_POP_LEN         20
+#define EST_CSRATTRS_POP_LEN        20
 
 #define EST_HTTP_CT_MULTI           "multipart"
 #define EST_HTTP_CT_MULTI_LEN       9
 #define EST_HTTP_CT_MULTI_MIXED     "multipart/mixed"
 #define EST_HTTP_CT_MULTI_MIXED_LEN 15
 #define EST_HTTP_CT_PKCS8           "application/pkcs8"
+#define EST_HTTP_CT_PKCS8_LEN       17
 #define EST_HTTP_BOUNDARY           "est-server-boundary"
+#define EST_HTTP_BOUNDARY_LEN       19
+#define EST_HTTP_HDR_LEN_CONST      (EST_HTTP_BOUNDARY_LEN * 3) + (EST_HTTP_CE_BASE64_LEN * 2) + EST_HTTP_CT_PKCS8_LEN + EST_HTTP_CT_PKCS7_CO_LEN + 114
 
 #define EST_HTTP_HDR_EST_CLIENT     EST_VER_STRING
 
@@ -199,7 +204,7 @@ DHE-DSS-AES256-SHA256"
 #define EST_HTTP_REQ_TERMINATOR_LEN 5
 #define EST_HTTP_REQ_TOTAL_LEN      EST_HTTP_HDR_MAX+EST_HTTP_REQ_DATA_MAX+EST_HTTP_REQ_TERMINATOR_LEN
 
-#define EST_MAX_MD5_DIGEST_STR_LEN  33  
+#define EST_MAX_MD5_DIGEST_STR_LEN  33
 
 /*
  * HTTP error responses
@@ -259,8 +264,8 @@ DHE-DSS-AES256-SHA256"
 #define EST_BRSKI_CLIENT_RETRY_MAX      60
 
 /* The server retry-after values below are in seconds */
-#define EST_BRSKI_RETRY_PERIOD_DEF	30 
-#define EST_BRSKI_RETRY_PERIOD_MIN	1 
+#define EST_BRSKI_RETRY_PERIOD_DEF	30
+#define EST_BRSKI_RETRY_PERIOD_MIN	1
 #define EST_BRSKI_RETRY_PERIOD_MAX	70
 
 
@@ -289,7 +294,7 @@ typedef enum {
     EST_OP_BRSKI_REQ_VOUCHER,
     EST_OP_BRSKI_VOUCHER_STATUS,
     EST_OP_BRSKI_ENROLL_STATUS,
-#endif    
+#endif
     EST_OP_MAX
 } EST_OPERATION;
 
@@ -416,7 +421,7 @@ struct est_ctx {
     char             coap_cacert_filename[EST_MAX_FILE_LEN+1];
 
     coap_context_t  *coap_ctx;
-    
+
     coap_req_node_t *coap_req_array;
     int              coap_req_cnt;
     int              cur_max_coap_req_array;
@@ -427,25 +432,25 @@ struct est_ctx {
     EST_TIMER        down_time_timer;
     char             down_time_timer_initialized;
 #endif
-    
+
     char             token_error[MAX_TOKEN_ERROR+1];
     char             token_error_desc[MAX_TOKEN_ERROR_DESC+1];
-    
+
     /*
      * Callbacks required for server mode operation
      */
-    int (*est_enroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len, 
+    int (*est_enroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len,
 	                        unsigned char **pkcs7, int *cert_len,
 				char *user_id, X509 *peer_cert,
                                 char *path_seg, void *ex_data);
-    int (*est_reenroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len, 
+    int (*est_reenroll_pkcs10_cb)(unsigned char *pkcs10, int p10_len,
 	                          unsigned char **pkcs7, int *cert_len,
 				  char *user_id, X509 *peer_cert,
                                   char *path_seg, void *ex_data);
     unsigned char *(*est_get_cacerts_cb)(int *cacerts_len, char *path_seg,
                                          void *ex_data);
     unsigned char *(*est_get_csr_cb)(int *csr_len, char *path_seg, X509 *peer_cert, void *ex_data);
-    int (*est_http_auth_cb)(struct est_ctx *ctx, EST_HTTP_AUTH_HDR *ah, 
+    int (*est_http_auth_cb)(struct est_ctx *ctx, EST_HTTP_AUTH_HDR *ah,
 	                    X509 *peer_cert, char *path_seg, void *ex_data);
 
     /*
@@ -470,9 +475,9 @@ struct est_ctx {
      * BRSKI based call backs
      */
     brski_voucher_req_cb est_brski_voucher_req_cb;
-    brski_voucher_status_cb est_brski_voucher_status_cb;    
+    brski_voucher_status_cb est_brski_voucher_status_cb;
     brski_enroll_status_cb est_brski_enroll_status_cb;
-    
+
     /*
      * Client mode configuration options
      */
@@ -508,7 +513,7 @@ struct est_ctx {
     int tcw_sock_connected;
 
     int est_client_initialized;
-    
+
     /*
      * BRSKI mode
      */
@@ -521,8 +526,8 @@ struct est_ctx {
 
     /* server */
     int brski_retry_period;  /* Number of seconds client should wait
-                                to attempt voucher request */    
-    
+                                to attempt voucher request */
+
     /*
      * The following are used for server and/or proxy mode
      */
@@ -532,7 +537,7 @@ struct est_ctx {
     EVP_PKEY *server_priv_key;
     int server_enable_pop; /* enable proof-of-possession check */
     int client_force_pop;  /* force proof-of-possession gen at the client */
-    EST_HTTP_AUTH_REQUIRED require_http_auth;  
+    EST_HTTP_AUTH_REQUIRED require_http_auth;
                /* require http authentication of the client
                   even when TLS auth was performed */
     EST_ENHANCED_CERT_AUTH_ENABLED enhanced_cert_auth_enabled;
@@ -541,7 +546,7 @@ struct est_ctx {
        authentication method. */
     EST_ECA_CSR_CHECK_FLAG enhanced_cert_auth_csr_check;
     /* Turn on the Enhanced Cert Auth CSR check.
-       When this is enabled a check will be done to see if the client 
+       When this is enabled a check will be done to see if the client
        certificate's identifying subject field was copied into the CSR. */
 
     ENCHD_CERT_MFG_INFO *enchd_cert_mfgs_info_list;
@@ -557,7 +562,7 @@ struct est_ctx {
     int csr_pop_present;  /* proof-of-possession already in csr attributes */
     int csr_pop_required; /* proof-of-possession required in enroll */
     SSL_CTX         *ssl_ctx_proxy;
-    DH	            *dh_tmp;  //temp DH parms for TLS 
+    DH	            *dh_tmp;  //temp DH parms for TLS
     int retry_period;  /* Number of seconds client should wait
 			  to attempt re-enrolling a CSR */
     int ecdhe_nid;     /* Specifies the ECC curve to use for
@@ -577,7 +582,7 @@ struct est_ctx {
     int perf_timers_enabled; /* enable performance timer logs */
 };
 
-#define EST_MAX_ATTR_LEN    128 
+#define EST_MAX_ATTR_LEN    128
 /*
  * This is used to build a linked list of the attributes
  * present in the client's CSR.
@@ -676,7 +681,7 @@ LIBEST_TEST_API void est_log_backtrace (void);
 #define GETPID _getpid
 #else
 #define GETPID getpid
-#endif 
+#endif
 /* Maximum long int is 19 digits */
 #define MAX_PID_STR_LEN 19
 
@@ -774,7 +779,7 @@ EST_ERROR est_proxy_handle_server_keygen (EST_CTX *ctx, void *http_ctx,
                                           SSL *ssl, const char *ct,
                                           char *body, int body_len,
                                           char *path_seg,
-                                          unsigned char **returned_cert, 
+                                          unsigned char **returned_cert,
                                           int *returned_cert_len,
                                           unsigned char **returned_key,
                                           int *returned_key_len);
