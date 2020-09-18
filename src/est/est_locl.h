@@ -173,11 +173,14 @@ DHE-DSS-AES256-SHA256"
 #define EST_HTTP_HDR_504            "HTTP/1.1 504"
 #define EST_HTTP_HDR_504_RESP       "HTTP/1.1 504 " EST_HTTP_STAT_504_TXT
 #define EST_HTTP_HDR_CT             "Content-Type"
+#define EST_HTTP_HDR_CT_LEN         12
 #define EST_HTTP_HDR_CE             "Content-Transfer-Encoding"
+#define EST_HTTP_HDR_CE_LEN         25
 #define EST_HTTP_HDR_CL             "Content-Length"
 #define EST_HTTP_HDR_AUTH           "WWW-Authenticate"
 #define EST_HTTP_HDR_RETRY_AFTER    "Retry-After"
 #define EST_HTTP_HDR_EOL            "\r\n"
+#define EST_HTTP_HDR_EOL_LEN        2
 
 #define EST_HTTP_CT_PKCS7           "application/pkcs7-mime"
 #define EST_HTTP_CT_PKCS7_CO        "application/pkcs7-mime; smime-type=certs-only"
@@ -196,7 +199,10 @@ DHE-DSS-AES256-SHA256"
 #define EST_HTTP_CT_PKCS8_LEN       17
 #define EST_HTTP_BOUNDARY           "est-server-boundary"
 #define EST_HTTP_BOUNDARY_LEN       19
-#define EST_HTTP_HDR_LEN_CONST      (EST_HTTP_BOUNDARY_LEN * 3) + (EST_HTTP_CE_BASE64_LEN * 2) + EST_HTTP_CT_PKCS8_LEN + EST_HTTP_CT_PKCS7_CO_LEN + 114
+#define EST_HTTP_HDR_WHITESPACE_LEN 1
+#define EST_HTTP_HDR_LEN_CONST      (EST_HTTP_BOUNDARY_LEN * 3) + (EST_HTTP_CE_BASE64_LEN * 2) + \
+    EST_HTTP_CT_PKCS8_LEN + EST_HTTP_CT_PKCS7_CO_LEN + (EST_HTTP_HDR_CT_LEN * 2) + (EST_HTTP_HDR_CE_LEN * 2) + \
+    (EST_HTTP_HDR_EOL_LEN * 12) + (EST_HTTP_HDR_WHITESPACE_LEN * 16)
 
 #define EST_HTTP_HDR_EST_CLIENT     EST_VER_STRING
 
