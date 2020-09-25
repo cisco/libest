@@ -1866,7 +1866,11 @@ EST_ERROR est_handle_server_keygen (EST_CTX *ctx, void *http_ctx,
     char *user_id = NULL;
     unsigned char *cert = NULL, *der_key = NULL, *b64der = NULL;
     char http_hdr[EST_HTTP_HDR_MAX];
+    char pvt_key_hdr[EST_HTTP_HDR_MAX];
+    char cert_hdr[EST_HTTP_HDR_MAX];
+    char final_bndry_hdr[EST_HTTP_HDR_MAX];
     int hdrlen, der_len = 0;
+    int pvt_key_hdr_len, cert_hdr_len, final_bndry_hdr_len = 0;
     X509_REQ *csr = NULL;
     int client_is_ra = 0;
 
@@ -2084,9 +2088,50 @@ EST_ERROR est_handle_server_keygen (EST_CTX *ctx, void *http_ctx,
     if (rv == EST_ERR_NONE && cert_len > 0) {
 
         if (ctx->transport_mode == EST_HTTP) {
+
             /*
-            * Send HTTP header
-            */
+             * Build all headers in order to calculate the correct
+             * content-length
+             *
+             * Build the private key headers,
+             * - boundary, ct, ce
+             */
+            snprintf(pvt_key_hdr, EST_HTTP_HDR_MAX, "--%s%s", EST_HTTP_BOUNDARY, EST_HTTP_HDR_EOL);
+            hdrlen = strnlen_s(pvt_key_hdr, EST_HTTP_HDR_MAX);
+            snprintf(pvt_key_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
+                    EST_HTTP_CT_PKCS8, EST_HTTP_HDR_EOL);
+            hdrlen = strnlen_s(pvt_key_hdr, EST_HTTP_HDR_MAX);
+            snprintf(pvt_key_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s%s", EST_HTTP_HDR_CE,
+                    EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
+            hdrlen = strnlen_s(pvt_key_hdr, EST_HTTP_HDR_MAX);
+            pvt_key_hdr_len = hdrlen;
+
+            /*
+             * Build the certificate headers
+             * - boundary, ct, ce
+             */
+            snprintf(cert_hdr, EST_HTTP_HDR_MAX, "%s--%s%s", EST_HTTP_HDR_EOL, EST_HTTP_BOUNDARY, EST_HTTP_HDR_EOL);
+            hdrlen = strnlen_s(cert_hdr, EST_HTTP_HDR_MAX);
+            snprintf(cert_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
+                    EST_HTTP_CT_PKCS7_CO, EST_HTTP_HDR_EOL);
+            hdrlen = strnlen_s(cert_hdr, EST_HTTP_HDR_MAX);
+            snprintf(cert_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s%s", EST_HTTP_HDR_CE,
+                    EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
+            hdrlen = strnlen_s(cert_hdr, EST_HTTP_HDR_MAX);
+            cert_hdr_len = hdrlen;
+
+            /*
+             * build the final boundary for multipart/mixed content-types
+             */
+            snprintf(final_bndry_hdr, EST_HTTP_HDR_MAX, "%s--%s--%s%s",
+                     EST_HTTP_HDR_EOL, EST_HTTP_BOUNDARY, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
+            hdrlen = strnlen_s(final_bndry_hdr, EST_HTTP_HDR_MAX);
+            final_bndry_hdr_len = hdrlen;
+
+            /*
+             * Lastly, build the general HTTP headers now that we know the
+             * total length of the content
+             */
             snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s%s%s%s", EST_HTTP_HDR_200_RESP, EST_HTTP_HDR_EOL,
                     EST_HTTP_HDR_STAT_200, EST_HTTP_HDR_EOL);
             hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
@@ -2094,22 +2139,17 @@ EST_ERROR est_handle_server_keygen (EST_CTX *ctx, void *http_ctx,
                     EST_HTTP_CT_MULTI_MIXED, EST_HTTP_BOUNDARY,EST_HTTP_HDR_EOL);
             hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
             snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %d%s%s", EST_HTTP_HDR_CL,
-                    b64der_len+cert_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
+                    pvt_key_hdr_len+b64der_len + cert_hdr_len+cert_len + final_bndry_hdr_len, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
             hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-            snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "\n--%s%s", EST_HTTP_BOUNDARY, EST_HTTP_HDR_EOL);
 
             /*
-            * private key header info
-            */
-            hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-            snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
-                    EST_HTTP_CT_PKCS8, EST_HTTP_HDR_EOL);
-            hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-            snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s%s", EST_HTTP_HDR_CE,
-                    EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
-
-            /*
-             * mg_write returns total amount of bytes sent, either 0 or a positive number
+             * Now send everything in the proper order
+             * - HTTP headers
+             * - pvt key hdrs
+             * - pvt key
+             * - cert_hdrs
+             * - cert
+             * - final boundary header
              */
             if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
                 return_code = EST_ERR_HTTP_WRITE;
@@ -2117,51 +2157,33 @@ EST_ERROR est_handle_server_keygen (EST_CTX *ctx, void *http_ctx,
             }
 
             /*
-            * Send the PKCS8 private key in the body
-            */
+             * pvt key headers and the pvt key
+             */
+            if (!mg_write(http_ctx, pvt_key_hdr, strnlen_s(pvt_key_hdr, EST_HTTP_HDR_MAX))) {
+                return_code = EST_ERR_HTTP_WRITE;
+                goto free_buffers;
+            }
             if (!mg_write(http_ctx, b64der, b64der_len)) {
                 return_code = EST_ERR_HTTP_WRITE;
                 goto free_buffers;
             }
 
             /*
-            * Write boundary for multipart/mixed content-types
-            */
-            snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s--%s%s", EST_HTTP_HDR_EOL, EST_HTTP_BOUNDARY, EST_HTTP_HDR_EOL);
-
-            if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
+             * cert headers and the cert
+             */
+            if (!mg_write(http_ctx, cert_hdr, strnlen_s(cert_hdr, EST_HTTP_HDR_MAX))) {
                 return_code = EST_ERR_HTTP_WRITE;
                 goto free_buffers;
             }
-
-            /*
-            * Send certificate header info
-            */
-            snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s: %s%s", EST_HTTP_HDR_CT,
-                    EST_HTTP_CT_PKCS7_CO, EST_HTTP_HDR_EOL);
-            hdrlen = strnlen_s(http_hdr, EST_HTTP_HDR_MAX);
-            snprintf(http_hdr + hdrlen, EST_HTTP_HDR_MAX, "%s: %s%s%s", EST_HTTP_HDR_CE,
-                    EST_HTTP_CE_BASE64, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
-
-            if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
-                return_code = EST_ERR_HTTP_WRITE;
-                goto free_buffers;
-            }
-
-            /*
-            * Send the signed PKCS7 certificate in the body
-            */
             if (!mg_write(http_ctx, cert, cert_len)) {
                 return_code = EST_ERR_HTTP_WRITE;
                 goto free_buffers;
             }
 
             /*
-            * Write boundary for multipart/mixed content-types
-            */
-            snprintf(http_hdr, EST_HTTP_HDR_MAX, "%s--%s--%s%s", EST_HTTP_HDR_EOL, EST_HTTP_BOUNDARY, EST_HTTP_HDR_EOL, EST_HTTP_HDR_EOL);
-
-            if (!mg_write(http_ctx, http_hdr, strnlen_s(http_hdr, EST_HTTP_HDR_MAX))) {
+             * Final boundary header
+             */
+            if (!mg_write(http_ctx, final_bndry_hdr, strnlen_s(final_bndry_hdr, EST_HTTP_HDR_MAX))) {
                 return_code = EST_ERR_HTTP_WRITE;
                 goto free_buffers;
             }
