@@ -24,6 +24,12 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #else
+#if defined(_MSC_VER) && (_MSC_VER < 1900)
+/* Older versions of MS VC does not define a std version of snprintf.
+ * Alias it to the MS specific version
+ */
+#define snprintf _snprintf
+#endif
 #include <Ws2tcpip.h>
 #include <BaseTsd.h>
 #include <WinDef.h>
