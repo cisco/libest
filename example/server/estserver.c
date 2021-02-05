@@ -20,7 +20,12 @@
 #ifndef DISABLE_TSEARCH
 #include <search.h>
 #endif
+#ifdef WIN32
+#include "../windows_util/getopt.h"
+#include <windows.h>
+#else
 #include <getopt.h>
+#endif
 #include <openssl/err.h>
 #include <openssl/engine.h>
 #include <openssl/conf.h>
@@ -572,7 +577,11 @@ static int lookup_pkcs10_request(unsigned char *pkcs10, int p10_len)
      * would do this lookup.  But this should be good enough for
      * testing the retry-after logic.
      */
+#ifdef HAVE_OLD_OPENSSL
     pkey = X509_PUBKEY_get(req->req_info->pubkey);
+#else
+    pkey = X509_PUBKEY_get(X509_REQ_get_X509_PUBKEY(req));
+#endif
     if (!pkey) {
         rv = 1;
         goto DONE;
