@@ -9,7 +9,6 @@ AC_CONFIG_SRCDIR(example/server/estserver.c)
 AC_CONFIG_SRCDIR(example/proxy/estproxy.c)
 AC_CONFIG_MACRO_DIR([m4])
 
-AM_INIT_AUTOMAKE
 AM_MAINTAINER_MODE
 AM_INIT_AUTOMAKE([subdir-objects])
 
