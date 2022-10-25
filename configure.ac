@@ -195,7 +195,7 @@ AC_SUBST(SAFEC_STUB_DIR)
 AC_ARG_WITH(system-libsafec,
             AS_HELP_STRING([--with-system-libsafec],
                            [select to use libsafec installed in the system]),
-            [with_system_libsafec="yes"],
+            [],
             [with_system_libsafec="no"])
 
 AC_ARG_WITH([safec-dir],
