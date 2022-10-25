@@ -384,17 +384,51 @@ static EST_ERROR b64_decode_cacerts (unsigned char *cacerts, int *cacerts_len,
         ossl_dump_ssl_errors();
         return (EST_ERR_MALLOC);
     }    
+
     /*
-     * Decoding will always take up less than the original buffer.
+     * BIO_f_base64 either requires wrapped base64 with a short
+     * initial line, or when BIO_FLAGS_BASE64_NO_NL is set, all data
+     * must be on a single line (with or without trailing newline
+     * character).  See BIO_f_base64(3ossl) for more details.
+     *
+     * RFC 8951 (an update to RFC 7030) clarifies that senders are
+     * not required to insert white space (such as LF) in
+     * base64-encoded payloads.  Therefore libest must handle
+     * wrapped or unwrapped base64 with lines of any length.
+     *
+     * This leaves two options:
+     *
+     * 1. set BIO_FLAGS_BASE64_NO_NL and unwrap the input lines
+     *
+     * 2. leave the flag unset but split long lines and ensure the
+     *    input ends with a newline.
+     *
+     * Option 1 is simpler so that's what we do.
      */
-    in = BIO_new_mem_buf(cacerts, *cacerts_len);    
+    BIO_set_flags(b64, BIO_get_flags(b64) | BIO_FLAGS_BASE64_NO_NL);
+
+    in = BIO_new(BIO_s_mem());
     if (in == NULL) {
         EST_LOG_ERR("Unable to access the CA cert buffer");
         ossl_dump_ssl_errors();
         BIO_free_all(b64);
         return (EST_ERR_MALLOC);
     }
-    in = BIO_push(b64, in);    
+
+    /*
+     * Unwrap the input (remove newlines) by reading from 'cacerts'
+     * into 'in' line by line.
+     */
+    unsigned char *p = cacerts, *end = p + *cacerts_len, *nl;
+    while ((nl = memchr(p, '\n', end - p)) != NULL) {
+        BIO_write_ex(in, p, nl - p, NULL);
+        p = nl + 1;
+    }
+    BIO_write_ex(in, p, end - p, NULL);
+
+    /*
+     * Decoding will always take up less than the original buffer.
+     */
     decoded_buf = malloc(*cacerts_len);
     if (decoded_buf == NULL) {
         EST_LOG_ERR("Unable to allocate CA cert buffer for decode");
@@ -402,6 +436,7 @@ static EST_ERROR b64_decode_cacerts (unsigned char *cacerts, int *cacerts_len,
         return (EST_ERR_MALLOC);        
     }
     
+    in = BIO_push(b64, in);
     decoded_buf_len = BIO_read(in, decoded_buf, *cacerts_len);
     
     *cacerts_decoded = decoded_buf;
