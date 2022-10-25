@@ -117,8 +117,7 @@ To run the example:
 5.  Optionally, you can use a certificate to identify the EST client
     to the server instead of specifying the HTTP user name/password.  
     Now that you've enrolled a certificate in step #3
-    above, you can use that certificate to enroll again. Note, your
-    EST server should be configured not to force HTTP authentication. 
+    above, you can use that certificate to enroll again.
 
     First, convert the pkcs7 cert from step 3 to a PEM cert:
 

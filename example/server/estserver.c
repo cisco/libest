@@ -93,7 +93,6 @@ static int http_digest_auth = 0;
 static int http_basic_auth = 0;
 static int http_token_auth = 0;
 static int http_auth_disable = 0;
-static int disable_forced_http_auth = 0;
 static int enable_enhcd_cert_auth = 0;
 static int set_cert_auth_ah_pwd = 0;
 static EST_ECA_CSR_CHECK_FLAG enhcd_cert_csr_check_on = ECA_CSR_CHECK_OFF;
@@ -232,7 +231,6 @@ static void show_usage_and_exit (void)
             "  -t           Enable check for binding client PoP to the TLS UID\n"
             "  -m <seconds> Simulate manual CA enrollment\n"
             "  -n           Disable HTTP authentication (TLS client auth required)\n"
-            "  -o           Disable HTTP authentication when TLS client auth succeeds\n"
             "  -h           Use HTTP Digest auth instead of Basic auth\n"
             "  -b           Use HTTP Basic auth.  Causes explicit call to set Basic auth\n"
             "  -p <num>     TCP port number to listen on\n"
@@ -2244,9 +2242,6 @@ int main (int argc, char **argv)
         case 'n':
             http_auth_disable = 1;
             break;
-        case 'o':
-            disable_forced_http_auth = 1;
-            break;
         case 'v':
             verbose = 1;
             break;
@@ -2509,14 +2504,13 @@ int main (int argc, char **argv)
             exit(1);
         }
     }
-    if (disable_forced_http_auth) {
-        if (verbose)
-            printf(
-                "\nDisabling HTTP authentication when TLS client auth succeeds\n");
-        if (est_set_http_auth_required(ectx, HTTP_AUTH_NOT_REQUIRED)) {
-            printf("\nUnable to disable required HTTP auth.  Aborting!!!\n");
-            exit(1);
-        }
+
+    if (verbose)
+        printf(
+            "\nDisabling HTTP authentication when TLS client auth succeeds\n");
+    if (est_set_http_auth_required(ectx, HTTP_AUTH_NOT_REQUIRED)) {
+        printf("\nUnable to disable required HTTP auth.  Aborting!!!\n");
+        exit(1);
     }
 
     if (http_digest_auth) {
