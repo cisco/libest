@@ -192,71 +192,67 @@ AC_ARG_WITH([libcoap-dir],
 SAFEC_STUB_DIR='$(abs_top_builddir)/safe_c_stub'
 AC_SUBST(SAFEC_STUB_DIR)
 # check for each of the possible safec options
-AC_ARG_WITH(system-libsafec,
-            AS_HELP_STRING([--with-system-libsafec],
-                           [select to use libsafec installed in the system]),
-            [with_system_libsafec="yes"],
-            [with_system_libsafec="no"])
-
 AC_ARG_WITH([safec-dir],
-            [AS_HELP_STRING([--with-safec-dir=],
+            [AS_HELP_STRING([--with-safec-dir],
                             [location of SAFEC private installation])],
-                            [safecdir="$withval"],
-                            [safecdir="no"])    
-            
-AC_ARG_ENABLE(safec,
-            [AS_HELP_STRING([--disable-safec],
-                            [disable SAFEC use: **WARNING** this is not recommended])],
-                            [disable_safec="yes"],
-                            [disable_safec="no"]) 
+                            [],
+                            [with_safec_dir="no"])
+AC_ARG_WITH([libsafec],
+            [AS_HELP_STRING([--with-libsafec=system|builtin],
+                           [choose libsafec installed in the system or builtin [default=builtin]])],
+            [],
+            [with_libsafec="builtin"])
+
+AS_IF([test "$with_libsafec" != "no" -a "$with_safec_dir" != "no"],
+      [AC_MSG_FAILURE([both --with-libsafec and --with-safec-dir options specified])])
+
+AS_IF([test "$with_libsafec" = "no" -a "$with_safec_dir" = "no"],
+      [AC_MSG_FAILURE([no libsafec option specified. Must be one of: --with-libsafec=system|builtin, --with-safec-dir])])
 
 AC_MSG_CHECKING(which libsafec to use)
-if test "x$with_system_libsafec" = "xyes"; then
+AS_CASE("$with_libsafec",
+[system], [
+	AC_MSG_RESULT(system installation);
 
-       AC_MSG_RESULT(system installation);
-   
-       PKG_CHECK_MODULES([libsafec], [libsafec])
-       LIBS="$LIBS $libsafec_LIBS"
-       CFLAGS="$CFLAGS $libsafec_CFLAGS"
-       CPPFLAGS="$CPPFLAGS $libsafec_CFLAGS"
+	PKG_CHECK_MODULES([libsafec], [libsafec])
+	LIBS="$LIBS $libsafec_LIBS"
+	CFLAGS="$CFLAGS $libsafec_CFLAGS"
+	CPPFLAGS="$CPPFLAGS $libsafec_CFLAGS"
 
-       AC_DEFINE([SYSTEM_LIBSAFEC],[1],[Define if using system installed SafeC]) 
+	AC_DEFINE([SYSTEM_LIBSAFEC],[1],[Define if using system installed SafeC])
+],
+[builtin], [
+	AC_MSG_RESULT(builtin);
 
-else if test "x$safecdir" != "xno"; then
+	safecdir="$SAFEC_STUB_DIR"
+	AC_SUBST([SAFEC_DIR], "$safecdir")
+	AC_SUBST([SAFEC_CFLAGS], "$safecdir/include")
+	AC_SUBST([SAFEC_LDFLAGS], "$safecdir/lib")
+	LDFLAGS="$LDFLAGS -L$safecdir/lib"
+	LIBS="$LIBS -lsafe_lib"
+],
+[no], [],
+[
+	AC_MSG_RESULT();
+	AC_MSG_FAILURE([invalid argument to --with-libsafec: must be "system" or "builtin"]);
+])
 
-       # a local installation of safec has been specified
-       AC_MSG_RESULT(private installation);
+AS_IF([test "$with_safec_dir" != "no"],
+[
+	# a local installation of safec has been specified
+	AC_MSG_RESULT(private installation);
+	safecdir="$with_safec_dir"
+	AC_SUBST([SAFEC_DIR], "$safecdir")
+	AC_SUBST([SAFEC_CFLAGS], "$safecdir/include")
+	AC_SUBST([SAFEC_LDFLAGS], "$safecdir/lib")
+	LDFLAGS="$LDFLAGS -L$safecdir/lib"
 
-       AC_SUBST([SAFEC_DIR], "$safecdir")
-       AC_SUBST([SAFEC_CFLAGS], "$safecdir/include")
-       AC_SUBST([SAFEC_LDFLAGS], "$safecdir/lib")
-       LDFLAGS="$LDFLAGS -L$safecdir/lib"
+	# make sure it's there and linkable.
+	AC_CHECK_LIB([ciscosafec], [memset_s],
+	             [], [AC_MSG_FAILURE([can't find CiscoSafeC lib])] [])
 
-       # make sure it's there and linkable.
-       AC_CHECK_LIB([ciscosafec], [memset_s], 
-                    [], [AC_MSG_FAILURE([can't find CiscoSafeC lib])] [])
-
-       AC_DEFINE([CISCO_LIBSAFEC],[1],[Define if using Cisco installed SafeC]) 
-
-else if test "x$disable_safec" = "xyes"; then
-
-       AC_MSG_RESULT(builtin);
-
-       safecdir="$SAFEC_STUB_DIR"
-       AC_SUBST([SAFEC_DIR], "$safecdir")
-       AC_SUBST([SAFEC_CFLAGS], "$safecdir/include")
-       AC_SUBST([SAFEC_LDFLAGS], "$safecdir/lib")
-       LDFLAGS="$LDFLAGS -L$safecdir/lib"
-       LIBS="$LIBS -lsafe_lib"
-
-else 
-
-       AC_MSG_RESULT();
-       AC_MSG_FAILURE([No libsafec option specified. Must be one of: --with-system-libsafec, --with-safec-dir, --disable-safec])
-
-fi 
-fi
-fi
+	AC_DEFINE([CISCO_LIBSAFEC],[1],[Define if using Cisco installed SafeC])
+])
 
 AC_PREFIX_DEFAULT([/usr/local/est])
 
