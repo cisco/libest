@@ -28,6 +28,20 @@
 
 #include "est.h"
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+/**
+ * OpenSSL 3 removed FIPS_mode{_set} functions with
+ *   https://github.com/openssl/openssl/commit/31b069ecea2c567de22b3874c8e71cc37c921ec9
+ */
+static inline int FIPS_mode() {
+    return 0;
+}
+static inline int FIPS_mode_set(int r) {
+    (void)r;
+    return 1;
+}
+#endif
+
 /*
  * Indicate whether a pointer is to a cert or a csr
  */
