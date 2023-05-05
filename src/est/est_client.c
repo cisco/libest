@@ -361,56 +361,6 @@ static EST_ERROR est_client_remove_crls (EST_CTX *ctx, unsigned char *cacerts,
     return EST_ERR_NONE;
 }
 
-/*
- * This function will decode the passed base64 encoded buffer and return the
- * decoded cacerts. If returning EST_ERR_NONE, caller is responsible for
- * freeing the cacerts_decoded buffer
- */
-static EST_ERROR b64_decode_cacerts (unsigned char *cacerts, int *cacerts_len,
-                                     unsigned char **cacerts_decoded,
-                                     int *cacerts_decoded_len)
-{
-    BIO *in = NULL;
-    BIO *b64 = NULL;
-    unsigned char *decoded_buf;
-    int decoded_buf_len;
-
-    *cacerts_decoded = NULL;
-    *cacerts_decoded_len = 0;
-    
-    b64 = BIO_new(BIO_f_base64());
-    if (b64 == NULL) {
-        EST_LOG_ERR("BIO_new failed");
-        ossl_dump_ssl_errors();
-        return (EST_ERR_MALLOC);
-    }    
-    /*
-     * Decoding will always take up less than the original buffer.
-     */
-    in = BIO_new_mem_buf(cacerts, *cacerts_len);    
-    if (in == NULL) {
-        EST_LOG_ERR("Unable to access the CA cert buffer");
-        ossl_dump_ssl_errors();
-        BIO_free_all(b64);
-        return (EST_ERR_MALLOC);
-    }
-    in = BIO_push(b64, in);    
-    decoded_buf = malloc(*cacerts_len);
-    if (decoded_buf == NULL) {
-        EST_LOG_ERR("Unable to allocate CA cert buffer for decode");
-        BIO_free_all(in);        
-        return (EST_ERR_MALLOC);        
-    }
-    
-    decoded_buf_len = BIO_read(in, decoded_buf, *cacerts_len);
-    
-    *cacerts_decoded = decoded_buf;
-    *cacerts_decoded_len = decoded_buf_len;
-
-    BIO_free_all(in);
-    
-    return (EST_ERR_NONE);
-}
 
 /*
  * If returning EST_ERR_NONE, caller is responsible for freeing the PKCS7 struct
@@ -522,11 +472,16 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
      * - convert to a PKCS7 structure,
      * - extract out the stack of certs.
      */
-    rv = b64_decode_cacerts(cacerts, cacerts_len,
-                            &cacerts_decoded, &cacerts_decoded_len);
-    if (rv != EST_ERR_NONE) {
+    cacerts_decoded = malloc(*ca_certs_len);
+    if (cacerts_decoded == NULL) {
+        EST_LOG_ERR("Unable to allocate CA cert buffer for decode");
+        return (EST_ERR_MALLOC);
+    }
+    cacerts_decoded_len = est_base64_decode((const char *)(cacerts), (char *)cacerts_decoded, *cacerts_len);
+    if (cacerts_decoded_len <= 0) {
         EST_LOG_ERR("Base64 decode of received CA certs failed");
-        return (rv);
+        free(cacerts_decoded);
+        return (EST_ERR_BAD_BASE64);
     }
     rv = create_PKCS7(cacerts_decoded, cacerts_decoded_len, &pkcs7);
     if (rv != EST_ERR_NONE) {
