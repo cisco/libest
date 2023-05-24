@@ -472,7 +472,7 @@ static EST_ERROR verify_cacert_resp (EST_CTX *ctx, unsigned char *cacerts,
      * - convert to a PKCS7 structure,
      * - extract out the stack of certs.
      */
-    cacerts_decoded = malloc(*ca_certs_len);
+    cacerts_decoded = malloc(*cacerts_len);
     if (cacerts_decoded == NULL) {
         EST_LOG_ERR("Unable to allocate CA cert buffer for decode");
         return (EST_ERR_MALLOC);
