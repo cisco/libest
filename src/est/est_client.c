@@ -1247,7 +1247,7 @@ static int est_client_build_cacerts_header (EST_CTX *ctx, char *hdr)
 {
     int hdr_len;
 
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "GET %s%s%s/%s HTTP/1.1\r\n"
+    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "GET %s%s%s/%s HTTP/1.0\r\n"
             "User-Agent: %s\r\n"
             "Connection: close\r\n"
             "Host: %s:%d\r\n"
@@ -1284,7 +1284,7 @@ static int est_client_build_csr_header (EST_CTX *ctx, char *hdr)
 {
     int hdr_len;
 
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN,"GET %s%s%s/%s HTTP/1.1\r\n"
+    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN,"GET %s%s%s/%s HTTP/1.0\r\n"
             "User-Agent: %s\r\n"
             "Connection: close\r\n"
             "Host: %s:%d\r\n"
@@ -1416,7 +1416,7 @@ static int est_client_build_enroll_header (EST_CTX *ctx, char *hdr, int pkcs10_l
 {
     int hdr_len;
 
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.1\r\n"
+    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.0\r\n"
             "User-Agent: %s\r\n"
             "Connection: close\r\n"
             "Host: %s:%d\r\n"
@@ -1457,7 +1457,7 @@ static int est_client_build_reenroll_header (EST_CTX *ctx, char *hdr, int pkcs10
 {
     int hdr_len;
 
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.1\r\n"
+    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.0\r\n"
             "User-Agent: %s\r\n"
             "Connection: close\r\n"
             "Host: %s:%d\r\n"
@@ -1498,7 +1498,7 @@ static int est_client_build_server_keygen_header (EST_CTX *ctx, char *hdr, int p
 {
     int hdr_len;
 
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.1\r\n"
+    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.0\r\n"
             "User-Agent: %s\r\n"
             "Connection: close\r\n"
             "Host: %s:%d\r\n"
@@ -5065,7 +5065,7 @@ static int est_client_brski_build_voucherreq_header (EST_CTX *ctx, char *hdr,
 {
     int hdr_len;
 
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.1\r\n"
+    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.0\r\n"
              "User-Agent: %s\r\n"
              "Connection: close\r\n"
              "Host: %s:%d\r\n"
@@ -6134,7 +6134,7 @@ static int est_client_brski_build_status_header (EST_CTX *ctx, char *hdr,
 {
     int hdr_len;
     
-    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.1\r\n"
+    snprintf(hdr, EST_HTTP_REQ_TOTAL_LEN, "POST %s%s%s/%s HTTP/1.0\r\n"
              "User-Agent: %s\r\n"
              "Connection: close\r\n"
              "Host: %s:%d\r\n"
