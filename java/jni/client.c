@@ -14,6 +14,7 @@
 #include <est/est.h>
 #include <openssl/x509v3.h>
 #include <openssl/bio.h>
+#include <openssl/evp.h>
 #include "safe_mem_lib.h"
 
 #define EST_CLASS_ENROLL_EXCEPTION 			"com/cisco/c3m/est/EnrollException"
@@ -179,7 +180,7 @@ static int jni_est_client_X509_REQ_sign (X509_REQ *x, EVP_PKEY *pkey, const EVP_
  */
 JNIEXPORT jint JNICALL Java_com_cisco_c3m_est_ESTClient_enable_1fips(
 		JNIEnv *env, jclass obj) {
-	if (!FIPS_mode() && !FIPS_mode_set(1)) {
+	if (!EVP_default_properties_is_fips_enabled(NULL) && !EVP_default_properties_enable_fips(NULL, 1)) {
 		ERR_print_errors_fp(stderr);
 		return -1;
 	} else {
