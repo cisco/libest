@@ -150,28 +150,28 @@ DHE-DSS-AES256-SHA256"
 
 #define EST_HTTP_MAX_REASON_PHRASE  256
 #define EST_HTTP_HDR_MAX            1024 
-#define EST_HTTP_HDR_200            "HTTP/1.1 200"
-#define EST_HTTP_HDR_200_RESP       "HTTP/1.1 200 OK"
+#define EST_HTTP_HDR_200            "HTTP/1.0 200"
+#define EST_HTTP_HDR_200_RESP       "HTTP/1.0 200 OK"
 #define EST_HTTP_HDR_STAT_200       "Status: 200 OK"
-#define EST_HTTP_HDR_202            "HTTP/1.1 202"
-#define EST_HTTP_HDR_202_RESP       "HTTP/1.1 202 " EST_HTTP_STAT_202_TXT
+#define EST_HTTP_HDR_202            "HTTP/1.0 202"
+#define EST_HTTP_HDR_202_RESP       "HTTP/1.0 202 " EST_HTTP_STAT_202_TXT
 #define EST_HTTP_HDR_STAT_202       "Status: 202 "  EST_HTTP_STAT_202_TXT
-#define EST_HTTP_HDR_204            "HTTP/1.1 204"
-#define EST_HTTP_HDR_204_RESP       "HTTP/1.1 204 " EST_HTTP_STAT_204_TXT
-#define EST_HTTP_HDR_400            "HTTP/1.1 400"
-#define EST_HTTP_HDR_400_RESP       "HTTP/1.1 400 " EST_HTTP_STAT_400_TXT
-#define EST_HTTP_HDR_401            "HTTP/1.1 401"
-#define EST_HTTP_HDR_401_RESP       "HTTP/1.1 401 " EST_HTTP_STAT_401_TXT
-#define EST_HTTP_HDR_404            "HTTP/1.1 404"
-#define EST_HTTP_HDR_404_RESP       "HTTP/1.1 404 " EST_HTTP_STAT_404_TXT
-#define EST_HTTP_HDR_423            "HTTP/1.1 423"
-#define EST_HTTP_HDR_423_RESP       "HTTP/1.1 423 " EST_HTTP_STAT_423_TXT
-#define EST_HTTP_HDR_500            "HTTP/1.1 500"
-#define EST_HTTP_HDR_500_RESP       "HTTP/1.1 500 " EST_HTTP_STAT_500_TXT
-#define EST_HTTP_HDR_502            "HTTP/1.1 502"
-#define EST_HTTP_HDR_502_RESP       "HTTP/1.1 502 " EST_HTTP_STAT_502_TXT
-#define EST_HTTP_HDR_504            "HTTP/1.1 504"
-#define EST_HTTP_HDR_504_RESP       "HTTP/1.1 504 " EST_HTTP_STAT_504_TXT
+#define EST_HTTP_HDR_204            "HTTP/1.0 204"
+#define EST_HTTP_HDR_204_RESP       "HTTP/1.0 204 " EST_HTTP_STAT_204_TXT
+#define EST_HTTP_HDR_400            "HTTP/1.0 400"
+#define EST_HTTP_HDR_400_RESP       "HTTP/1.0 400 " EST_HTTP_STAT_400_TXT
+#define EST_HTTP_HDR_401            "HTTP/1.0 401"
+#define EST_HTTP_HDR_401_RESP       "HTTP/1.0 401 " EST_HTTP_STAT_401_TXT
+#define EST_HTTP_HDR_404            "HTTP/1.0 404"
+#define EST_HTTP_HDR_404_RESP       "HTTP/1.0 404 " EST_HTTP_STAT_404_TXT
+#define EST_HTTP_HDR_423            "HTTP/1.0 423"
+#define EST_HTTP_HDR_423_RESP       "HTTP/1.0 423 " EST_HTTP_STAT_423_TXT
+#define EST_HTTP_HDR_500            "HTTP/1.0 500"
+#define EST_HTTP_HDR_500_RESP       "HTTP/1.0 500 " EST_HTTP_STAT_500_TXT
+#define EST_HTTP_HDR_502            "HTTP/1.0 502"
+#define EST_HTTP_HDR_502_RESP       "HTTP/1.0 502 " EST_HTTP_STAT_502_TXT
+#define EST_HTTP_HDR_504            "HTTP/1.0 504"
+#define EST_HTTP_HDR_504_RESP       "HTTP/1.0 504 " EST_HTTP_STAT_504_TXT
 #define EST_HTTP_HDR_CT             "Content-Type"
 #define EST_HTTP_HDR_CE             "Content-Transfer-Encoding"
 #define EST_HTTP_HDR_CL             "Content-Length"
