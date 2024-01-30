@@ -1422,6 +1422,7 @@ static int est_client_build_enroll_header (EST_CTX *ctx, char *hdr, int pkcs10_l
             "Host: %s:%d\r\n"
             "Accept: */*\r\n"
             "Content-Type: application/pkcs10\r\n"
+            "Content-Transfer-Encoding: base64\r\n"
             "Content-Length: %d\r\n",
             EST_PATH_PREFIX,
             (ctx->uri_path_segment?"/":""),
@@ -1463,6 +1464,7 @@ static int est_client_build_reenroll_header (EST_CTX *ctx, char *hdr, int pkcs10
             "Host: %s:%d\r\n"
             "Accept: */*\r\n"
             "Content-Type: application/pkcs10\r\n"
+            "Content-Transfer-Encoding: base64\r\n"
             "Content-Length: %d\r\n",
             EST_PATH_PREFIX,
             (ctx->uri_path_segment?"/":""),
@@ -1504,6 +1506,7 @@ static int est_client_build_server_keygen_header (EST_CTX *ctx, char *hdr, int p
             "Host: %s:%d\r\n"
             "Accept: */*\r\n"
             "Content-Type: application/pkcs10\r\n"
+            "Content-Transfer-Encoding: base64\r\n"
             "Content-Length: %d\r\n",
             EST_PATH_PREFIX,
             (ctx->uri_path_segment?"/":""),
