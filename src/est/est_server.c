@@ -30,6 +30,7 @@
 #include <openssl/x509v3.h>
 #include <openssl/cms.h>
 #include <openssl/bio.h>
+#include <openssl/evp.h>
 
 
 static ASN1_OBJECT *o_cmcRA = NULL;
@@ -3355,7 +3356,7 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
         /*
          * Since HTTP digest auth uses MD5, make sure we're not in FIPS mode.
          */
-	if (FIPS_mode()) {
+	if (EVP_default_properties_is_fips_enabled(NULL)) {
 	    EST_LOG_ERR("HTTP digest auth not allowed while in FIPS mode");
 	    return (EST_ERR_BAD_MODE);
 	}
