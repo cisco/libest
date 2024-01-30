@@ -1457,8 +1457,7 @@ static EST_ERROR est_io_check_http_hdrs (HTTP_HEADER *hdrs, int hdr_cnt,
         return EST_ERR_HTTP_UNSUPPORTED;
     }
     if (content_length_present == 0) {
-        EST_LOG_ERR("Missing HTTP content length header");
-        return EST_ERR_HTTP_UNSUPPORTED;
+        EST_LOG_INFO("Missing HTTP content length header");
     }
 
     return EST_ERR_NONE;
@@ -1557,6 +1556,7 @@ EST_ERROR est_io_get_response_internal (EST_CTX *ctx, SSL *ssl, EST_OPERATION op
     unsigned char *raw_buf = NULL, *payload_skip_extra = NULL;
     unsigned char *payload, *payload_buf;
     int raw_len = 0;
+    int body_len;
     errno_t safec_rc;
 
 
@@ -1763,6 +1763,15 @@ EST_ERROR est_io_get_response_internal (EST_CTX *ctx, SSL *ssl, EST_OPERATION op
              */
             rv = est_io_check_http_hdrs(hdrs, hdr_cnt, op, cert_buf_len);
             if (rv == EST_ERR_NONE) {
+                body_len = (raw_len + raw_buf) - payload;
+
+                if (*cert_buf_len == -1) {
+                    /*
+                     * Connection is being closed. Allocate just enough
+                     * for the body we have received.
+                     */
+                    *cert_buf_len = body_len;
+                }
 
                 EST_LOG_INFO("HTTP Content len=%d", *cert_buf_len);
 
@@ -1778,7 +1787,7 @@ EST_ERROR est_io_get_response_internal (EST_CTX *ctx, SSL *ssl, EST_OPERATION op
                     rv = EST_ERR_HTTP_UNSUPPORTED;
                     *cert_buf_len = 0;
                     *cert_buf = NULL;
-                } else if (*cert_buf_len != (raw_len + raw_buf) - payload) {
+                } else if (*cert_buf_len != body_len) {
                     EST_LOG_ERR(
                         "Content Length (%d) and body length (%d) mismatch.",
                         *cert_buf_len, (raw_len + raw_buf) - payload);
