@@ -164,7 +164,7 @@ static void show_usage_and_exit (void)
             "  --dtls-handshake-mtu Set the MTU used during DTLS handshake phase.\n"
             "  --dtls-session-max Set the maximum number of DTLS sessions.\n"
 #endif
-            "  --perf-timers-on  Enable the performace timers in proxy\n"
+            "  --perf-timers-on  Enable the performance timers in proxy\n"
             "\n");
     exit(255);
 }

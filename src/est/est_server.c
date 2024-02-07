@@ -2189,7 +2189,7 @@ EST_ERROR est_handle_server_keygen (EST_CTX *ctx, void *http_ctx,
             }
 
         } else if (ctx->transport_mode != EST_COAP) {
-            EST_LOG_ERR("EST in improper transport mode. Cannot propogate server retry to client.");
+            EST_LOG_ERR("EST in improper transport mode. Cannot propagate server retry to client.");
             return_code = EST_ERR_BAD_MODE;
             goto free_buffers;
         }

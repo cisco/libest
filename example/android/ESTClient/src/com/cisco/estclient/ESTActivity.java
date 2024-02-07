@@ -236,19 +236,19 @@ public class ESTActivity extends Activity implements View.OnClickListener,
 			lCerts.append(0); 
 		} catch (NoSuchAlgorithmException e) {
 			// TODO Auto-generated catch block
-			logError("An error occured: " + e.getMessage());
+			logError("An error occurred: " + e.getMessage());
 			e.printStackTrace();
 		} catch (KeyStoreException e) {
 			// TODO Auto-generated catch block
-			logError("An error occured: " + e.getMessage());
+			logError("An error occurred: " + e.getMessage());
 			e.printStackTrace();
 		} catch (CertificateEncodingException e) {
 			// TODO Auto-generated catch block
-			logError("An error occured: " + e.getMessage());
+			logError("An error occurred: " + e.getMessage());
 			e.printStackTrace();
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
-			logError("An error occured: " + e.getMessage());
+			logError("An error occurred: " + e.getMessage());
 			e.printStackTrace();
 		}
 		
