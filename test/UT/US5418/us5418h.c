@@ -193,16 +193,16 @@ EST_ERROR setup_client_ctx(EST_CTX **cctx) {
     }
     est_err = est_client_set_server(*cctx, US5418_SERVER_IP, US5418_SERVER_PORT, NULL);
     if (est_err != EST_ERR_NONE) {
-        printf("EST_ERROR %s occured while setting the server in the est client context\n",
+        printf("EST_ERROR %s occurred while setting the server in the est client context\n",
                EST_ERR_NUM_TO_STR(est_err));
-        CU_FAIL("EST error occured while setting the server in the est client context");
+        CU_FAIL("EST error occurred while setting the server in the est client context");
         return est_err;
     }
     est_err = est_client_set_auth(*cctx, "estuser", "estpwd", client_cert, client_pkey);
     if (est_err != EST_ERR_NONE) {
-        printf("EST_ERROR %s occured while setting the auth in the est client context\n",
+        printf("EST_ERROR %s occurred while setting the auth in the est client context\n",
                EST_ERR_NUM_TO_STR(est_err));
-        CU_FAIL("EST error occured while setting the auth in the est client context");
+        CU_FAIL("EST error occurred while setting the auth in the est client context");
         return est_err;
     }
     return EST_ERR_NONE;
@@ -240,9 +240,9 @@ static EST_ERROR perform_est_request (REQUESTS request_type, EVP_PKEY *pkey,
     est_err = setup_cb(&cctx);
     if (est_err != EST_ERR_NONE) {
         /* No success variable in here so can't use CU_FAIL_5418 */
-        printf("EST_ERROR %s occured during setup of client context\n",
+        printf("EST_ERROR %s occurred during setup of client context\n",
                EST_ERR_NUM_TO_STR(est_err));
-        CU_FAIL("EST error occured during setup of client context");
+        CU_FAIL("EST error occurred during setup of client context");
         if (cctx) {
             est_destroy(cctx);
         }
@@ -252,48 +252,48 @@ static EST_ERROR perform_est_request (REQUESTS request_type, EVP_PKEY *pkey,
     case SIMPLE_ENROLL:
         est_err = est_client_enroll(cctx, "testcert", &pkcs7_len, pkey);
         if (est_err != EST_ERR_NONE) {
-            printf("EST_ERROR %s occured during enrollment request\n",
+            printf("EST_ERROR %s occurred during enrollment request\n",
                    EST_ERR_NUM_TO_STR(est_err));
-            CU_FAIL("EST error occured during enrollment request");
+            CU_FAIL("EST error occurred during enrollment request");
         }
         break;
     case GET_CACERTS:
         est_err = est_client_get_cacerts(cctx, &cacerts_len);
         if (est_err != EST_ERR_NONE) {
-            printf("EST_ERROR %s occured during get cacerts request\n",
+            printf("EST_ERROR %s occurred during get cacerts request\n",
                    EST_ERR_NUM_TO_STR(est_err));
-            CU_FAIL("EST error occured during get cacerts request");
+            CU_FAIL("EST error occurred during get cacerts request");
         }
         break;
     case CSR_ATTRS:
         est_err = est_client_get_csrattrs(cctx, &csr_attrs_buf, &csr_attrs_len);
         if (est_err != EST_ERR_NONE) {
-            printf("EST_ERROR %s occured during get csr attrs request\n",
+            printf("EST_ERROR %s occurred during get csr attrs request\n",
                    EST_ERR_NUM_TO_STR(est_err));
-            CU_FAIL("EST error occured during get csr attrs request");
+            CU_FAIL("EST error occurred during get csr attrs request");
         }
         break;
     case SERVER_KEYGEN:
         est_err = est_client_server_keygen_enroll(cctx, "testcert", &pkcs7_len,
                                                   &newkey_len, pkey);
         if (est_err != EST_ERR_NONE) {
-            printf("EST_ERROR %s occured during get server keygen request\n",
+            printf("EST_ERROR %s occurred during get server keygen request\n",
                    EST_ERR_NUM_TO_STR(est_err));
-            CU_FAIL("EST error occured during get server keygen request");
+            CU_FAIL("EST error occurred during get server keygen request");
         }
         break;
     case SIMPLE_REENROLL:
         est_err = est_client_reenroll(cctx, reenroll_cert, &pkcs7_len, pkey);
         if (est_err != EST_ERR_NONE) {
-            printf("EST_ERROR %s occured during reenroll request\n",
+            printf("EST_ERROR %s occurred during reenroll request\n",
                    EST_ERR_NUM_TO_STR(est_err));
-            CU_FAIL("EST error occured during reenroll request");
+            CU_FAIL("EST error occurred during reenroll request");
         }
         break;
     default:
-        printf("EST_ERROR %s occured during get csr attrs request\n",
+        printf("EST_ERROR %s occurred during get csr attrs request\n",
                EST_ERR_NUM_TO_STR(est_err));
-        CU_FAIL("EST error occured during get csr attrs request");
+        CU_FAIL("EST error occurred during get csr attrs request");
         est_err = EST_ERR_INVALID_PARAMETERS;
     }
     if (cctx) {

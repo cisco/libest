@@ -322,7 +322,7 @@ static EST_ERROR est_proxy_propagate_keygen_rsp (void *http_ctx,
      * Send the PKCS8 private key in the body
      */
     if (!mg_write(http_ctx, key, key_len)) {
-        EST_LOG_ERR("HTTP write error while propogating server generated key");
+        EST_LOG_ERR("HTTP write error while propagating server generated key");
         return (EST_ERR_HTTP_WRITE);
     }
 
@@ -826,7 +826,7 @@ try_again:
         break;
     default:
         /* This section will map to a 500 repsonse */
-        EST_LOG_ERR("Proxy: Unhandled error occured while communicating with "
+        EST_LOG_ERR("Proxy: Unhandled error occurred while communicating with "
                     "the upstream server %s (%d)",
                     EST_ERR_NUM_TO_STR(rv), rv);
         rv = EST_ERR_UNKNOWN;
@@ -842,7 +842,7 @@ try_again:
 
     /*
      * If we have a cert response from the EST server, we pass it
-     * back to the caller.  In HTTP mode we propogate it back right
+     * back to the caller.  In HTTP mode we propagate it back right
      * here and pass it back so it can be passed in the event notification
      * handler, if needed.  In CoAP mode, we just pass it back to the
      * caller (the CoAP handler) and have the caller send it back and
@@ -1097,7 +1097,7 @@ try_again:
         break;
     default:
         /* This section will map to a 500 repsonse */
-        EST_LOG_ERR("Proxy: Unhandled error occured while communicating with "
+        EST_LOG_ERR("Proxy: Unhandled error occurred while communicating with "
                     "the upstream server %s (%d)",
                     EST_ERR_NUM_TO_STR(rv), rv);
         rv = EST_ERR_UNKNOWN;
@@ -1113,7 +1113,7 @@ try_again:
 
     /*
      * If we have a response from the EST server, we pass it
-     * back to the caller.  In HTTP mode we propogate it back right
+     * back to the caller.  In HTTP mode we propagate it back right
      * here and pass it back so it can be passed in the event notification
      * handler, if needed.  In CoAP mode, we just pass it back to the
      * caller (the CoAP handler) and have the caller send it back and
@@ -1293,7 +1293,7 @@ EST_ERROR est_proxy_handle_cacerts (EST_CTX *ctx, void *http_ctx, char *path_seg
             return rv;
         default:
             /* This section will map to a 500 repsonse */
-            EST_LOG_ERR("Proxy: Unhandled error occured while communicating "
+            EST_LOG_ERR("Proxy: Unhandled error occurred while communicating "
                         "with the upstream server %s (%d)",
                         EST_ERR_NUM_TO_STR(rv), rv);
             return (EST_ERR_UNKNOWN);
@@ -1440,7 +1440,7 @@ EST_ERROR est_proxy_handle_csr_attrs (EST_CTX *ctx, void *http_ctx,
         return rv;
     default:
         /* This section will map to a 500 repsonse */
-        EST_LOG_ERR("Proxy: Unhandled error occured while communicating with "
+        EST_LOG_ERR("Proxy: Unhandled error occurred while communicating with "
                     "the upstream server %s (%d)",
                     EST_ERR_NUM_TO_STR(rv), rv);
         return (EST_ERR_UNKNOWN);

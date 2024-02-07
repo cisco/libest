@@ -1309,7 +1309,7 @@ int main (int argc, char **argv)
             case 'i':
                 iterations = atoi(optarg);
                 if (iterations > MAX_ITERATIONS) {
-                    printf("\nMaxium number of iterations per thread is %d, ", MAX_ITERATIONS);
+                    printf("\nMaximum number of iterations per thread is %d, ", MAX_ITERATIONS);
                     printf("please use a lower value with the -i option\n");
                     exit(1);
                 }
