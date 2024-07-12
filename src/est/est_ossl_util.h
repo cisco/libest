@@ -44,4 +44,6 @@ LIBEST_TEST_API void ossl_dump_ssl_errors(void);
 EST_ERROR ossl_init_cert_store(X509_STORE *store,
                                unsigned char *raw1, int size1);
 
+int est_is_fips_enabled();
+int est_enable_fips(int);
 #endif

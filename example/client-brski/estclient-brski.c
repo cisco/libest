@@ -388,7 +388,7 @@ int main (int argc, char **argv)
                 break;
             case 'f':
                 /* Turn FIPS on if requested and exit if failure */
-                set_fips_return = FIPS_mode_set(1);
+                set_fips_return = est_enable_fips(1);
                 if (!set_fips_return) {
                     printf("\nERROR setting FIPS MODE ON ...\n");
                     ERR_load_crypto_strings();

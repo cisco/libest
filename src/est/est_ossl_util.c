@@ -500,3 +500,21 @@ char *est_find_ser_num_in_subj(X509 *cert)
     return(ser_num_str);
 }
 #endif
+
+int est_is_fips_enabled()
+{
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    return EVP_default_properties_is_fips_enabled(NULL);
+#else
+    return FIPS_mode();
+#endif
+}
+
+int est_enable_fips(int enable)
+{
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	return EVP_default_properties_enable_fips(NULL, enable);
+#else
+	return FIPS_mode_set(enable);
+#endif
+}

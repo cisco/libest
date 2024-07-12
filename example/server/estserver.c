@@ -2285,7 +2285,7 @@ int main (int argc, char **argv)
             /* turn FIPS on if user requested it
              * and exit if failure.
              */
-            set_fips_return = FIPS_mode_set(1);
+            set_fips_return = est_enable_fips(1);
             if (set_fips_return != 1) {
                 set_fips_error = ERR_get_error();
                 printf("\nERROR WHILE SETTING FIPS MODE ON exiting ....\n");
