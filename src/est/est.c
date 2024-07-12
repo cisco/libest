@@ -42,7 +42,9 @@
 #include <DbgHelp.h>
 #endif  /* DISABLE_BACKTRACE*/
 #endif /* WIN32*/
-
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <openssl/rand.h>
 #ifndef ENABLE_CLIENT_ONLY
 static char hex_chpw[] = {0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 
 			  0xF7, 0x0D, 0x01, 0x09, 0x07};

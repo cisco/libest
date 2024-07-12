@@ -40,6 +40,7 @@
 #include <openssl/ssl.h>
 #include <openssl/cms.h>
 #include <openssl/rand.h>
+#include <openssl/crypto.h>
 #include "est.h"
 #include "est_locl.h"
 #include "est_ossl_util.h"
