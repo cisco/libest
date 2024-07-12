@@ -3183,7 +3183,7 @@ EST_ERROR est_client_enroll_internal (EST_CTX *ctx, char *cn, int *pkcs7_len, in
          * HTTPS digest mode requires the use of MD5.  Make sure we're not
          * in FIPS mode and can use MD5
          */
-        if (ctx->auth_mode == AUTH_DIGEST && (FIPS_mode())){
+        if (ctx->auth_mode == AUTH_DIGEST && (est_is_fips_enabled())){
             EST_LOG_ERR("HTTP digest auth not allowed while in FIPS mode");
             rv = EST_ERR_BAD_MODE;
             goto err;
@@ -3594,7 +3594,7 @@ EST_ERROR est_client_reenroll (EST_CTX *ctx, X509 *cert, int *pkcs7_len, EVP_PKE
          * HTTPS digest mode requires the use of MD5.  Make sure we're not
          * in FIPS mode and can use MD5
          */
-        if (ctx->auth_mode == AUTH_DIGEST && (FIPS_mode())){
+        if (ctx->auth_mode == AUTH_DIGEST && (est_is_fips_enabled())){
 	    EST_LOG_ERR("HTTP digest auth not allowed while in FIPS mode");
 	    rv = EST_ERR_BAD_MODE;
             goto err;
@@ -3680,7 +3680,7 @@ static EST_ERROR est_client_enroll_csr_internal (EST_CTX *ctx, X509_REQ *csr, in
          * HTTPS digest mode requires the use of MD5.  Make sure we're not
          * in FIPS mode and can use MD5
          */
-        if (ctx->auth_mode == AUTH_DIGEST && (FIPS_mode())){
+        if (ctx->auth_mode == AUTH_DIGEST && (est_is_fips_enabled())){
             EST_LOG_ERR("HTTP digest auth not allowed while in FIPS mode");
             rv = EST_ERR_BAD_MODE;
             goto err;
@@ -5872,7 +5872,7 @@ static EST_ERROR est_client_brski_send_get_voucher (EST_CTX *ctx, int *cacert_le
          * HTTPS digest mode requires the use of MD5.  Make sure we're not
          * in FIPS mode and can use MD5
          */
-        if (ctx->auth_mode == AUTH_DIGEST && (FIPS_mode())){
+        if (ctx->auth_mode == AUTH_DIGEST && (est_is_fips_enabled())){
             EST_LOG_ERR("HTTP digest auth not allowed while in FIPS mode");
             rv = EST_ERR_BAD_MODE;
             goto err;
@@ -6366,7 +6366,7 @@ EST_ERROR est_client_brski_send_voucher_status (EST_CTX *ctx, EST_BRSKI_STATUS_V
          * HTTPS digest mode requires the use of MD5.  Make sure we're not
          * in FIPS mode and can use MD5
          */
-        if (ctx->auth_mode == AUTH_DIGEST && (FIPS_mode())){
+        if (ctx->auth_mode == AUTH_DIGEST && (est_is_fips_enabled())){
             EST_LOG_ERR("HTTP digest auth not allowed while in FIPS mode");
             rv = EST_ERR_BAD_MODE;
             goto err;
@@ -6535,7 +6535,7 @@ EST_ERROR est_client_brski_send_enroll_status (EST_CTX *ctx, EST_BRSKI_STATUS_VA
          * HTTPS digest mode requires the use of MD5.  Make sure we're not
          * in FIPS mode and can use MD5
          */
-        if (ctx->auth_mode == AUTH_DIGEST && (FIPS_mode())){
+        if (ctx->auth_mode == AUTH_DIGEST && (est_is_fips_enabled())){
             EST_LOG_ERR("HTTP digest auth not allowed while in FIPS mode");
             rv = EST_ERR_BAD_MODE;
             goto err;

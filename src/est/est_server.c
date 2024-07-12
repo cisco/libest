@@ -3355,7 +3355,7 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
         /*
          * Since HTTP digest auth uses MD5, make sure we're not in FIPS mode.
          */
-	if (FIPS_mode()) {
+	if (est_is_fips_enabled()) {
 	    EST_LOG_ERR("HTTP digest auth not allowed while in FIPS mode");
 	    return (EST_ERR_BAD_MODE);
 	}
