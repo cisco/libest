@@ -5313,11 +5313,15 @@ EST_ERROR verify_voucher (EST_CTX *ctx)
         return (EST_ERR_CLIENT_BRSKI_VOUCHER_VERIFY_FAILED);
     }
 
+#ifdef HAVE_OLD_OPENSSL
     ctx->brski_retrieved_voucher = pkcs7->d.sign->contents->d.data->data;
-    ctx->brski_retrieved_voucher_len = pkcs7->d.sign->contents->d.data->length;
+#else
+    ctx->brski_retrieved_voucher = (unsigned char *)ASN1_STRING_get0_data(pkcs7->d.sign->contents->d.data);
+#endif
+    ctx->brski_retrieved_voucher_len = ASN1_STRING_length(pkcs7->d.sign->contents->d.data);
 
     EST_LOG_INFO("Voucher verify passed.  Voucher =\n %s",
-                 pkcs7->d.sign->contents->d.data->data);
+                 ctx->brski_retrieved_voucher);
     
     return (EST_ERR_NONE);
 }

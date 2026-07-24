@@ -1133,7 +1133,11 @@ int est_tls_uid_auth (EST_CTX *ctx, SSL *ssl, X509_REQ *req)
          */
         tls_uid = est_get_tls_uid(ssl, &uid_len, 0);
         if (tls_uid) {
+#ifdef HAVE_OLD_OPENSSL
 	    i = memcmp_s(tls_uid, uid_len, bs->data, uid_len, &diff);
+#else
+	    i = memcmp_s(tls_uid, uid_len, ASN1_STRING_get0_data(bs), uid_len, &diff);
+#endif
             if (i == EOK && !diff) {
                 EST_LOG_INFO("PoP is valid");
                 rv = EST_ERR_NONE;
