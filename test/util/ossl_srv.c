@@ -91,6 +91,10 @@
 #include <openssl/bio.h>
 #include "apps.h"  //taken from openssl/apps/apps.h
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#define ASN1_STRING_get0_data ASN1_STRING_data
+#endif
+
 extern BIO *bio_err;
 BIO *cacerts = NULL;
 static int msie_hack=0;
@@ -345,6 +349,7 @@ EVP_PKEY *load_key(BIO *err, const char *file, int format, int maybe_stdin,
 		BIO_printf(err,"no keyfile specified\n");
 		goto end;
 		}
+#if OPENSSL_VERSION_NUMBER < 0x40000000L
 	if (format == FORMAT_ENGINE)
 		{
 		if (!e)
@@ -361,6 +366,7 @@ EVP_PKEY *load_key(BIO *err, const char *file, int format, int maybe_stdin,
 			}
 		goto end;
 		}
+#endif
 	key=BIO_new(BIO_s_file());
 	if (key == NULL)
 		{
@@ -971,7 +977,7 @@ int rand_serial(BIGNUM *b, ASN1_INTEGER *ai)
 	if (!btmp)
 		return 0;
 
-	if (!BN_pseudo_rand(btmp, SERIAL_RAND_BITS, 0, 0))
+	if (!BN_rand(btmp, SERIAL_RAND_BITS, 0, 0))
 		goto error;
 	if (ai && !BN_to_ASN1_INTEGER(btmp, ai))
 		goto error;
@@ -1434,15 +1440,15 @@ static int do_updatedb (CA_DB *db)
 
 	/* get actual time and make a string */
 	a_tm = X509_gmtime_adj(a_tm, 0);
-	a_tm_s = (char *) OPENSSL_malloc(a_tm->length+1);
+	a_tm_s = (char *) OPENSSL_malloc(ASN1_STRING_length(a_tm)+1);
 	if (a_tm_s == NULL)
 		{
 		cnt = -1;
 		goto err;
 		}
 
-	memcpy(a_tm_s, a_tm->data, a_tm->length);
-	a_tm_s[a_tm->length] = '\0';
+	memcpy(a_tm_s, ASN1_STRING_get0_data(a_tm), ASN1_STRING_length(a_tm));
+	a_tm_s[ASN1_STRING_length(a_tm)] = '\0';
 
 	if (strncmp(a_tm_s, "49", 2) <= 0)
 		a_y2k = 1;
@@ -1508,19 +1514,19 @@ int old_entry_print(BIO *bp, ASN1_OBJECT *obj, ASN1_STRING *str)
 	*(pbuf++)='\0';
 	BIO_puts(bp,buf);
 
-	if (str->type == V_ASN1_PRINTABLESTRING)
+	if (ASN1_STRING_type(str) == V_ASN1_PRINTABLESTRING)
 		BIO_printf(bp,"PRINTABLE:'");
-	else if (str->type == V_ASN1_T61STRING)
+	else if (ASN1_STRING_type(str) == V_ASN1_T61STRING)
 		BIO_printf(bp,"T61STRING:'");
-	else if (str->type == V_ASN1_IA5STRING)
+	else if (ASN1_STRING_type(str) == V_ASN1_IA5STRING)
 		BIO_printf(bp,"IA5STRING:'");
-	else if (str->type == V_ASN1_UNIVERSALSTRING)
+	else if (ASN1_STRING_type(str) == V_ASN1_UNIVERSALSTRING)
 		BIO_printf(bp,"UNIVERSALSTRING:'");
 	else
-		BIO_printf(bp,"ASN.1 %2d:'",str->type);
-			
-	p=(char *)str->data;
-	for (j=str->length; j>0; j--)
+		BIO_printf(bp,"ASN.1 %2d:'",ASN1_STRING_type(str));
+
+	p=(char *)ASN1_STRING_get0_data(str);
+	for (j=ASN1_STRING_length(str); j>0; j--)
 		{
 		if ((*p >= ' ') && (*p <= '~'))
 			BIO_printf(bp,"%c",*p);
@@ -1658,16 +1664,24 @@ static int do_body(X509 **xret, EVP_PKEY *pkey, X509 *x509, const EVP_MD *dgst,
 #else            
                             nid = OBJ_obj2nid(X509_NAME_ENTRY_get_object(ne));
 #endif
-			if (str->type == V_ASN1_UNIVERSALSTRING)
+			if (ASN1_STRING_type(str) == V_ASN1_UNIVERSALSTRING)
 				ASN1_UNIVERSALSTRING_to_string(str);
 
-			if ((str->type == V_ASN1_IA5STRING) &&
+			if ((ASN1_STRING_type(str) == V_ASN1_IA5STRING) &&
 				(nid != NID_pkcs9_emailAddress))
-				str->type=V_ASN1_T61STRING;
+				{
+				X509_NAME_ENTRY_set_data(ne, V_ASN1_T61STRING,
+					ASN1_STRING_get0_data(str), ASN1_STRING_length(str));
+				str=X509_NAME_ENTRY_get_data(ne);
+				}
 
 			if ((nid == NID_pkcs9_emailAddress) &&
-				(str->type == V_ASN1_PRINTABLESTRING))
-				str->type=V_ASN1_IA5STRING;
+				(ASN1_STRING_type(str) == V_ASN1_PRINTABLESTRING))
+				{
+				X509_NAME_ENTRY_set_data(ne, V_ASN1_IA5STRING,
+					ASN1_STRING_get0_data(str), ASN1_STRING_length(str));
+				str=X509_NAME_ENTRY_get_data(ne);
+				}
 			}
 
 		/* If no EMAIL is wanted in the subject */
@@ -1676,18 +1690,18 @@ static int do_body(X509 **xret, EVP_PKEY *pkey, X509 *x509, const EVP_MD *dgst,
 
 		/* check some things */
 		if ((OBJ_obj2nid(obj) == NID_pkcs9_emailAddress) &&
-			(str->type != V_ASN1_IA5STRING))
+			(ASN1_STRING_type(str) != V_ASN1_IA5STRING))
 			{
 			BIO_printf(bio_err,"\nemailAddress type needs to be of type IA5STRING\n");
 			goto err;
 			}
-		if ((str->type != V_ASN1_BMPSTRING) && (str->type != V_ASN1_UTF8STRING))
+		if ((ASN1_STRING_type(str) != V_ASN1_BMPSTRING) && (ASN1_STRING_type(str) != V_ASN1_UTF8STRING))
 			{
-			j=ASN1_PRINTABLE_type(str->data,str->length);
+			j=ASN1_PRINTABLE_type(ASN1_STRING_get0_data(str),ASN1_STRING_length(str));
 			if (	((j == V_ASN1_T61STRING) &&
-				 (str->type != V_ASN1_T61STRING)) ||
+				 (ASN1_STRING_type(str) != V_ASN1_T61STRING)) ||
 				((j == V_ASN1_IA5STRING) &&
-				 (str->type == V_ASN1_PRINTABLESTRING)))
+				 (ASN1_STRING_type(str) == V_ASN1_PRINTABLESTRING)))
 				{
 				BIO_printf(bio_err,"\nThe string contains characters that are illegal for the ASN.1 type\n");
 				goto err;
@@ -1791,7 +1805,8 @@ again2:
 					}
 				if (j < 0)
 					{
-					BIO_printf(bio_err,"The %s field needed to be the same in the\nCA certificate (%s) and the request (%s)\n",cv->name,((str2 == NULL)?"NULL":(char *)str2->data),((str == NULL)?"NULL":(char *)str->data));
+					BIO_printf(bio_err,"The %s field needed to be the same in the\nCA certificate (%s) and the request (%s)\n",cv->name,
+						((str2 == NULL)?"NULL":(char *)ASN1_STRING_get0_data(str2)),((str == NULL)?"NULL":(char *)ASN1_STRING_get0_data(str)));
 					goto err;
 					}
 				}
@@ -2098,9 +2113,9 @@ again2:
 	row[DB_type]=(char *)OPENSSL_malloc(2);
 
 	tm=X509_get_notAfter(ret);
-	row[DB_exp_date]=(char *)OPENSSL_malloc(tm->length+1);
-	memcpy(row[DB_exp_date],tm->data,tm->length);
-	row[DB_exp_date][tm->length]='\0';
+	row[DB_exp_date]=(char *)OPENSSL_malloc(ASN1_STRING_length(tm)+1);
+	memcpy(row[DB_exp_date],ASN1_STRING_get0_data(tm),ASN1_STRING_length(tm));
+	row[DB_exp_date][ASN1_STRING_length(tm)]='\0';
 
 	row[DB_rev_date]=NULL;
 
