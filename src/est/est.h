@@ -25,6 +25,9 @@
 #include <openssl/engine.h>
 #include <openssl/conf.h>
 #include <openssl/srp.h>
+#if OPENSSL_VERSION_NUMBER >= 0x40000000L
+#include <openssl/provider.h>
+#endif
 
 #ifdef  __cplusplus
 extern "C" {
@@ -829,6 +832,13 @@ LIBEST_API EST_ERROR est_disable_performance_timers(EST_CTX *ctx);
          ENGINE_load_builtin_engines(); \
          SSL_library_init(); \
          SSL_load_error_strings(); } while (0)
+#elif OPENSSL_VERSION_NUMBER >= 0x40000000L
+#define est_apps_startup()               \
+    do { ERR_load_crypto_strings();      \
+         OpenSSL_add_all_algorithms();   \
+         OSSL_PROVIDER_load(NULL, "default"); \
+         SSL_library_init();             \
+         SSL_load_error_strings(); } while (0)
 #else
 #define est_apps_startup()               \
     do { ERR_load_crypto_strings();      \
@@ -853,6 +863,12 @@ LIBEST_API EST_ERROR est_disable_performance_timers(EST_CTX *ctx);
          OBJ_cleanup(); EVP_cleanup(); ENGINE_cleanup(); \
          CRYPTO_cleanup_all_ex_data(); \
          ERR_remove_thread_state(NULL); \
+         ERR_free_strings(); } while (0)
+#elif OPENSSL_VERSION_NUMBER >= 0x40000000L
+#define est_apps_shutdown() \
+    do { CONF_modules_unload(1); \
+         OBJ_cleanup(); EVP_cleanup(); \
+         CRYPTO_cleanup_all_ex_data(); \
          ERR_free_strings(); } while (0)
 #else
 #define est_apps_shutdown() \
