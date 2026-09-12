@@ -58,7 +58,7 @@ typedef struct est_timer {
  * Version identifiers.  These should be updated appropriately
  * for each release.
  */
-#define EST_API_LEVEL       4  //Update this whenever there's a change to the public API
+#define EST_API_LEVEL       5  //Update this whenever there's a change to the public API
 #define EST_VER_STRING      PACKAGE_STRING
 
 #define EST_URI_PATH_PREFIX_MAX_LEN (16)
@@ -529,6 +529,7 @@ struct est_ctx {
     EST_MG_CONTEXT *mg_ctx;
     int server_read_timeout;
     X509 *server_cert;
+    STACK_OF(X509) *server_cert_chain;
     EVP_PKEY *server_priv_key;
     int server_enable_pop; /* enable proof-of-possession check */
     int client_force_pop;  /* force proof-of-possession gen at the client */

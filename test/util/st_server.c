@@ -50,12 +50,18 @@ SRP_VBASE *srp_db = NULL;
 unsigned char *trustcerts = NULL;
 int trustcerts_len = 0;
 static char conf_file[MAX_FILENAME_LEN];
+static char *tls_identity_chain_file;
 static char *csr_attr_value = NULL;
 int write_csr = 0;
 static char csr_filename[MAX_FILENAME_LEN];
 
 X509 *x;
 EVP_PKEY *priv_key;
+
+void st_set_tls_identity_chain_file (char *chainfile)
+{
+    tls_identity_chain_file = chainfile;
+}
 
 static char valid_token_value[MAX_AUTH_TOKEN_LEN+1];
 
@@ -1499,10 +1505,12 @@ static int st_start_internal (
     EST_ERROR rv;
     pthread_t thread;
     int rc;
+    char *tls_chain_file = tls_identity_chain_file;
 #ifdef HAVE_LIBCOAP
     int coap_port;
 #endif
     
+    tls_identity_chain_file = NULL;
     manual_enroll = simulate_manual_enroll;
     
     /*
@@ -1609,6 +1617,22 @@ static int st_start_internal (
     if (!ectx) {
         printf("\nUnable to initialize EST context.  Aborting!!!\n");
         return (-1);
+    }
+
+    if (tls_chain_file) {
+        unsigned char *tls_chain = NULL;
+        int tls_chain_len = read_binary_file(tls_chain_file, &tls_chain);
+
+        if (tls_chain_len <= 0) {
+            printf("\nTLS identity chain file could not be read\n");
+            return (-1);
+        }
+        rv = est_server_set_tls_identity_chain(ectx, tls_chain, tls_chain_len);
+        free(tls_chain);
+        if (rv != EST_ERR_NONE) {
+            printf("\nUnable to configure TLS identity chain\n");
+            return (-1);
+        }
     }
 
     /*

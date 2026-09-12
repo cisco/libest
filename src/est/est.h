@@ -598,6 +598,8 @@ LIBEST_API EST_CTX * est_proxy_init(unsigned char *ca_chain, int ca_chain_len,
                          char *uid, char *pwd);
 LIBEST_API EST_ERROR est_destroy(EST_CTX *ctx);
 LIBEST_API EST_ERROR est_server_set_auth_mode(EST_CTX *ctx, EST_HTTP_AUTH_MODE amode);
+LIBEST_API EST_ERROR est_server_set_tls_identity_chain(
+    EST_CTX *ctx, const unsigned char *chain, int chain_len);
 LIBEST_API EST_ERROR est_server_enable_enhanced_cert_auth(
     EST_CTX *ctx, int local_pki_subj_field_nid, const char *ah_pwd,
     EST_ECA_CSR_CHECK_FLAG csr_check_enabled);
@@ -867,4 +869,3 @@ LIBEST_API EST_ERROR est_disable_performance_timers(EST_CTX *ctx);
 #endif
 
 #endif
-

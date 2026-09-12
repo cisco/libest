@@ -775,6 +775,10 @@ EST_ERROR est_destroy (EST_CTX *ctx)
         free(ctx->ca_chain_raw);
     }
 
+    if (ctx->server_cert_chain) {
+        sk_X509_pop_free(ctx->server_cert_chain, X509_free);
+    }
+
     if (ctx->uri_path_segment) {
         free(ctx->uri_path_segment);
     }

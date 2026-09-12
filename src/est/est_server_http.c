@@ -1471,23 +1471,15 @@ static int set_ssl_option (struct mg_context *ctx)
 	EST_LOG_ERR("Unable to set server certificate");
         return 0;
     }
+    if (ectx->server_cert_chain &&
+        !SSL_CTX_set1_chain(ssl_ctx, ectx->server_cert_chain)) {
+	EST_LOG_ERR("Unable to set server certificate chain");
+        return 0;
+    }
     if (SSL_CTX_use_PrivateKey(ssl_ctx, ectx->server_priv_key) == 0) {
 	EST_LOG_ERR("Unable to set server private key");
         return 0;
     }
-
-    /*
-     * There should be no need to include the cert chain for the
-     * server's certificate in the TLS Certificate message from
-     * the server.  The reason is the EST draft specifies that
-     * all the subordinate CA certs should be included in the
-     * cacerts message flow.  Hence, the client will already have
-     * the full cert chain. Therefore, the TLS handshake will only
-     * contain the server's cert, not the full chain. 
-     *
-      SSL_CTX_use_certificate_chain_file(ctx->ssl_ctx,
-                                         ctx->est_ctx->http_cert_file);
-     */
 
     return 1;
 }

@@ -31,6 +31,8 @@
 #include <openssl/cms.h>
 #include <openssl/bio.h>
 #include <openssl/evp.h>
+#include <openssl/pem.h>
+
 
 
 static ASN1_OBJECT *o_cmcRA = NULL;
@@ -3371,6 +3373,89 @@ EST_ERROR est_server_set_auth_mode (EST_CTX *ctx, EST_HTTP_AUTH_MODE amode)
 	return (EST_ERR_BAD_MODE);
 	break;
     }
+}
+
+/*! @brief est_server_set_tls_identity_chain() configures the intermediate
+    certificates sent with the server identity certificate during TLS setup.
+
+    @param ctx       Pointer to the EST context
+    @param chain     PEM encoded intermediate certificates, issuer first
+    @param chain_len Length of the chain buffer
+
+    The server identity certificate supplied to est_server_init() is not
+    included in this buffer.  This function must be invoked before starting
+    the EST server.
+
+    @return EST_ERROR.
+ */
+EST_ERROR est_server_set_tls_identity_chain (EST_CTX *ctx,
+                                              const unsigned char *chain,
+                                              int chain_len)
+{
+    BIO *in = NULL;
+    STACK_OF(X509_INFO) *cert_info = NULL;
+    STACK_OF(X509) *cert_chain = NULL;
+    X509_INFO *info;
+
+    if (!ctx) {
+        EST_LOG_ERR("Null context");
+        return (EST_ERR_NO_CTX);
+    }
+    if (ctx->est_mode != EST_SERVER && ctx->est_mode != EST_PROXY) {
+        EST_LOG_ERR("TLS identity chain is only valid in server or proxy mode");
+        return (EST_ERR_BAD_MODE);
+    }
+    if (ctx->mg_ctx) {
+        EST_LOG_ERR("TLS identity chain must be configured before server start");
+        return (EST_ERR_BAD_MODE);
+    }
+    if (!chain || chain_len <= 0) {
+        EST_LOG_ERR("Invalid TLS identity chain");
+        return (EST_ERR_INVALID_PARAMETERS);
+    }
+
+    in = BIO_new_mem_buf((void *)chain, chain_len);
+    cert_chain = sk_X509_new_null();
+    if (!in || !cert_chain) {
+        BIO_free(in);
+        sk_X509_free(cert_chain);
+        return (EST_ERR_MALLOC);
+    }
+
+    cert_info = PEM_X509_INFO_read_bio(in, NULL, NULL, NULL);
+    BIO_free(in);
+    if (!cert_info) {
+        sk_X509_free(cert_chain);
+        EST_LOG_ERR("Unable to read PEM encoded TLS identity chain");
+        return (EST_ERR_NO_CERTS_FOUND);
+    }
+
+    while (sk_X509_INFO_num(cert_info)) {
+        info = sk_X509_INFO_shift(cert_info);
+        if (info->x509) {
+            if (!sk_X509_push(cert_chain, info->x509)) {
+                X509_INFO_free(info);
+                sk_X509_INFO_pop_free(cert_info, X509_INFO_free);
+                sk_X509_pop_free(cert_chain, X509_free);
+                return (EST_ERR_MALLOC);
+            }
+            info->x509 = NULL;
+        }
+        X509_INFO_free(info);
+    }
+    sk_X509_INFO_free(cert_info);
+
+    if (!sk_X509_num(cert_chain)) {
+        sk_X509_free(cert_chain);
+        EST_LOG_ERR("No certificates found in TLS identity chain");
+        return (EST_ERR_NO_CERTS_FOUND);
+    }
+
+    if (ctx->server_cert_chain) {
+        sk_X509_pop_free(ctx->server_cert_chain, X509_free);
+    }
+    ctx->server_cert_chain = cert_chain;
+    return (EST_ERR_NONE);
 }
 
 /*! @brief est_set_ca_enroll_cb() is used by an application to install
