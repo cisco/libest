@@ -32,6 +32,21 @@ To run the example:
 4.  Use an EST client to exercise the server.
 
 
+TLS server certificate chain
+----------------------------
+The -c option supplies the TLS server certificate and -k supplies its private
+key.  To send intermediate CA certificates during the HTTPS handshake, use
+-C <file> or --tls-chain <file>.  The chain file must be PEM encoded and
+contain the issuer of the server certificate first, followed by any higher
+intermediate CAs.  Do not include the server certificate or, normally, the
+self-signed root CA in this file.
+
+For example:
+
+    ./estserver -c server.crt -k server.key -C intermediates.pem \
+        -r estrealm -v
+
+
 
 Certificate Revocation
 ----------------------

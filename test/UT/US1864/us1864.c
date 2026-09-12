@@ -17,6 +17,7 @@
 #include "test_utils.h"
 #include "st_server.h"
 #include <openssl/ssl.h>
+#include <openssl/evp.h>
 
 #ifdef HAVE_CUNIT
 #include "CUnit/Basic.h"
@@ -218,12 +219,12 @@ static void us1864_test1 (void)
     /*
      * Make sure we don't allow DIGEST mode when in FIPS mode
      */
-    if (!FIPS_mode_set(1)) {
+    if (!EVP_default_properties_enable_fips(NULL, 1)) {
         printf("FIPS mode not supported, skipping test to prevent digest auth when in FIPS mode");
     } else {
         est_rv = est_server_set_auth_mode(ctx, AUTH_DIGEST);
         CU_ASSERT(est_rv == EST_ERR_BAD_MODE);
-        FIPS_mode_set(0);
+        EVP_default_properties_enable_fips(NULL, 0)
     }
 
     X509_free(x);

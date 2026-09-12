@@ -11,6 +11,9 @@
 #ifndef ST_SERVER_H
 #define ST_SERVER_H
 void st_stop(void);
+#ifndef WIN32
+void st_set_tls_identity_chain_file(char *chainfile);
+#endif
 int st_start(int tcp_port,
              char *certfile,
              char *keyfile,
@@ -215,4 +218,3 @@ EST_ERROR st_server_enable_performance_timers();
 EST_ERROR st_server_disable_performance_timers();
 
 #endif
-

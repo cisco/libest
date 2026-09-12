@@ -31,6 +31,7 @@
 #include <openssl/conf.h>
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
+#include <openssl/evp.h>
 #include <openssl/crypto.h>
 #include <openssl/pem.h>
 #include <openssl/md5.h>
@@ -120,6 +121,7 @@ static int perf_timers_on = 0;
 
 char certfile[EST_MAX_FILE_LEN];
 char keyfile[EST_MAX_FILE_LEN];
+char tls_chain_file[EST_MAX_FILE_LEN + 1];
 char cert_auth_ah_pwd[MAX_PWD_LEN + 1];
 char local_nid[MAX_PWD_LEN + 1];
 char mfg_name[MFG_NAME_MAX_LEN + 1];
@@ -227,6 +229,7 @@ static void show_usage_and_exit (void)
             "  -v           Verbose operation\n"
             "  -c <file>    PEM file to use for server cert\n"
             "  -k <file>    PEM file to use for server key\n"
+            "  -C <file>    PEM file of intermediate certs to send in the TLS chain\n"
             "  -r <value>   HTTP realm to present to clients. Max is 32 characters.\n"
             "  -l           Enable CRL checks\n"
             "  -t           Enable check for binding client PoP to the TLS UID\n"
@@ -245,6 +248,7 @@ static void show_usage_and_exit (void)
             "  -?           Print this help message and exit\n"
             "  --keypass_stdin Specify en-/decryption of private key, password read from STDIN\n"
             "  --keypass_arg   Specify en-/decryption of private key, password read from argument\n"
+            "  --tls-chain <file> PEM file of intermediate certs to send in the TLS chain\n"
             "  --srp <file> Enable TLS-SRP authentication of client using the specified SRP parameters file\n"
             "  --enforce-csr  Enable CSR attributes enforcement. The client must provide all the attributes in the CSR.\n"
             "  --token <value> Use HTTP Bearer Token auth.\n"
@@ -2081,6 +2085,7 @@ int main (int argc, char **argv)
 #endif
     static struct option long_options[] = {
         {"srp", 1, NULL, 0},
+        {"tls-chain", 1, NULL, 'C'},
         {"enforce-csr", 0, NULL, 0},
         {"token", 1, 0, 0},
 #if ENABLE_BRSKI
@@ -2122,7 +2127,7 @@ int main (int argc, char **argv)
     memset(masa_root_ca_file, 0, EST_MAX_FILE_LEN+1);
     memset(masa_priv_key_file, 0, EST_MAX_FILE_LEN+1);
 #endif
-    while ((c = getopt_long(argc, argv, "?fhbwnovr:c:k:m:p:d:lt6", long_options,
+    while ((c = getopt_long(argc, argv, "?fhbwnovr:c:k:C:m:p:d:lt6", long_options,
                             &option_index)) != -1) {
         switch (c) {
         case 0:
@@ -2273,6 +2278,9 @@ int main (int argc, char **argv)
         case 'k':
             strncpy(keyfile, optarg, EST_MAX_FILE_LEN);
             break;
+        case 'C':
+            strncpy(tls_chain_file, optarg, EST_MAX_FILE_LEN);
+            break;
         case 'r':
             if (strnlen(optarg, MAX_REALM_LEN+1) > MAX_REALM_LEN) {
                 printf("\nRealm value is too large.  Max is 32 characters\n");
@@ -2285,7 +2293,7 @@ int main (int argc, char **argv)
             /* turn FIPS on if user requested it
              * and exit if failure.
              */
-            set_fips_return = FIPS_mode_set(1);
+            set_fips_return = EVP_default_properties_enable_fips(NULL, 1);
             if (set_fips_return != 1) {
                 set_fips_error = ERR_get_error();
                 printf("\nERROR WHILE SETTING FIPS MODE ON exiting ....\n");
@@ -2391,6 +2399,22 @@ int main (int argc, char **argv)
     if (!ectx) {
         printf("\nUnable to initialize EST context.  Aborting!!!\n");
         exit(1);
+    }
+    if (tls_chain_file[0]) {
+        unsigned char *tls_chain = NULL;
+        int tls_chain_len = read_binary_file(tls_chain_file, &tls_chain);
+
+        if (tls_chain_len <= 0) {
+            printf("\nTLS identity chain file could not be read: %s\n",
+                   tls_chain_file);
+            exit(1);
+        }
+        rv = est_server_set_tls_identity_chain(ectx, tls_chain, tls_chain_len);
+        free(tls_chain);
+        if (rv != EST_ERR_NONE) {
+            printf("\nUnable to configure TLS identity chain (rv=%d)\n", rv);
+            exit(1);
+        }
     }
     est_set_ex_data(ectx, &test_app_data);
 
@@ -2760,4 +2784,3 @@ int main (int argc, char **argv)
     X509_free(x);
     return 0;
 }
-

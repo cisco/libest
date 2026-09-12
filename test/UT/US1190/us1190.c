@@ -14,6 +14,7 @@
 #include <est.h>
 #include "test_utils.h"
 #include <openssl/ssl.h>
+#include <openssl/pem.h>
 #include "st_server.h"
 
 #ifdef HAVE_CUNIT
@@ -25,14 +26,16 @@
 #define US1190_CACERTS              "CA/estCA/cacert.crt"
 #define US1190_CACERT               "CA/estCA/cacert.crt"
 #define US1190_TRUSTED_CERT         "CA/trustedcerts.crt"
-#define US1190_SERVER_CERT          "CA/estCA/private/estservercertandkey.pem"
-#define US1190_SERVER_KEY           "CA/estCA/private/estservercertandkey.pem"
+#define US1190_SERVER_CERT          "CA/mfgCAs/TestMfgCA0/esttestmfg0.crt"
+#define US1190_SERVER_KEY           "CA/mfgCAs/TestMfgCA0/private/certandkey1-esttestmfg0.pem"
+#define US1190_SERVER_CHAIN         "CA/mfgCAs/TestMfgCA0/cacert1-0.crt"
 #else
 #define US1190_CACERTS              "CA\\estCA\\cacert.crt"
 #define US1190_CACERT               "CA\\estCA\\cacert.crt"
 #define US1190_TRUSTED_CERT         "CA\\trustedcerts.crt"
-#define US1190_SERVER_CERT          "CA\\estCA\\private\\estservercertandkey.pem"
-#define US1190_SERVER_KEY           "CA\\estCA\\private\\estservercertandkey.pem"
+#define US1190_SERVER_CERT          "CA\\mfgCAs\\TestMfgCA0\\esttestmfg0.crt"
+#define US1190_SERVER_KEY           "CA\\mfgCAs\\TestMfgCA0\\private\\certandkey1-esttestmfg0.pem"
+#define US1190_SERVER_CHAIN         "CA\\mfgCAs\\TestMfgCA0\\cacert1-0.crt"
 #endif
 
 #define US1190_TCP_SERVER_PORT      "15895"
@@ -49,6 +52,9 @@ int us1190_start_server ()
      * Start an EST server acting as the CA
      * this server does not support TLS 1.0
      */
+#ifndef WIN32
+    st_set_tls_identity_chain_file(US1190_SERVER_CHAIN);
+#endif
     rv = st_start(atoi(US1190_TCP_SERVER_PORT),
                   US1190_SERVER_CERT,
                   US1190_SERVER_KEY,
@@ -249,6 +255,51 @@ static void us1190_test5 (void)
 
 }
 
+#ifndef WIN32
+static void us1190_test6 (void)
+{
+    BIO *conn = NULL;
+    BIO *certin = NULL;
+    SSL *ssl = NULL;
+    SSL_CTX *ssl_ctx = NULL;
+    STACK_OF(X509) *peer_chain;
+    X509 *expected_intermediate = NULL;
+    int rv;
+
+#ifdef HAVE_OLD_OPENSSL
+    ssl_ctx = SSL_CTX_new(SSLv23_client_method());
+#else
+    ssl_ctx = SSL_CTX_new(TLS_client_method());
+#endif
+    CU_ASSERT_FATAL(ssl_ctx != NULL);
+
+    conn = open_tcp_socket_ipv4("127.0.0.1", US1190_TCP_SERVER_PORT);
+    CU_ASSERT_FATAL(conn != NULL);
+    ssl = SSL_new(ssl_ctx);
+    CU_ASSERT_FATAL(ssl != NULL);
+    SSL_set_bio(ssl, conn, conn);
+
+    rv = SSL_connect(ssl);
+    CU_ASSERT_FATAL(rv > 0);
+    peer_chain = SSL_get_peer_cert_chain(ssl);
+    CU_ASSERT_FATAL(peer_chain != NULL);
+    CU_ASSERT_EQUAL(sk_X509_num(peer_chain), 2);
+
+    certin = BIO_new_file(US1190_SERVER_CHAIN, "r");
+    CU_ASSERT_FATAL(certin != NULL);
+    expected_intermediate = PEM_read_bio_X509(certin, NULL, NULL, NULL);
+    CU_ASSERT_FATAL(expected_intermediate != NULL);
+    CU_ASSERT_EQUAL(X509_cmp(sk_X509_value(peer_chain, 1),
+                             expected_intermediate), 0);
+
+    X509_free(expected_intermediate);
+    BIO_free(certin);
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+    SSL_CTX_free(ssl_ctx);
+}
+#endif
+
 /* The main() function for setting up and running the tests.
  * Returns a CUE_SUCCESS on successful running, another
  * CUnit error code on failure.
@@ -278,8 +329,13 @@ int us1190_add_suite (void)
         CU_cleanup_registry();
         return CU_get_error();
     }
+#ifndef WIN32
+    if (NULL == CU_add_test(pSuite, "server sends TLS chain", us1190_test6)) {
+        CU_cleanup_registry();
+        return CU_get_error();
+    }
+#endif
 
     return CUE_SUCCESS;
 #endif
 }
-
