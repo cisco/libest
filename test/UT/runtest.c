@@ -136,8 +136,7 @@ static unsigned long id_function(void) {
 #endif
 
 /* The main() function for setting up and running the tests.
- * Returns a CUE_SUCCESS on successful running, another
- * CUnit error code on failure.
+ * Returns 0 on successful running, non-zero on failure.
  */
 int main(int argc, char *argv[]) {
     int xml = 0;
@@ -145,7 +144,7 @@ int main(int argc, char *argv[]) {
     int coap_sanity = 0;
     CU_pFailureRecord fr;
     int run_cnt;
-    int fail_cnt;
+    int fail_cnt = 0;
 #ifdef HAVE_OLD_OPENSSL
     int i;
 #endif
@@ -666,10 +665,18 @@ int main(int argc, char *argv[]) {
     mutex_buf = NULL;
 #endif
     
+    fail_cnt = CU_get_number_of_tests_failed() + CU_get_number_of_suites_failed();
+    if (fail_cnt == 0 && CU_get_number_of_failures() > 0) {
+        fail_cnt = CU_get_number_of_failures();
+    }
+    if (CU_get_error() != CUE_SUCCESS) {
+        fail_cnt++;
+    }
+
     CU_cleanup_registry();
     est_apps_shutdown();
 
-    return CU_get_error();
+    return (fail_cnt > 0) ? ((fail_cnt > 255) ? 255 : fail_cnt) : 0;
 #else
     printf("\nlibcunit not installed, unit test are not enabled\n");
 #endif
